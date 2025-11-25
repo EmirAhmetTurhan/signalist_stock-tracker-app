@@ -1,31 +1,59 @@
 'use server';
 
-interface AuthResult {
-    success: boolean;
-    error?: string;
-}
+import {auth} from "@/lib/better-auth/auth";
+import {inngest} from "@/lib/inngest/client";
+import {headers} from "next/headers";
 
-export async function signInWithEmail(data: { email: string; password: string }): Promise<AuthResult> {
+export const signUpWithEmail = async ({ email, password, fullName, country, investmentGoals, riskTolerance, preferredIndustry }:SignUpFormData) => {
+
+    if (!auth) {
+        return { success: false, error: "Auth service not initialized (Internal Server Error)" };
+    }
+
     try {
-        const {email, password} = data;
+        const response = await auth.api.signUpEmail({
+            body: { email, password, name: fullName },
+            // ensure cookies/session are properly set in a Next.js app router environment
+            headers: await headers(),
+        });
 
-        console.log("Data received by server:", email, password);
-
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // 1 second delay simulation
-
-        if (email === 'test@example.com' && password === '12345678') {
-            return {success: true};
+        if(response) {
+            await inngest.send({
+                name: 'app/user.created',
+                data: { email, name: fullName, country, investmentGoals, riskTolerance, preferredIndustry, }
+            })
         }
 
-        return {success: false, error: 'Invalid email or password!'};
+        return { success: true, data: response}
 
-    } catch (error) {
-        console.error("Auth error:", error);
-        return {success: false, error: 'Something went wrong.'};
+    } catch (e) {
+        console.log('Sign up failed', e)
+        const errorMessage = e instanceof Error ? e.message : 'Sign up failed'
+        return { success: false, error: errorMessage }
     }
 }
 
-export async function signUpWithEmail(data: { email: string; password: string; name?: string }): Promise<AuthResult> {
-    console.log("Registration data:", data);
-    return {success: true};
+export const signInWithEmail = async ({ email, password }: SignInFormData) => {
+
+    if (!auth) {
+        return { success: false, error: "Auth service not initialized (Internal Server Error)" };
+    }
+
+    try {
+        const response = await auth.api.signInEmail({ body: { email, password } })
+
+        return { success: true, data: response}
+    } catch (e) {
+        console.log('Sign in failed', e)
+        return { success: false, error: 'Sign in failed' }
+    }
+}
+
+export const signOut = async () => {
+    try {
+        await auth.api.signOut({ headers: await headers() });
+    } catch(e) {
+        console.log('Sign out failed', e);
+        return { success: false, error: 'Sign out failed' };
+    }
 }
