@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/command"
 import {Button} from "@/components/ui/button";
 import Link from "next/link";
-import {TrendingUp, Loader2, Star} from "lucide-react";
+import {TrendingUp, Loader2} from "lucide-react";
 import {searchStocks} from "@/lib/actions/finnhub.actions";
 import {useDebounce} from "@/hooks/useDebounce";
 
@@ -101,7 +101,7 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
             <ul>
                 <div className="search-count">
                     {isSearchMode ? 'Search results' : 'Popular stocks'}
-                    {` `}({displayStocks?.length || 0}
+                    {` `}({displayStocks?.length || 0})
                 </div>
                 {displayStocks?.map((stock, i) => (
                     <li key={stock.symbol} className="search-item">
