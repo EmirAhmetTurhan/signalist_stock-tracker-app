@@ -2,6 +2,8 @@
 
 import { connectToDatabase } from '@/database/mongoose';
 import Watchlist from '@/database/models/watchlist.model';
+import { auth } from '@/lib/better-auth/auth';
+import { headers } from 'next/headers';
 
 export async function getWatchlistSymbolsByEmail(email: string): Promise<string[]> {
   try {
@@ -24,6 +26,52 @@ export async function getWatchlistSymbolsByEmail(email: string): Promise<string[
   } catch (err) {
     console.error('getWatchlistSymbolsByEmail error:', err);
     return [];
+  }
+}
+
+export async function addToWatchlist(symbol: string, company: string): Promise<{ ok: boolean; added?: boolean; error?: string }> {
+  try {
+    if (!symbol || !company) return { ok: false, error: 'Missing symbol or company' };
+
+    await connectToDatabase();
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+    if (!userId) return { ok: false, error: 'Not authenticated' };
+
+    const upper = symbol.toUpperCase();
+    try {
+      await Watchlist.create({ userId, symbol: upper, company });
+      return { ok: true, added: true };
+    } catch (e) {
+      // Handle duplicate key errors gracefully (already in watchlist)
+      const msg = (e as Error)?.message || '';
+      if (msg.includes('E11000') || msg.toLowerCase().includes('duplicate')) {
+        return { ok: true, added: true };
+      }
+      console.error('addToWatchlist error:', e);
+      return { ok: false, error: 'Failed to add to watchlist' };
+    }
+  } catch (err) {
+    console.error('addToWatchlist fatal error:', err);
+    return { ok: false, error: 'Internal error' };
+  }
+}
+
+export async function removeFromWatchlist(symbol: string): Promise<{ ok: boolean; removed?: boolean; error?: string }> {
+  try {
+    if (!symbol) return { ok: false, error: 'Missing symbol' };
+
+    await connectToDatabase();
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+    if (!userId) return { ok: false, error: 'Not authenticated' };
+
+    const upper = symbol.toUpperCase();
+    const res = await Watchlist.deleteOne({ userId, symbol: upper });
+    return { ok: true, removed: res.deletedCount === 1 };
+  } catch (err) {
+    console.error('removeFromWatchlist error:', err);
+    return { ok: false, error: 'Failed to remove from watchlist' };
   }
 }
 
