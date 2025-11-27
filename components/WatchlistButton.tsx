@@ -1,23 +1,17 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { cn } from '@/lib/utils'
-import { Star } from 'lucide-react'
+import { useState } from 'react'
+import { Star, StarOff, Trash2 } from 'lucide-react'
 
 const WatchlistButton = ({
   symbol,
   company,
   isInWatchlist,
-  showTrashIcon,
+  showTrashIcon = false,
   type = 'button',
   onWatchlistChange,
 }: WatchlistButtonProps) => {
   const [added, setAdded] = useState<boolean>(!!isInWatchlist)
-
-  const label = useMemo(
-    () => (added ? 'Remove from Watchlist' : 'Add to Watchlist'),
-    [added]
-  )
 
   const toggle = () => {
     const next = !added
@@ -29,26 +23,41 @@ const WatchlistButton = ({
     return (
       <button
         type="button"
-        aria-label={label}
+        aria-label={added ? 'Remove from watchlist' : 'Add to watchlist'}
+        title={added ? 'Remove from watchlist' : 'Add to watchlist'}
         onClick={toggle}
-        className={cn('watchlist-icon-btn', added && 'watchlist-icon-added')}
-        title={label}
+        className={`watchlist-icon-btn ${added ? 'watchlist-icon-added' : ''}`}
       >
         <span className="watchlist-icon">
-          <Star className="star-icon" />
+          {added ? <Star className="star-icon" /> : <StarOff className="star-icon" />}
         </span>
       </button>
     )
   }
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      className={cn('watchlist-btn', added && 'watchlist-remove')}
-    >
-      {label}
-    </button>
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={toggle}
+        className={`watchlist-btn ${added ? '' : ''}`}
+      >
+        {added ? 'Remove from Watchlist' : 'Add to Watchlist'}
+      </button>
+      {showTrashIcon && (
+        <button
+          type="button"
+          aria-label="Remove"
+          title="Remove"
+          onClick={() => {
+            if (added) toggle()
+          }}
+          className="watchlist-icon-btn"
+        >
+          <Trash2 className="trash-icon" />
+        </button>
+      )}
+    </div>
   )
 }
 
