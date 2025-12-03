@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import {NEWS_SUMMARY_EMAIL_TEMPLATE, WELCOME_EMAIL_TEMPLATE} from "@/lib/nodemailer/templates";
+import {NEWS_SUMMARY_EMAIL_TEMPLATE, WELCOME_EMAIL_TEMPLATE, STOCK_ALERT_UPPER_EMAIL_TEMPLATE, STOCK_ALERT_LOWER_EMAIL_TEMPLATE} from "@/lib/nodemailer/templates";
 
 export const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -37,6 +37,43 @@ export const sendNewsSummaryEmail = async (
         to: email,
         subject: `📈 Market News Summary Today - ${date}`,
         text: `Today's market news summary from Signalist`,
+        html: htmlTemplate,
+    };
+
+    await transporter.sendMail(mailOptions);
+}
+
+export const sendPriceAlertEmail = async ({
+    email,
+    symbol,
+    company,
+    currentPrice,
+    threshold,
+    type,
+    timestamp,
+}: {
+    email: string;
+    symbol: string;
+    company: string;
+    currentPrice: string;
+    threshold: string;
+    type: 'upper' | 'lower';
+    timestamp: string;
+}) => {
+    const template = type === 'upper' ? STOCK_ALERT_UPPER_EMAIL_TEMPLATE : STOCK_ALERT_LOWER_EMAIL_TEMPLATE;
+    const htmlTemplate = template
+        .replace(/\{\{symbol\}\}/g, symbol)
+        .replace(/\{\{company\}\}/g, company)
+        .replace(/\{\{currentPrice\}\}/g, currentPrice)
+        .replace(/\{\{targetPrice\}\}/g, threshold)
+        .replace(/\{\{timestamp\}\}/g, timestamp);
+
+    const subject = type === 'upper' ? `🔔 ${symbol} Price Above Reached` : `🔔 ${symbol} Price Below Hit`;
+
+    const mailOptions = {
+        from: 'Signalist <signalist@jsmastery.pro>',
+        to: email,
+        subject,
         html: htmlTemplate,
     };
 

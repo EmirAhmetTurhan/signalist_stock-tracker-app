@@ -192,3 +192,75 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
     }
 });
 
+// ---- Candles (OHLC) ----
+// Lightweight Charts needs an array of OHLC with unix seconds timestamps
+export async function getDailyCandles(symbol: string, days = 180): Promise<CandleDataPoint[]> {
+    const to = Math.floor(Date.now() / 1000);
+    const from = to - days * 24 * 60 * 60;
+
+    // 1) Try Finnhub first (if token exists)
+    try {
+        const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
+        if (token) {
+            const url = `${FINNHUB_BASE_URL}/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=D&from=${from}&to=${to}&token=${token}`;
+            type CandleResponse = { s: 'ok' | string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[]; v?: number[] };
+            const data = await fetchJSON<CandleResponse>(url, 600);
+            if (data && data.s === 'ok' && Array.isArray(data.t) && data.t.length > 0) {
+                const out: CandleDataPoint[] = [];
+                for (let i = 0; i < data.t.length; i++) {
+                    const o = Number(data.o?.[i]);
+                    const h = Number(data.h?.[i]);
+                    const l = Number(data.l?.[i]);
+                    const c = Number(data.c?.[i]);
+                    const v = Number(data.v?.[i]);
+                    if ([o, h, l, c].every((v) => Number.isFinite(v))) {
+                        const item: CandleDataPoint = { time: data.t[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
+                        if (Number.isFinite(v)) item.volume = v as number;
+                        out.push(item);
+                    }
+                }
+                if (out.length > 0) return out;
+            }
+        }
+    } catch (e) {
+        console.error('getDailyCandles Finnhub error', e);
+        // fall through to Yahoo
+    }
+
+    // 2) Fallback to Yahoo Finance (no API key needed)
+    try {
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${from}&period2=${to}`;
+        const res = await fetch(yahooUrl, { cache: 'force-cache', next: { revalidate: 600 } });
+        if (!res.ok) throw new Error(`Yahoo chart fetch failed: ${res.status}`);
+        const json: any = await res.json();
+        const result = json?.chart?.result?.[0];
+        const ts: number[] | undefined = result?.timestamp;
+        const quote = result?.indicators?.quote?.[0] || {};
+        const opens: number[] | undefined = quote.open;
+        const highs: number[] | undefined = quote.high;
+        const lows: number[] | undefined = quote.low;
+        const closes: number[] | undefined = quote.close;
+        const volumes: number[] | undefined = quote.volume;
+        if (Array.isArray(ts) && ts.length) {
+            const out: CandleDataPoint[] = [];
+            for (let i = 0; i < ts.length; i++) {
+                const o = Number(opens?.[i]);
+                const h = Number(highs?.[i]);
+                const l = Number(lows?.[i]);
+                const c = Number(closes?.[i]);
+                const v = Number(volumes?.[i]);
+                if ([o, h, l, c].every((v) => Number.isFinite(v))) {
+                    const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
+                    if (Number.isFinite(v)) item.volume = v as number;
+                    out.push(item);
+                }
+            }
+            if (out.length > 0) return out;
+        }
+    } catch (e) {
+        console.error('getDailyCandles Yahoo fallback error', e);
+    }
+
+    return [];
+}
+

@@ -16,12 +16,16 @@ import Link from "next/link";
 import {TrendingUp, Loader2} from "lucide-react";
 import {searchStocks} from "@/lib/actions/finnhub.actions";
 import {useDebounce} from "@/hooks/useDebounce";
+import WatchlistButton from "@/components/WatchlistButton";
 
 export default function SearchCommand({ renderAs = 'button', label = 'Add stock', initialStocks }:SearchCommandProps) {
   const [open, setOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(false)
   const [stocks, setStocks] = useState<StockWithWatchlistStatus[]>(initialStocks);
+  const [watchlistSet, setWatchlistSet] = useState<Set<string>>(
+      () => new Set((initialStocks || []).filter(s => s.isInWatchlist).map(s => s.symbol))
+  );
 
   const isSearchMode = !!searchTerm.trim();
   const displayStocks = isSearchMode ? stocks : stocks?.slice(0, 10);
@@ -53,7 +57,12 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
       setLoading(true)
       try {
           const results = await searchStocks(searchTerm.trim());
-          setStocks(results);
+          // reflect current watchlist status in search results
+          const withFlags = (results || []).map((s) => ({
+              ...s,
+              isInWatchlist: watchlistSet.has(s.symbol)
+          }))
+          setStocks(withFlags);
       } catch {
           setStocks([])
       } finally {
@@ -104,7 +113,7 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                     {` `}({displayStocks?.length || 0})
                 </div>
                 {displayStocks?.map((stock) => (
-                    <li key={stock.symbol} className="search-item">
+                    <li key={stock.symbol} className="search-item flex items-center justify-between">
                         <Link
                             href={`/stocks/${stock.symbol}`}
                             onClick={handleSelectStock}
@@ -117,8 +126,26 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                                     {stock.symbol} | {stock.exchange} | {stock.type}
                                 </div>
                             </div>
+                            <div
+                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                className="ml-auto"
+                            >
+                                <WatchlistButton
+                                    type="icon"
+                                    symbol={stock.symbol}
+                                    company={stock.name}
+                                    isInWatchlist={!!stock.isInWatchlist}
+                                    onWatchlistChange={(symbol, isAdded) => {
+                                        setWatchlistSet((prev) => {
+                                            const next = new Set(prev);
+                                            if (isAdded) next.add(symbol.toUpperCase()); else next.delete(symbol.toUpperCase());
+                                            return next;
+                                        });
+                                        setStocks((prev) => prev.map((s) => s.symbol === symbol ? { ...s, isInWatchlist: isAdded } : s));
+                                    }}
+                                />
+                            </div>
                         </Link>
-                        {/*Star />*/}
                     </li>
                 ))}
             </ul>

@@ -1,10 +1,13 @@
 import {inngest} from "@/lib/inngest/client";
 import {NEWS_SUMMARY_EMAIL_PROMPT, PERSONALIZED_WELCOME_EMAIL_PROMPT} from "@/lib/inngest/prompts";
-import {sendNewsSummaryEmail, sendWelcomeEmail} from "@/lib/nodemailer";
+import {sendNewsSummaryEmail, sendWelcomeEmail, sendPriceAlertEmail} from "@/lib/nodemailer";
 import {getAllUsersForNewsEmail} from "@/lib/actions/user.actions";
 import { getWatchlistSymbolsByEmail } from "@/lib/actions/watchlist.actions";
 import { getNews } from "@/lib/actions/finnhub.actions";
 import { getFormattedTodayDate } from "@/lib/utils";
+import { connectToDatabase } from "@/database/mongoose";
+import PriceAlert from "@/database/models/price-alert.model";
+import { fetchJSON } from "@/lib/actions/finnhub.actions";
 
 // Local typing to satisfy TS without altering public contracts
 type UserForNewsEmail = { id: string; email: string; name: string };
@@ -125,5 +128,76 @@ export const sendDailyNewsSummary = inngest.createFunction(
         })
 
         return { success: true, message: 'Daily news summary emails sent successfully' }
+    }
+)
+
+// Daily evaluation of price alerts; shares the same cadence as news
+export const evaluateDailyPriceAlerts = inngest.createFunction(
+    { id: 'daily-price-alerts' },
+    [ { event: 'app/evaluate.price.alerts' }, { cron: '0 12 * * *' } ],
+    async ({ step }) => {
+        // Load active daily alerts
+        const alerts = await step.run('load-active-alerts', async () => {
+            await connectToDatabase();
+            return await PriceAlert.find({ active: true, frequency: 'daily' }).lean();
+        });
+
+        if (!alerts || alerts.length === 0) return { success: true, message: 'No active alerts' };
+
+        // Group by symbol
+        const groups = new Map<string, typeof alerts>();
+        for (const a of alerts as any[]) {
+            const key = String(a.symbol).toUpperCase();
+            const list = (groups.get(key) || []) as any[];
+            list.push(a);
+            groups.set(key, list);
+        }
+
+        const token = process.env.FINNHUB_API_KEY || process.env.NEXT_PUBLIC_FINNHUB_API_KEY || '';
+        const now = new Date();
+
+        for (const [symbol, items] of groups) {
+            try {
+                // Fetch quote
+                const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${token}`;
+                const quote = await step.run(`quote-${symbol}`, async () => await fetchJSON<{ c?: number }>(url, 60));
+                const price = Number(quote?.c || 0);
+                if (!Number.isFinite(price) || price <= 0) continue;
+
+                // Evaluate each alert
+                for (const alert of items as any[]) {
+                    const last = alert.lastNotifiedOn ? new Date(alert.lastNotifiedOn) : null;
+                    const alreadyToday = last && last.toISOString().slice(0,10) === now.toISOString().slice(0,10);
+                    if (alreadyToday) continue; // once per day
+
+                    const threshold = Number(alert.threshold);
+                    const type = alert.alertType === 'lower' ? 'lower' : 'upper';
+                    const shouldSend = type === 'upper' ? price > threshold : price < threshold;
+                    if (!shouldSend) continue;
+
+                    const timestamp = now.toLocaleString('en-US', { timeZone: 'UTC' });
+                    await step.run(`send-email-${alert._id}`, async () => {
+                        return await sendPriceAlertEmail({
+                            email: String(alert.email),
+                            symbol,
+                            company: String(alert.company || symbol),
+                            currentPrice: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(price),
+                            threshold: new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(threshold),
+                            type,
+                            timestamp,
+                        })
+                    });
+
+                    // Update lastNotifiedOn
+                    await step.run(`update-last-${alert._id}`, async () => {
+                        await PriceAlert.updateOne({ _id: alert._id }, { $set: { lastNotifiedOn: now } });
+                    });
+                }
+            } catch (e) {
+                console.error('Failed evaluating alerts for', symbol, e);
+            }
+        }
+
+        return { success: true, message: 'Price alerts evaluated' };
     }
 )

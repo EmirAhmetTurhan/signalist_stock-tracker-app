@@ -29,6 +29,30 @@ export async function getWatchlistSymbolsByEmail(email: string): Promise<string[
   }
 }
 
+export async function getCurrentUserWatchlist(): Promise<StockWithData[]> {
+  try {
+    await connectToDatabase();
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+    if (!userId) return [];
+
+    const items = await Watchlist.find({ userId }, { _id: 0, userId: 1, symbol: 1, company: 1, addedAt: 1 })
+      .sort({ addedAt: -1 })
+      .lean();
+
+    // Return minimal data; price and change will be handled by TradingView widget on the client
+    return (items || []).map((i) => ({
+      userId: String(i.userId),
+      symbol: String(i.symbol).toUpperCase(),
+      company: String(i.company),
+      addedAt: new Date(i.addedAt || Date.now()),
+    }));
+  } catch (err) {
+    console.error('getCurrentUserWatchlist error:', err);
+    return [];
+  }
+}
+
 export async function addToWatchlist(symbol: string, company: string): Promise<{ ok: boolean; added?: boolean; error?: string }> {
   try {
     if (!symbol || !company) return { ok: false, error: 'Missing symbol or company' };

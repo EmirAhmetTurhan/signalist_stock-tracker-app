@@ -8,12 +8,15 @@ import {
   COMPANY_FINANCIALS_WIDGET_CONFIG,
 } from "@/lib/constants";
 import WatchlistButton from "@/components/WatchlistButton";
+import { getCurrentUserWatchlist } from "@/lib/actions/watchlist.actions";
 
 const StockDetails = async ({ params }: StockDetailsPageProps) => {
   const { symbol } = await params;
 
   const scriptUrl = "https://s3.tradingview.com/external-embedding/embed-widget-";
   const upper = symbol?.toUpperCase?.() || symbol;
+  const watchlist = await getCurrentUserWatchlist();
+  const isInWatchlist = Array.isArray(watchlist) && watchlist.some((i) => i.symbol === upper);
 
   return (
     <div className="flex min-h-screen w-full">
@@ -43,7 +46,9 @@ const StockDetails = async ({ params }: StockDetailsPageProps) => {
 
         {/* Right Column */}
         <div className="flex flex-col gap-8">
-          <WatchlistButton symbol={upper} company={upper} isInWatchlist={false} />
+          <div className="flex items-center gap-3">
+            <WatchlistButton symbol={upper} company={upper} isInWatchlist={isInWatchlist} />
+          </div>
 
           <TradingViewWidget
             title="Technical Analysis"
