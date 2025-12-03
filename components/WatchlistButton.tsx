@@ -1,7 +1,10 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { Star, StarOff, Trash2 } from 'lucide-react'
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Star, Trash2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { addToWatchlist, removeFromWatchlist } from '@/lib/actions/watchlist.actions';
 
 const WatchlistButton = ({
   symbol,
@@ -11,54 +14,71 @@ const WatchlistButton = ({
   type = 'button',
   onWatchlistChange,
 }: WatchlistButtonProps) => {
-  const [added, setAdded] = useState<boolean>(!!isInWatchlist)
+  const [added, setAdded] = useState<boolean>(!!isInWatchlist);
+  const [loading, setLoading] = useState(false);
 
-  const toggle = () => {
-    const next = !added
-    setAdded(next)
-    onWatchlistChange?.(symbol, next)
-  }
+  const handleToggle = async () => {
+    if (loading) return;
+    setLoading(true);
+
+    const prev = added;
+    // Optimistic toggle
+    setAdded(!prev);
+    try {
+      if (!prev) {
+        const res = await addToWatchlist(symbol, company);
+        if (!res?.ok) throw new Error(res?.error || 'Failed to add');
+        onWatchlistChange?.(symbol, true);
+      } else {
+        const res = await removeFromWatchlist(symbol);
+        if (!res?.ok) throw new Error(res?.error || 'Failed to remove');
+        onWatchlistChange?.(symbol, false);
+      }
+    } catch (e) {
+      // Revert optimistic update on error
+      setAdded(prev);
+      console.error('Watchlist action error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (type === 'icon') {
     return (
       <button
         type="button"
-        aria-label={added ? 'Remove from watchlist' : 'Add to watchlist'}
-        title={added ? 'Remove from watchlist' : 'Add to watchlist'}
-        onClick={toggle}
-        className={`watchlist-icon-btn ${added ? 'watchlist-icon-added' : ''}`}
+        onClick={handleToggle}
+        disabled={loading}
+        aria-pressed={added}
+        className={cn('watchlist-icon-btn', added && 'watchlist-icon-added')}
+        title={added ? 'Remove from Watchlist' : 'Add to Watchlist'}
       >
         <span className="watchlist-icon">
-          {added ? <Star className="star-icon" /> : <StarOff className="star-icon" />}
+          {showTrashIcon && added ? (
+            <Trash2 className="trash-icon" />
+          ) : (
+            <Star className="star-icon" fill={added ? 'currentColor' : 'none'} />
+          )}
         </span>
       </button>
-    )
+    );
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={toggle}
-        className={`watchlist-btn ${added ? '' : ''}`}
-      >
-        {added ? 'Remove from Watchlist' : 'Add to Watchlist'}
-      </button>
-      {showTrashIcon && (
-        <button
-          type="button"
-          aria-label="Remove"
-          title="Remove"
-          onClick={() => {
-            if (added) toggle()
-          }}
-          className="watchlist-icon-btn"
-        >
-          <Trash2 className="trash-icon" />
-        </button>
+    <Button
+      type="button"
+      onClick={handleToggle}
+      disabled={loading}
+      className={cn('watchlist-btn', added && 'watchlist-remove')}
+    >
+      {showTrashIcon && added ? (
+        <Trash2 className="mr-2 h-4 w-4" />
+      ) : (
+        <Star className="mr-2 h-4 w-4" fill={added ? 'currentColor' : 'none'} />
       )}
-    </div>
-  )
-}
+      {added ? 'Remove from Watchlist' : 'Add to Watchlist'}
+    </Button>
+  );
+};
 
-export default WatchlistButton
+export default WatchlistButton;

@@ -26,8 +26,18 @@ const NavItems = ({initialStocks}: { initialStocks: StockWithWatchlistStatus[]})
                     </li>
                 )
 
+                // If user is on a stock details page, pass current symbol to T/A tab
+                let effectiveHref = href;
+                if (href === '/ta') {
+                    const match = pathname.match(/\/stocks\/([^/]+)/i);
+                    if (match?.[1]) {
+                        const sym = decodeURIComponent(match[1]).toUpperCase();
+                        effectiveHref = `/ta?symbol=${encodeURIComponent(sym)}`;
+                    }
+                }
+
                 return <li key={href}>
-                    <Link href={href} className={`hover:text-yellow-500 transition-colors ${
+                    <Link href={effectiveHref} className={`hover:text-yellow-500 transition-colors ${
                         isActive(href) ? 'text-gray-100' : ''
                     }`}>
                         {label}

@@ -215,6 +215,17 @@ declare global {
         threshold: number;
         changePercent?: number;
     };
+
+    // Lightweight Charts types (simplified)
+    type UTCTimestamp = number;
+    type CandleDataPoint = {
+        time: UTCTimestamp;
+        open: number;
+        high: number;
+        low: number;
+        close: number;
+        volume?: number;
+    };
 }
 
 export {};

@@ -1,7 +1,8 @@
 export const NAV_ITEMS = [
     { href: '/', label: 'Dashboard' },
     { href: '/search', label: 'Search' },
-    // { href: '/watchlist', label: 'Watchlist' },
+    { href: '/watchlist', label: 'Watchlist' },
+    { href: '/ta', label: 'T/A' },
 ];
 
 // Sign-up form select options
@@ -182,10 +183,10 @@ export const SYMBOL_INFO_WIDGET_CONFIG = (symbol: string) => ({
 export const CANDLE_CHART_WIDGET_CONFIG = (symbol: string) => ({
     allow_symbol_change: false,
     calendar: false,
-    details: true,
+    details: false,
     hide_side_toolbar: true,
-    hide_top_toolbar: false,
-    hide_legend: false,
+    hide_top_toolbar: true,
+    hide_legend: true,
     hide_volume: false,
     hotlist: false,
     interval: 'D',
@@ -210,7 +211,7 @@ export const BASELINE_WIDGET_CONFIG = (symbol: string) => ({
     calendar: false,
     details: false,
     hide_side_toolbar: true,
-    hide_top_toolbar: false,
+    hide_top_toolbar: true,
     hide_legend: false,
     hide_volume: false,
     hotlist: false,
