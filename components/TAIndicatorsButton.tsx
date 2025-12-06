@@ -38,6 +38,16 @@ const TAIndicatorsButton = () => {
   const isWaveTrend = selected.has("wavetrend");
   const isDMI = selected.has("dmi");
   const isMFI = selected.has("mfi");
+  const isSmi = selected.has("smi");
+  const isAO = selected.has("ao");
+  const isRSI = selected.has("rsi");
+  const isCCI = selected.has("cci");
+  const isWPR = selected.has("wpr");
+  const isDI = selected.has("di");
+  const isCMF = selected.has("cmf");
+  const isAD = selected.has("ad");
+  const isNetVol = selected.has("netvol");
+  const isMADR = selected.has("madr");
 
   return (
     <DropdownMenu>
@@ -66,6 +76,46 @@ const TAIndicatorsButton = () => {
         <DropdownMenuItem onClick={() => toggle("mfi")} className="cursor-pointer flex items-center gap-2">
           <Check className={`h-4 w-4 ${isMFI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
           Money Flow Index (14)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("smi")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isSmi ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           SMI Ergodic Indicator (20, 5, 5)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("ao")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isAO ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Awesome Oscillator
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("rsi")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isRSI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Relative Strength Index (14)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("cci")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isCCI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Commodity Channel Index (20)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("wpr")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isWPR ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Williams %R (14)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("di")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isDI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Demand Index (19)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("cmf")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isCMF ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Chaikin Money Flow (20)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("ad")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isAD ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Accumulation/Distribution
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("netvol")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isNetVol ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Net Volume
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => toggle("madr")} className="cursor-pointer flex items-center gap-2">
+           <Check className={`h-4 w-4 ${isMADR ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
+           Moving Average Deviation Rate (25)
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
