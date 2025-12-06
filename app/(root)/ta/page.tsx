@@ -53,7 +53,11 @@ const TAPage = async (props: TAProps) => {
   const macdFast = Number((search as any).macd_fast) || 12;
   const macdSlow = Number((search as any).macd_slow) || 26;
   const macdSig = Number((search as any).macd_sig) || 9;
-  const rsiLen = Number((search as any).rsi_len) || 14;
+
+  const stochRsiLen = Number((search as any).stoch_rsi_len) || 14;
+  const stochLen = Number((search as any).stoch_len) || 14;
+  const stochK = Number((search as any).stoch_k) || 3;
+  const stochD = Number((search as any).stoch_d) || 3;
 
   const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 730) : [];
   const scriptBase = "https://s3.tradingview.com/external-embedding/embed-widget-";
@@ -103,7 +107,7 @@ const TAPage = async (props: TAProps) => {
     | { k: { time: UTCTimestamp; value: number }[]; d: { time: UTCTimestamp; value: number }[] }
     | undefined;
   if (candles.length > 0 && indicators.has('stochrsi')) {
-    const srsi = computeStochRSI(candles.map((c) => ({ time: c.time, close: c.close })));
+    const srsi = computeStochRSI(candles.map((c) => ({ time: c.time, close: c.close })),stochRsiLen,stochLen,stochK,stochD);
     const k = srsi
       .filter((p) => typeof p.k === 'number')
       .map((p) => ({ time: p.time, value: p.k as number }));
@@ -425,13 +429,14 @@ const TAPage = async (props: TAProps) => {
                         stochSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
                       }
                     }
-                    // If equal, omit
                   }
                 } catch {}
 
                 return (
                   <div className="text-gray-400 mb-1 flex items-center gap-2">
-                    <span>Stochastic RSI (14, 14, 3, 3)</span>
+                    <span>
+                        {`Stochastic RSI (${stochRsiLen}, ${stochLen}, ${stochK}, ${stochD})`}
+                    </span>
                     {stochSignal && (
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${stochSignal.className}`}>
                         {stochSignal.label}
@@ -440,7 +445,7 @@ const TAPage = async (props: TAProps) => {
                   </div>
                 );
               })()}
-              <LightweightStochRSIChart k={stochRsiData.k} d={stochRsiData.d} />
+              <LightweightStochRSIChart key={`stoch-${stochRsiLen}-${stochLen}-${stochK}-${stochD}`} k={stochRsiData.k} d={stochRsiData.d} />
             </div>
           )}
           {waveTrendData && (

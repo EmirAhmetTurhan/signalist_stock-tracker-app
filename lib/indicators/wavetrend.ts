@@ -1,6 +1,3 @@
-// WaveTrend with Crosses [LazyBear] utilities
-// Default params: n1=10, n2=21, signal=4
-
 export type WTInput = {
   time: UTCTimestamp;
   high: number;

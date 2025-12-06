@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,19 +25,22 @@ export default function TAIndicatorSettings() {
     const [macdSlow, setMacdSlow] = useState(searchParams.get("macd_slow") || "26");
     const [macdSignal, setMacdSignal] = useState(searchParams.get("macd_sig") || "9");
 
-    const [rsiLength, setRsiLength] = useState(searchParams.get("rsi_len") || "14");
+    const [stochRsiLen, setStochRsiLen] = useState(searchParams.get("stoch_rsi_len") || "14");
+    const [stochLen, setStochLen] = useState(searchParams.get("stoch_len") || "14");
+    const [stochK, setStochK] = useState(searchParams.get("stoch_k") || "3");
+    const [stochD, setStochD] = useState(searchParams.get("stoch_d") || "3");
 
     const indParam = searchParams.get("ind") || "";
     const indicators = new Set(indParam.split(",").filter(Boolean));
-    const showMacd = indicators.has("macd");
-    const showRsi = indicators.has("rsi");
 
-    if (!showMacd && !showRsi) return null;
+    const showMacd = indicators.has("macd");
+    const showStoch = indicators.has("stochrsi");
+
+    if (!showMacd && !showStoch) return null;
 
     const handleSave = () => {
         const params = new URLSearchParams(searchParams.toString());
 
-        // MACD Ayarlarını URL'e yaz
         if (showMacd) {
             params.set("macd_fast", macdFast);
             params.set("macd_slow", macdSlow);
@@ -48,18 +51,21 @@ export default function TAIndicatorSettings() {
             params.delete("macd_sig");
         }
 
-        if (showRsi) {
-            params.set("rsi_len", rsiLength);
+        if (showStoch) {
+            params.set("stoch_rsi_len", stochRsiLen);
+            params.set("stoch_len", stochLen);
+            params.set("stoch_k", stochK);
+            params.set("stoch_d", stochD);
         } else {
-            params.delete("rsi_len");
+            params.delete("stoch_rsi_len");
+            params.delete("stoch_len");
+            params.delete("stoch_k");
+            params.delete("stoch_d");
         }
 
         const newUrl = `${pathname}?${params.toString()}`;
-
         router.replace(newUrl);
-
         router.refresh();
-
         setOpen(false);
     };
 
@@ -76,35 +82,32 @@ export default function TAIndicatorSettings() {
                 </DialogHeader>
 
                 <div className="grid gap-6 py-4">
-                    {/* MACD AYARLARI */}
+
                     {showMacd && (
                         <div className="grid gap-3 border-b border-gray-700 pb-4">
                             <h4 className="font-medium text-yellow-500">MACD</h4>
                             <div className="grid grid-cols-3 gap-2">
-                                <div className="grid gap-1">
-                                    <Label htmlFor="macdFast" className="text-xs text-gray-400">Fast Length</Label>
+                                <div>
+                                    <Label className="text-xs text-gray-400">Fast Length</Label>
                                     <Input
-                                        id="macdFast"
                                         type="number"
                                         value={macdFast}
                                         onChange={(e) => setMacdFast(e.target.value)}
                                         className="bg-[#0f0f0f] border-gray-600 h-8"
                                     />
                                 </div>
-                                <div className="grid gap-1">
-                                    <Label htmlFor="macdSlow" className="text-xs text-gray-400">Slow Length</Label>
+                                <div>
+                                    <Label className="text-xs text-gray-400">Slow Length</Label>
                                     <Input
-                                        id="macdSlow"
                                         type="number"
                                         value={macdSlow}
                                         onChange={(e) => setMacdSlow(e.target.value)}
                                         className="bg-[#0f0f0f] border-gray-600 h-8"
                                     />
                                 </div>
-                                <div className="grid gap-1">
-                                    <Label htmlFor="macdSig" className="text-xs text-gray-400">Signal</Label>
+                                <div>
+                                    <Label className="text-xs text-gray-400">Signal</Label>
                                     <Input
-                                        id="macdSig"
                                         type="number"
                                         value={macdSignal}
                                         onChange={(e) => setMacdSignal(e.target.value)}
@@ -115,25 +118,53 @@ export default function TAIndicatorSettings() {
                         </div>
                     )}
 
-                    {showRsi && (
-                        <div className="grid gap-3">
-                            <h4 className="font-medium text-yellow-500">RSI</h4>
-                            <div className="grid gap-1">
-                                <Label htmlFor="rsiLen" className="text-xs text-gray-400">Length</Label>
-                                <Input
-                                    id="rsiLen"
-                                    type="number"
-                                    value={rsiLength}
-                                    onChange={(e) => setRsiLength(e.target.value)}
-                                    className="bg-[#0f0f0f] border-gray-600 h-8"
-                                />
+                    {showStoch && (
+                        <div className="grid gap-3 border-b border-gray-700 pb-4">
+                            <h4 className="font-medium text-yellow-500">Stochastic RSI</h4>
+                            <div className="grid grid-cols-4 gap-2">
+                                <div>
+                                    <Label className="text-xs text-gray-400">RSI Len</Label>
+                                    <Input
+                                        type="number"
+                                        value={stochRsiLen}
+                                        onChange={(e) => setStochRsiLen(e.target.value)}
+                                        className="bg-[#0f0f0f] border-gray-600 h-8"
+                                    />
+                                </div>
+                                <div>
+                                    <Label className="text-xs text-gray-400">Stoch Len</Label>
+                                    <Input
+                                        type="number"
+                                        value={stochLen}
+                                        onChange={(e) => setStochLen(e.target.value)}
+                                        className="bg-[#0f0f0f] border-gray-600 h-8"
+                                    />
+                                </div>
+                                <div>
+                                    <Label className="text-xs text-gray-400">K</Label>
+                                    <Input
+                                        type="number"
+                                        value={stochK}
+                                        onChange={(e) => setStochK(e.target.value)}
+                                        className="bg-[#0f0f0f] border-gray-600 h-8"
+                                    />
+                                </div>
+                                <div>
+                                    <Label className="text-xs text-gray-400">D</Label>
+                                    <Input
+                                        type="number"
+                                        value={stochD}
+                                        onChange={(e) => setStochD(e.target.value)}
+                                        className="bg-[#0f0f0f] border-gray-600 h-8"
+                                    />
+                                </div>
                             </div>
                         </div>
                     )}
                 </div>
 
                 <DialogFooter>
-                    <Button onClick={handleSave} className="bg-yellow-500 text-black hover:bg-yellow-400">
+                    <Button onClick={handleSave} className="bg-yellow-500 text-black hover:bg-yellow-400 w-full">
                         Save Changes
                     </Button>
                 </DialogFooter>
