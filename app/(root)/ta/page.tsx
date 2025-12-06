@@ -16,6 +16,7 @@ import LightweightCMFChart from "@/components/LightweightCMFChart";
 import LightweightADChart from "@/components/LightweightADChart";
 import LightweightNetVolumeChart from "@/components/LightweightNetVolumeChart";
 import LightweightMADRChart from "@/components/LightweightMADRChart";
+import TAIndicatorSettings from "@/components/TAIndicatorSettings";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import { searchStocks, getDailyCandles, fetchJSON } from "@/lib/actions/finnhub.actions";
 import { CANDLE_CHART_WIDGET_CONFIG } from "@/lib/constants";
@@ -35,6 +36,10 @@ import { computeAD } from "@/lib/indicators/ad";
 import { computeNetVolume } from "@/lib/indicators/net_volume";
 import { computeMADR } from "@/lib/indicators/madr";
 
+// Ensure this page is always rendered dynamically so search param changes (like MACD settings)
+// immediately reflect in the UI without stale caching.
+export const dynamic = 'force-dynamic';
+
 type TAProps = {
   searchParams?: Promise<{ symbol?: string }>;
 };
@@ -45,7 +50,12 @@ const TAPage = async (props: TAProps) => {
   const symbol = (search.symbol || "").toUpperCase();
   const indParam = String((search as any).ind || "");
 
-  const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 240) : [];
+  const macdFast = Number((search as any).macd_fast) || 12;
+  const macdSlow = Number((search as any).macd_slow) || 26;
+  const macdSig = Number((search as any).macd_sig) || 9;
+  const rsiLen = Number((search as any).rsi_len) || 14;
+
+  const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 730) : [];
   const scriptBase = "https://s3.tradingview.com/external-embedding/embed-widget-";
 
   // Best-effort fetch of company logo for the selected symbol
@@ -72,7 +82,7 @@ const TAPage = async (props: TAProps) => {
     | { macd: { time: UTCTimestamp; value: number }[]; signal: { time: UTCTimestamp; value: number }[]; histogram: { time: UTCTimestamp; value: number; color: string }[] }
     | undefined;
   if (candles.length > 0 && indicators.has('macd')) {
-    const macdSeries = computeMACD(candles.map((c) => ({ time: c.time, close: c.close })));
+    const macdSeries = computeMACD(candles.map((c) => ({ time: c.time, close: c.close })),macdFast,macdSlow,macdSig);
     const macd = macdSeries
       .filter((p) => typeof p.macd === 'number')
       .map((p) => ({ time: p.time, value: p.macd as number }));
@@ -195,7 +205,11 @@ const TAPage = async (props: TAProps) => {
     let rsiData: { rsi: { time: number; value: number }[]; ma: { time: number; value: number }[] } | undefined;
 
     if (candles.length > 0 && indicators.has('rsi')) {
-        const rsiRes = computeRSI(candles.map((c) => ({ time: c.time, close: c.close })));
+    const rsiRes = computeRSI(
+      candles.map((c) => ({ time: c.time, close: c.close })),
+      rsiLen,
+      rsiLen
+    );
 
         const rsiLine = rsiRes
             .filter((p) => typeof p.rsi === 'number')
@@ -307,6 +321,7 @@ const TAPage = async (props: TAProps) => {
         <h1 className="text-2xl font-semibold text-gray-100">T/A</h1>
         <div className="flex items-center gap-2">
           <TAIndicatorsButton />
+          <TAIndicatorSettings />
           <TASearch initialStocks={initialStocks} />
         </div>
       </div>
@@ -374,7 +389,7 @@ const TAPage = async (props: TAProps) => {
 
                 return (
                   <div className="text-gray-400 mb-1 flex items-center gap-2">
-                    <span>MACD (12, 26, 9)</span>
+                    <span>{`MACD (${macdFast}, ${macdSlow}, ${macdSig})`}</span>
                     {macdSignal && (
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${macdSignal.className}`}>
                         {macdSignal.label}
@@ -383,8 +398,8 @@ const TAPage = async (props: TAProps) => {
                   </div>
                 );
               })()}
-              <LightweightMACDChart macd={macdData.macd} signal={macdData.signal} histogram={macdData.histogram} />
-            </div>
+              <LightweightMACDChart key={`macd-${symbol}-${macdFast}-${macdSlow}-${macdSig}`} macd={macdData.macd} signal={macdData.signal} histogram={macdData.histogram} />
+              </div>
           )}
           {stochRsiData && (
             <div className="mt-4">
@@ -693,7 +708,7 @@ const TAPage = async (props: TAProps) => {
 
                         return (
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Relative Strength Index (14)</span>
+                                <span>{`Relative Strength Index (${rsiLen})`}</span>
                                 {rsiSignal && (
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${rsiSignal.className}`}>
                     {rsiSignal.label}
@@ -702,7 +717,7 @@ const TAPage = async (props: TAProps) => {
                             </div>
                         );
                     })()}
-                    <LightweightRSIChart rsi={rsiData.rsi} ma={rsiData.ma} />
+                    <LightweightRSIChart key={`rsi-${symbol}-${rsiLen}`} rsi={rsiData.rsi} ma={rsiData.ma} />
                 </div>
             )}
 
