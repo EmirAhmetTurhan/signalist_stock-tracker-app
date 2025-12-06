@@ -13,19 +13,18 @@ export type MACDOutput = {
   histogram?: number;
 };
 
+// TradingView's ta.ema seeds the EMA with the first value instead of an SMA warm-up.
+// Using that approach here ensures MACD values match TradingView more closely.
 function ema(values: number[], period: number): (number | undefined)[] {
+  const n = values.length;
+  const out: (number | undefined)[] = new Array(n).fill(undefined);
+  if (n === 0) return out;
+
   const k = 2 / (period + 1);
-  const out: (number | undefined)[] = new Array(values.length).fill(undefined);
-  if (values.length < period) return out;
-
-  // seed with SMA
-  let sum = 0;
-  for (let i = 0; i < period; i++) sum += values[i] ?? 0;
-  let prev = sum / period;
-  out[period - 1] = prev;
-
-  for (let i = period; i < values.length; i++) {
-    const v = values[i] ?? 0;
+  let prev = Number(values[0] ?? 0);
+  out[0] = prev;
+  for (let i = 1; i < n; i++) {
+    const v = Number(values[i] ?? 0);
     prev = v * k + prev * (1 - k);
     out[i] = prev;
   }
