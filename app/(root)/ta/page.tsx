@@ -6,6 +6,16 @@ import LightweightStochRSIChart from "@/components/LightweightStochRSIChart";
 import LightweightWaveTrendChart from "@/components/LightweightWaveTrendChart";
 import LightweightDMIChart from "@/components/LightweightDMIChart";
 import LightweightMFIChart from "@/components/LightweightMFIChart";
+import LightweightSMIChart from "@/components/LightweightSMIChart";
+import LightweightAOChart from "@/components/LightweightAOChart";
+import LightweightRSIChart from "@/components/LightweightRSIChart";
+import LightweightCCIChart from "@/components/LightweightCCIChart";
+import LightweightWPRChart from "@/components/LightweightWPRChart";
+import LightweightDIChart from "@/components/LightweightDIChart";
+import LightweightCMFChart from "@/components/LightweightCMFChart";
+import LightweightADChart from "@/components/LightweightADChart";
+import LightweightNetVolumeChart from "@/components/LightweightNetVolumeChart";
+import LightweightMADRChart from "@/components/LightweightMADRChart";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import { searchStocks, getDailyCandles, fetchJSON } from "@/lib/actions/finnhub.actions";
 import { CANDLE_CHART_WIDGET_CONFIG } from "@/lib/constants";
@@ -14,6 +24,16 @@ import { computeStochRSI } from "@/lib/indicators/stochrsi";
 import { computeWaveTrend } from "@/lib/indicators/wavetrend";
 import { computeDMI } from "@/lib/indicators/dmi";
 import { computeMFI } from "@/lib/indicators/mfi";
+import { computeSMI } from "@/lib/indicators/smi";
+import { computeAO } from "@/lib/indicators/ao";
+import { computeRSI } from "@/lib/indicators/rsi";
+import { computeCCI } from "@/lib/indicators/cci";
+import { computeWPR } from "@/lib/indicators/wpr";
+import { computeDemandIndex } from "@/lib/indicators/demand_index";
+import { computeCMF } from "@/lib/indicators/cmf";
+import { computeAD } from "@/lib/indicators/ad";
+import { computeNetVolume } from "@/lib/indicators/net_volume";
+import { computeMADR } from "@/lib/indicators/madr";
 
 type TAProps = {
   searchParams?: Promise<{ symbol?: string }>;
@@ -133,6 +153,153 @@ const TAPage = async (props: TAProps) => {
       .map((p) => ({ time: p.time, value: p.mfi as number }));
     mfiData = { mfi };
   }
+
+    let smiData:
+        | { smi: { time: number; value: number }[]; signal: { time: number; value: number }[]; histogram: { time: number; value: number; color: string }[] }
+        | undefined;
+
+    if (candles.length > 0 && indicators.has('smi')) {
+        const smiSeries = computeSMI(candles.map((c) => ({ time: c.time, close: c.close })));
+
+        const smi = smiSeries
+            .filter((p) => typeof p.smi === 'number')
+            .map((p) => ({ time: p.time, value: p.smi as number }));
+
+        const signal = smiSeries
+            .filter((p) => typeof p.signal === 'number')
+            .map((p) => ({ time: p.time, value: p.signal as number }));
+
+        const histogram = smiSeries
+            .filter((p) => typeof p.histogram === 'number')
+            .map((p) => ({
+                time: p.time,
+                value: p.histogram as number,
+                // Histogram rengi: Pozitif ve artıyorsa koyu yeşil, pozitif ama azalıyorsa açık yeşil (momentum kaybı) vb.
+                // Basitlik için: > 0 Yeşil, < 0 Kırmızı
+                color: (p.histogram as number) >= 0 ? '#0db27a' : '#ef4444',
+            }));
+
+        smiData = { smi, signal, histogram };
+    }
+
+    let aoData: { time: number; value: number; color?: string }[] | undefined;
+
+    if (candles.length > 0 && indicators.has('ao')) {
+        aoData = computeAO(candles.map((c) => ({
+            time: c.time,
+            high: c.high,
+            low: c.low
+        })));
+    }
+
+    let rsiData: { rsi: { time: number; value: number }[]; ma: { time: number; value: number }[] } | undefined;
+
+    if (candles.length > 0 && indicators.has('rsi')) {
+        const rsiRes = computeRSI(candles.map((c) => ({ time: c.time, close: c.close })));
+
+        const rsiLine = rsiRes
+            .filter((p) => typeof p.rsi === 'number')
+            .map((p) => ({ time: p.time, value: p.rsi as number }));
+
+        const maLine = rsiRes
+            .filter((p) => typeof p.ma === 'number')
+            .map((p) => ({ time: p.time, value: p.ma as number }));
+
+        rsiData = { rsi: rsiLine, ma: maLine };
+    }
+
+    let cciData: { cci: { time: number; value: number }[]; ma: { time: number; value: number }[] } | undefined;
+
+    if (candles.length > 0 && indicators.has('cci')) {
+        const cciRes = computeCCI(candles.map((c) => ({
+            time: c.time,
+            high: c.high,
+            low: c.low,
+            close: c.close
+        })), 20, 14);
+
+        const cciLine = cciRes
+            .filter((p) => typeof p.cci === 'number')
+            .map((p) => ({ time: p.time, value: p.cci as number }));
+
+        const maLine = cciRes
+            .filter((p) => typeof p.ma === 'number')
+            .map((p) => ({ time: p.time, value: p.ma as number }));
+
+        cciData = { cci: cciLine, ma: maLine };
+    }
+
+    let wprData: { time: number; value: number }[] | undefined;
+
+    if (candles.length > 0 && indicators.has('wpr')) {
+        wprData = computeWPR(candles.map((c) => ({
+            time: c.time,
+            high: c.high,
+            low: c.low,
+            close: c.close
+        })), 14);
+    }
+
+    let diData: { time: number; value: number }[] | undefined;
+
+    if (candles.length > 0 && indicators.has('di')) {
+        diData = computeDemandIndex(candles.map((c) => ({
+            time: c.time,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume || 0
+        })), 19);
+    }
+
+    let cmfData: { time: number; value: number }[] | undefined;
+
+    if (candles.length > 0 && indicators.has('cmf')) {
+        cmfData = computeCMF(candles.map((c) => ({
+            time: c.time,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume || 0
+        })), 20);
+    }
+
+    let adData: { time: number; value: number }[] | undefined;
+    const calculateSMA = (data: number[], window: number) => {
+        if (data.length < window) return null;
+        let sum = 0;
+        for(let i=0; i<window; i++) sum += data[data.length - 1 - i];
+        return sum / window;
+    };
+
+    if (candles.length > 0 && indicators.has('ad')) {
+        adData = computeAD(candles.map((c) => ({
+            time: c.time,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume || 0
+        })));
+    }
+
+    let nvData: { time: number; value: number; color: string }[] | undefined;
+
+    if (candles.length > 0 && indicators.has('netvol')) {
+        nvData = computeNetVolume(candles.map((c) => ({
+            time: c.time,
+            close: c.close,
+            volume: c.volume || 0
+        })));
+    }
+
+    let madrData: { time: number; value: number }[] | undefined;
+
+    if (candles.length > 0 && indicators.has('madr')) {
+        madrData = computeMADR(candles.map((c) => ({
+            time: c.time,
+            close: c.close
+        })), 25);
+    }
 
   return (
     <div className="container py-6 flex flex-col gap-6">
@@ -396,6 +563,429 @@ const TAPage = async (props: TAProps) => {
               <LightweightMFIChart mfi={mfiData.mfi} />
             </div>
           )}
+            {smiData && (
+                <div className="mt-4">
+                    {(() => {
+                        let smiSignal: { label: string; className: string } | undefined;
+                        try {
+                            const hist = smiData.histogram || [];
+                            const sLine = smiData.smi || [];
+                            const sigLine = smiData.signal || [];
+
+                            if (hist.length >= 2 && sLine.length > 0 && sigLine.length > 0) {
+                                const lastHist = hist[hist.length - 1]?.value;
+                                const prevHist = hist[hist.length - 2]?.value;
+                                const lastSmi = sLine[sLine.length - 1]?.value;
+                                const lastSig = sigLine[sigLine.length - 1]?.value;
+
+                                if (
+                                    typeof lastHist === 'number' && typeof prevHist === 'number' &&
+                                    typeof lastSmi === 'number' && typeof lastSig === 'number'
+                                ) {
+                                    if (lastSmi > lastSig) {
+                                        if (lastHist > prevHist) {
+                                            smiSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                        } else {
+                                            smiSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                        }
+                                    } else if (lastSmi < lastSig) {
+                                        if (lastHist < prevHist) {
+                                            smiSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                        } else {
+                                            smiSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                        }
+                                    }
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>SMI Ergodic Indicator (20, 5, 5)</span>
+                                {smiSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${smiSignal.className}`}>
+                    {smiSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightSMIChart
+                        smi={smiData.smi}
+                        signal={smiData.signal}
+                        histogram={smiData.histogram}
+                    />
+                </div>
+            )}
+            {aoData && (
+                <div className="mt-4">
+                    {(() => {
+                        let aoSignal: { label: string; className: string } | undefined;
+                        try {
+                            if (aoData.length >= 2) {
+                                const current = aoData[aoData.length - 1];
+                                const prev = aoData[aoData.length - 2];
+                                const isRising = current.value > prev.value;
+                                const isPositive = current.value > 0;
+
+                                if (isPositive) {
+                                    if (isRising) {
+                                        aoSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                    } else {
+                                        aoSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                    }
+                                } else {
+                                    // Negative territory
+                                    if (!isRising) {
+                                        aoSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                    } else {
+                                        aoSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                    }
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Awesome Oscillator</span>
+                                {aoSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${aoSignal.className}`}>
+                    {aoSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightAOChart data={aoData} />
+                </div>
+            )}
+
+            {rsiData && (
+                <div className="mt-4">
+                    {(() => {
+
+                        let rsiSignal: { label: string; className: string } | undefined;
+                        try {
+                            const rArr = rsiData.rsi || [];
+                            const mArr = rsiData.ma || [];
+
+                            if (rArr.length > 0 && mArr.length > 0) {
+                                const lastRSI = rArr[rArr.length - 1].value;
+                                const lastMA = mArr[mArr.length - 1].value;
+
+                                if (lastRSI > lastMA) {
+
+                                    if (lastRSI < 30) {
+                                        rsiSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                    } else {
+                                        rsiSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                    }
+                                } else {
+
+                                    if (lastRSI > 70) {
+                                        rsiSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                    } else {
+                                        rsiSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                    }
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Relative Strength Index (14)</span>
+                                {rsiSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${rsiSignal.className}`}>
+                    {rsiSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightRSIChart rsi={rsiData.rsi} ma={rsiData.ma} />
+                </div>
+            )}
+
+            {cciData && (
+                <div className="mt-4">
+                    {(() => {
+                        let cciSignal: { label: string; className: string } | undefined;
+                        try {
+                            const cArr = cciData.cci || [];
+                            const mArr = cciData.ma || [];
+
+                            if (cArr.length > 0 && mArr.length > 0) {
+                                const lastCCI = cArr[cArr.length - 1].value;
+                                const lastMA = mArr[mArr.length - 1].value;
+
+                                if (lastCCI > lastMA) {
+                                    if (lastCCI < -100) {
+                                        cciSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                    } else {
+                                        cciSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                    }
+                                }
+                                else {
+                                    if (lastCCI > 100) {
+                                        cciSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                    } else {
+                                        cciSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                    }
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Commodity Channel Index (20, 14)</span>
+                                {cciSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cciSignal.className}`}>
+                    {cciSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightCCIChart cci={cciData.cci} ma={cciData.ma} />
+                </div>
+            )}
+
+            {wprData && (
+                <div className="mt-4">
+                    {(() => {
+                        let wprSignal: { label: string; className: string } | undefined;
+                        try {
+                            if (wprData.length >= 2) {
+                                const current = wprData[wprData.length - 1].value;
+                                const prev = wprData[wprData.length - 2].value;
+
+                                if (current < -80) {
+                                    wprSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                } else if (current > -20) {
+                                    wprSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                }
+                                else if (current > prev) {
+                                    wprSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                } else {
+                                    wprSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Williams %R (14)</span>
+                                {wprSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${wprSignal.className}`}>
+                    {wprSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightWPRChart data={wprData} />
+                </div>
+            )}
+
+            {diData && (
+                <div className="mt-4">
+                    {(() => {
+                        let diSignal: { label: string; className: string } | undefined;
+                        try {
+                            if (diData.length >= 2) {
+                                const current = diData[diData.length - 1].value;
+                                const prev = diData[diData.length - 2].value;
+
+                                if (prev < 0 && current > 0) {
+                                    diSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                }
+                                else if (prev > 0 && current < 0) {
+                                    diSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                }
+                                else if (current > 0 && current > prev) {
+                                    diSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                }
+                                else if (current < 0 && current < prev) {
+                                    diSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Demand Index (19)</span>
+                                {diSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${diSignal.className}`}>
+                    {diSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightDIChart data={diData} />
+                </div>
+            )}
+
+            {cmfData && (
+                <div className="mt-4">
+                    {(() => {
+                        let cmfSignal: { label: string; className: string } | undefined;
+                        try {
+                            if (cmfData.length > 0) {
+                                const val = cmfData[cmfData.length - 1].value;
+
+                                if (val > 0.05) {
+                                    cmfSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                } else if (val < -0.05) {
+                                    cmfSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                } else if (val > 0) {
+                                    cmfSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                } else {
+                                    cmfSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Chaikin Money Flow (20)</span>
+                                {cmfSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cmfSignal.className}`}>
+                    {cmfSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightCMFChart data={cmfData} />
+                </div>
+            )}
+
+            {adData && (
+                <div className="mt-4">
+                    {(() => {
+                        let adSignal: { label: string; className: string } | undefined;
+                        try {
+                            if (adData.length > 21) {
+                                const values = adData.map(d => d.value);
+
+                                const currentAD = values[values.length - 1];
+                                const prevAD = values[values.length - 2];
+
+                                const currentSMA = calculateSMA(values, 21);
+                                const prevSMA = calculateSMA(values.slice(0, -1), 21);
+
+                                if (currentSMA !== null && prevSMA !== null) {
+                                    if (prevAD <= prevSMA && currentAD > currentSMA) {
+                                        adSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                    }
+                                    else if (prevAD >= prevSMA && currentAD < currentSMA) {
+                                        adSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                    }
+                                    else if (currentAD > currentSMA) {
+                                        adSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                    }
+                                    else {
+                                        adSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                    }
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Accumulation/Distribution</span>
+                                {adSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${adSignal.className}`}>
+                    {adSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightADChart data={adData} />
+                </div>
+            )}
+
+            {nvData && (
+                <div className="mt-4">
+                    {(() => {
+                        let nvSignal: { label: string; className: string } | undefined;
+                        try {
+                            if (nvData.length >= 2) {
+                                const current = nvData[nvData.length - 1].value;
+                                const prev = nvData[nvData.length - 2].value;
+
+                                if (current > 0) {
+                                    if (current > prev) {
+                                        nvSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                    } else {
+                                        nvSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                    }
+                                }
+                                else if (current < 0) {
+                                    if (current < prev) {
+                                        nvSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                    } else {
+                                        nvSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                    }
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Net Volume</span>
+                                {nvSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${nvSignal.className}`}>
+                    {nvSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightNetVolumeChart data={nvData} />
+                </div>
+            )}
+
+            {madrData && (
+                <div className="mt-4">
+                    {(() => {
+                        let madrSignal: { label: string; className: string } | undefined;
+                        try {
+                            if (madrData.length >= 2) {
+                                const current = madrData[madrData.length - 1].value;
+                                const prev = madrData[madrData.length - 2].value;
+
+                                if (prev < 0 && current > 0) {
+                                    madrSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                }
+                                else if (prev > 0 && current < 0) {
+                                    madrSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                }
+                                else if (current > 0) {
+                                    madrSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                }
+                                else {
+                                    madrSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                }
+                            }
+                        } catch {}
+
+                        return (
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>Moving Average Deviation Rate (25)</span>
+                                {madrSignal && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${madrSignal.className}`}>
+                    {madrSignal.label}
+                  </span>
+                                )}
+                            </div>
+                        );
+                    })()}
+                    <LightweightMADRChart data={madrData} />
+                </div>
+            )}
         </div>
       ) : (
         <div className="text-gray-400">Use the Search button to choose a brand and view its candlestick chart.</div>
