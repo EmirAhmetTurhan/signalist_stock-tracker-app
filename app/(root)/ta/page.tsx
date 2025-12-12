@@ -80,6 +80,10 @@ const TAPage = async (props: TAProps) => {
 
   const wprLen = Number((search as any).wpr_len) || 14;
 
+  const diLen = Number((search as any).di_len) || 10;
+  const diSmooth = Number((search as any).di_smooth) || 10;
+  const diK = Number((search as any).di_k) || 2;
+
   const cmfLen = Number((search as any).cmf_len) || 20;
 
   const madrLen = Number((search as any).madr_len) || 21;
@@ -286,8 +290,9 @@ const TAPage = async (props: TAProps) => {
             high: c.high,
             low: c.low,
             close: c.close,
+            open: c.open,
             volume: c.volume || 0
-        })), 19);
+        })), diLen, diSmooth, diK);
     }
 
     let cmfData: { time: number; value: number }[] | undefined;
@@ -325,6 +330,7 @@ const TAPage = async (props: TAProps) => {
     if (candles.length > 0 && indicators.has('netvol')) {
         nvData = computeNetVolume(candles.map((c) => ({
             time: c.time,
+            open: c.open,
             close: c.close,
             volume: c.volume || 0
         })));
@@ -831,33 +837,36 @@ const TAPage = async (props: TAProps) => {
                 <div className="mt-4">
                     {(() => {
                         let diSignal: { label: string; className: string } | undefined;
+
                         try {
                             if (diData.length >= 2) {
-                                const current = diData[diData.length - 1].value;
-                                const prev = diData[diData.length - 2].value;
+                                const current = diData[diData.length - 1].value; // Son değer
+                                const prev = diData[diData.length - 2].value;    // Bir önceki değer
 
-                                if (prev < 0 && current > 0) {
-                                    diSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                }
-                                else if (prev > 0 && current < 0) {
-                                    diSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                }
-                                else if (current > 0 && current > prev) {
-                                    diSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                }
-                                else if (current < 0 && current < prev) {
-                                    diSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                if (current > 0) {
+                                    if (current > prev) {
+                                        diSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
+                                    } else {
+                                        diSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
+                                    }
+                                } else {
+                                    if (current < prev) {
+                                        diSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
+                                    } else {
+                                        diSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
+                                    }
                                 }
                             }
                         } catch {}
 
                         return (
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Demand Index (19)</span>
+                                <span>Demand Index ({diLen}, {diK}, {diSmooth})</span>
+
                                 {diSignal && (
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${diSignal.className}`}>
-                    {diSignal.label}
-                  </span>
+                                        {diSignal.label}
+                                    </span>
                                 )}
                             </div>
                         );

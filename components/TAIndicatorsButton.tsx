@@ -2,124 +2,227 @@
 
 import { useMemo } from "react";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuCheckboxItem, // Bu bileşeni import ediyoruz
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Check } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 const TAIndicatorsButton = () => {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
 
-  const symbol = searchParams.get("symbol") || "";
-  const indParam = searchParams.get("ind") || "";
-  const selected = useMemo(() => new Set(indParam.split(",").filter(Boolean).map((s) => s.toLowerCase())), [indParam]);
+    const symbol = searchParams.get("symbol") || "";
+    const indParam = searchParams.get("ind") || "";
 
-  const toggle = (key: string) => {
-    const next = new Set(selected);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    const ind = Array.from(next).join(",");
-    const params = new URLSearchParams();
-    if (symbol) params.set("symbol", symbol);
-    if (ind) params.set("ind", ind);
-    const url = `${pathname}?${params.toString()}`;
-    router.replace(url);
-  };
+    const selected = useMemo(() =>
+            new Set(indParam.split(",").filter(Boolean).map((s) => s.trim().toLowerCase())),
+        [indParam]);
 
-  const isMacd = selected.has("macd");
-  const isStochRsi = selected.has("stochrsi");
-  const isWaveTrend = selected.has("wavetrend");
-  const isDMI = selected.has("dmi");
-  const isMFI = selected.has("mfi");
-  const isSmi = selected.has("smi");
-  const isAO = selected.has("ao");
-  const isRSI = selected.has("rsi");
-  const isCCI = selected.has("cci");
-  const isWPR = selected.has("wpr");
-  const isDI = selected.has("di");
-  const isCMF = selected.has("cmf");
-  const isAD = selected.has("ad");
-  const isNetVol = selected.has("netvol");
-  const isMADR = selected.has("madr");
+    const macdFast = searchParams.get("macd_fast") || "12";
+    const macdSlow = searchParams.get("macd_slow") || "26";
+    const macdSig = searchParams.get("macd_sig") || "9";
 
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="secondary" className="search-btn">Indicators</Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="text-gray-100">
-        <DropdownMenuLabel>Indicators</DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-gray-600" />
-        <DropdownMenuItem onClick={() => toggle("macd")} className="cursor-pointer flex items-center gap-2">
-          <Check className={`h-4 w-4 ${isMacd ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-          MACD (12, 26, 9)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("stochrsi")} className="cursor-pointer flex items-center gap-2">
-          <Check className={`h-4 w-4 ${isStochRsi ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-          Stochastic RSI (14, 14, 3, 3)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("wavetrend")} className="cursor-pointer flex items-center gap-2">
-          <Check className={`h-4 w-4 ${isWaveTrend ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-          WaveTrend with Crosses [LazyBear] (10, 21, 4)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("dmi")} className="cursor-pointer flex items-center gap-2">
-          <Check className={`h-4 w-4 ${isDMI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-          Directional Movement Index (14)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("mfi")} className="cursor-pointer flex items-center gap-2">
-          <Check className={`h-4 w-4 ${isMFI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-          Money Flow Index (14)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("smi")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isSmi ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           SMI Ergodic Indicator (20, 5, 5)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("ao")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isAO ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Awesome Oscillator
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("rsi")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isRSI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Relative Strength Index (14)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("cci")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isCCI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Commodity Channel Index (20)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("wpr")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isWPR ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Williams %R (14)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("di")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isDI ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Demand Index (19)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("cmf")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isCMF ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Chaikin Money Flow (20)
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("ad")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isAD ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Accumulation/Distribution
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("netvol")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isNetVol ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Net Volume
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => toggle("madr")} className="cursor-pointer flex items-center gap-2">
-           <Check className={`h-4 w-4 ${isMADR ? 'opacity-100 text-yellow-500' : 'opacity-0'}`} />
-           Moving Average Deviation Rate (25)
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+    const stochRsiLen = searchParams.get("stoch_rsi_len") || "14";
+    const stochLen = searchParams.get("stoch_len") || "14";
+    const stochK = searchParams.get("stoch_k") || "3";
+    const stochD = searchParams.get("stoch_d") || "3";
+
+    const wtAvg = searchParams.get("wt_avg_len") || "10";
+    const wtChan = searchParams.get("wt_channel_len") || "21";
+    const wtMa = searchParams.get("wt_ma_len") || "4";
+
+    const dmiLen = searchParams.get("dmi_di_len") || "14";
+    const dmiAdxSmooth = searchParams.get("dmi_adx_smooth") || "14";
+    const mfiLen = searchParams.get("mfi_period") || "14";
+
+    const smiLong = searchParams.get("smi_long_len") || "20";
+    const smiShort = searchParams.get("smi_short_len") || "5";
+    const smiSig = searchParams.get("smi_sig_len") || "5";
+
+    const rsiLen = searchParams.get("rsi_len") || "14";
+    const rsiMaLen = searchParams.get("rsi_ma_len") || "14";
+
+    const cciLen = searchParams.get("cci_len") || "20";
+    const cciMaLen = searchParams.get("cci_ma_len") || "14";
+
+    const wprLen = searchParams.get("wpr_len") || "14";
+
+    const diLen = searchParams.get("di_len") || "10";
+    const diSmooth = searchParams.get("di_smooth") || "10";
+    const diK = searchParams.get("di_k") || "2";
+
+    const cmfLen = searchParams.get("cmf_len") || "20";
+
+    const madrLen = searchParams.get("madr_len") || "21";
+
+    const toggle = (key: string) => {
+        const params = new URLSearchParams(searchParams.toString());
+
+        const currentIndStr = params.get("ind") || "";
+        const currentSet = new Set(
+            currentIndStr.split(",").filter(Boolean).map(s => s.trim().toLowerCase())
+        );
+
+        if (currentSet.has(key)) {
+            currentSet.delete(key);
+        } else {
+            currentSet.add(key);
+        }
+
+        const newIndStr = Array.from(currentSet).join(",");
+
+        if (newIndStr) {
+            params.set("ind", newIndStr);
+        } else {
+            params.delete("ind");
+        }
+
+        if (symbol) params.set("symbol", symbol);
+
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    };
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="secondary" className="search-btn">Indicators</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="text-gray-100 max-h-[400px] overflow-y-auto">
+                <DropdownMenuLabel>Indicators</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-gray-600" />
+
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("macd")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("macd")}
+                >
+                    MACD ({macdFast}, {macdSlow}, {macdSig})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("stochrsi")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("stochrsi")}
+                >
+                    Stochastic RSI ({stochRsiLen}, {stochLen}, {stochK}, {stochD})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("wavetrend")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("wavetrend")}
+                >
+                    WaveTrend ({wtAvg}, {wtChan}, {wtMa})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("dmi")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("dmi")}
+                >
+                    DMI ({dmiLen}, {dmiAdxSmooth})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("mfi")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("mfi")}
+                >
+                    Money Flow Index ({mfiLen})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("smi")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("smi")}
+                >
+                    SMI Ergodic ({smiLong}, {smiShort}, {smiSig})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("ao")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("ao")}
+                >
+                    Awesome Oscillator
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("rsi")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("rsi")}
+                >
+                    RSI ({rsiLen}, {rsiMaLen})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("cci")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("cci")}
+                >
+                    CCI ({cciLen}, {cciMaLen})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("wpr")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("wpr")}
+                >
+                    Williams %R ({wprLen})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("di")}
+                    onSelect={(e) => {
+                        e.preventDefault();
+                        toggle("di");
+                    }}
+                >
+                    Demand Index ({diLen}, {diK}, {diSmooth})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("cmf")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("cmf")}
+                >
+                    Chaikin Money Flow ({cmfLen})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("ad")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("ad")}
+                >
+                    Accumulation/Distribution
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("netvol")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("netvol")}
+                >
+                    Net Volume
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("madr")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("madr")}
+                >
+                    MADR ({madrLen})
+                </DropdownMenuCheckboxItem>
+
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
 };
 
 export default TAIndicatorsButton;
