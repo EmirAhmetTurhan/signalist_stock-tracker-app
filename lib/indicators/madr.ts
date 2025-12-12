@@ -29,7 +29,7 @@ function sma(values: (number | undefined)[], period: number): (number | undefine
     return out;
 }
 
-export function computeMADR(candles: MADRInput[], period = 25): MADRPoint[] {
+export function computeMADR(candles: MADRInput[], period = 21): MADRPoint[] {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
     const closes = candles.map((c) => c.close);
