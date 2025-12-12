@@ -59,6 +59,31 @@ const TAPage = async (props: TAProps) => {
   const stochK = Number((search as any).stoch_k) || 3;
   const stochD = Number((search as any).stoch_d) || 3;
 
+  const wtAvgLen = Number((search as any).wt_avg_len) || 10;
+  const wtChannelLen = Number((search as any).wt_channel_len) || 21;
+  const wtMaLen = Number((search as any).wt_ma_len) || 4;
+
+  const dmiDiLen = Number((search as any).dmi_di_len) || 14;
+  const dmiAdxSmooth = Number((search as any).dmi_adx_smooth) || 14;
+
+  const mfiPeriod = Number((search as any).mfi_period) || 14;
+
+  const smiLongLen = Number((search as any).smi_long_len) || 20;
+  const smiShortLen = Number((search as any).smi_short_len) || 5;
+  const smiSigLen = Number((search as any).smi_sig_len) || 5;
+
+  const rsiLen = Number((search as any).rsi_len) || 14;
+  const rsiMaLen = Number((search as any).rsi_ma_len) || 14;
+
+  const cciLen = Number((search as any).cci_len) || 20;
+  const cciMaLen = Number((search as any).cci_ma_len) || 14;
+
+  const wprLen = Number((search as any).wpr_len) || 14;
+
+  const cmfLen = Number((search as any).cmf_len) || 20;
+
+  const madrLen = Number((search as any).madr_len) || 21;
+
   const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 730) : [];
   const scriptBase = "https://s3.tradingview.com/external-embedding/embed-widget-";
 
@@ -125,7 +150,7 @@ const TAPage = async (props: TAProps) => {
       }
     | undefined;
   if (candles.length > 0 && indicators.has('wavetrend')) {
-    const wt = computeWaveTrend(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })));
+    const wt = computeWaveTrend(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })),wtAvgLen,wtChannelLen,wtMaLen);
     const wt1 = wt
       .filter((p) => typeof p.wt1 === 'number')
       .map((p) => ({ time: p.time, value: p.wt1 as number }));
@@ -146,7 +171,7 @@ const TAPage = async (props: TAProps) => {
       }
     | undefined;
   if (candles.length > 0 && indicators.has('dmi')) {
-    const dmi = computeDMI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })));
+    const dmi = computeDMI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })),dmiDiLen,dmiAdxSmooth);
     const plusDI = dmi
       .filter((p) => typeof p.plusDI === 'number')
       .map((p) => ({ time: p.time, value: p.plusDI as number }));
@@ -161,7 +186,7 @@ const TAPage = async (props: TAProps) => {
 
   let mfiData: { mfi: { time: UTCTimestamp; value: number }[] } | undefined;
   if (candles.length > 0 && indicators.has('mfi')) {
-    const mfiSeries = computeMFI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume })));
+    const mfiSeries = computeMFI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume })),mfiPeriod);
     const mfi = mfiSeries
       .filter((p) => typeof p.mfi === 'number')
       .map((p) => ({ time: p.time, value: p.mfi as number }));
@@ -173,7 +198,7 @@ const TAPage = async (props: TAProps) => {
         | undefined;
 
     if (candles.length > 0 && indicators.has('smi')) {
-        const smiSeries = computeSMI(candles.map((c) => ({ time: c.time, close: c.close })));
+        const smiSeries = computeSMI(candles.map((c) => ({ time: c.time, close: c.close })),smiLongLen,smiShortLen,smiSigLen);
 
         const smi = smiSeries
             .filter((p) => typeof p.smi === 'number')
@@ -188,8 +213,6 @@ const TAPage = async (props: TAProps) => {
             .map((p) => ({
                 time: p.time,
                 value: p.histogram as number,
-                // Histogram rengi: Pozitif ve artıyorsa koyu yeşil, pozitif ama azalıyorsa açık yeşil (momentum kaybı) vb.
-                // Basitlik için: > 0 Yeşil, < 0 Kırmızı
                 color: (p.histogram as number) >= 0 ? '#0db27a' : '#ef4444',
             }));
 
@@ -210,10 +233,7 @@ const TAPage = async (props: TAProps) => {
 
     if (candles.length > 0 && indicators.has('rsi')) {
     const rsiRes = computeRSI(
-      candles.map((c) => ({ time: c.time, close: c.close })),
-      rsiLen,
-      rsiLen
-    );
+      candles.map((c) => ({ time: c.time, close: c.close })),rsiLen,rsiMaLen);
 
         const rsiLine = rsiRes
             .filter((p) => typeof p.rsi === 'number')
@@ -234,7 +254,7 @@ const TAPage = async (props: TAProps) => {
             high: c.high,
             low: c.low,
             close: c.close
-        })), 20, 14);
+        })),cciLen,cciMaLen);
 
         const cciLine = cciRes
             .filter((p) => typeof p.cci === 'number')
@@ -255,7 +275,7 @@ const TAPage = async (props: TAProps) => {
             high: c.high,
             low: c.low,
             close: c.close
-        })), 14);
+        })),wprLen);
     }
 
     let diData: { time: number; value: number }[] | undefined;
@@ -279,7 +299,7 @@ const TAPage = async (props: TAProps) => {
             low: c.low,
             close: c.close,
             volume: c.volume || 0
-        })), 20);
+        })),cmfLen);
     }
 
     let adData: { time: number; value: number }[] | undefined;
@@ -316,7 +336,7 @@ const TAPage = async (props: TAProps) => {
         madrData = computeMADR(candles.map((c) => ({
             time: c.time,
             close: c.close
-        })), 25);
+        })),madrLen);
     }
 
   return (
@@ -480,7 +500,7 @@ const TAPage = async (props: TAProps) => {
 
                 return (
                   <div className="text-gray-400 mb-1 flex items-center gap-2">
-                    <span>WaveTrend [LazyBear] (10, 21, 4)</span>
+                      <span>{`WaveTrend [LazyBear] (${wtAvgLen}, ${wtChannelLen}, ${wtMaLen})`}</span>
                     {wtSignal && (
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${wtSignal.className}`}>
                         {wtSignal.label}
@@ -528,7 +548,7 @@ const TAPage = async (props: TAProps) => {
 
                 return (
                   <div className="text-gray-400 mb-1 flex items-center gap-2">
-                    <span>Directional Movement Index (14)</span>
+                      <span>Directional Movement Index ({dmiDiLen}, {dmiAdxSmooth})</span>
                     {dmiSignal && (
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${dmiSignal.className}`}>
                         {dmiSignal.label}
@@ -571,7 +591,7 @@ const TAPage = async (props: TAProps) => {
 
                 return (
                   <div className="text-gray-400 mb-1 flex items-center gap-2">
-                    <span>Money Flow Index (14)</span>
+                      <span>Money Flow Index ({mfiPeriod})</span>
                     {mfiSignal && (
                       <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${mfiSignal.className}`}>
                         {mfiSignal.label}
@@ -621,7 +641,7 @@ const TAPage = async (props: TAProps) => {
 
                         return (
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>SMI Ergodic Indicator (20, 5, 5)</span>
+                                <span>{`SMI Ergodic Indicator (${smiLongLen}, ${smiShortLen}, ${smiSigLen})`}</span>
                                 {smiSignal && (
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${smiSignal.className}`}>
                     {smiSignal.label}
@@ -713,7 +733,7 @@ const TAPage = async (props: TAProps) => {
 
                         return (
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`Relative Strength Index (${rsiLen})`}</span>
+                                <span>{`Relative Strength Index (${rsiLen}, ${rsiMaLen})`}</span>
                                 {rsiSignal && (
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${rsiSignal.className}`}>
                     {rsiSignal.label}
@@ -757,7 +777,7 @@ const TAPage = async (props: TAProps) => {
 
                         return (
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Commodity Channel Index (20, 14)</span>
+                                <span>{`Commodity Channel Index (${cciLen}, ${cciMaLen})`}</span>
                                 {cciSignal && (
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cciSignal.className}`}>
                     {cciSignal.label}
@@ -794,7 +814,7 @@ const TAPage = async (props: TAProps) => {
 
                         return (
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Williams %R (14)</span>
+                                <span>Williams %R ({wprLen})</span>
                                 {wprSignal && (
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${wprSignal.className}`}>
                     {wprSignal.label}
@@ -868,7 +888,7 @@ const TAPage = async (props: TAProps) => {
 
                         return (
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Chaikin Money Flow (20)</span>
+                                <span>Chaikin Money Flow ({cmfLen})</span>
                                 {cmfSignal && (
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cmfSignal.className}`}>
                     {cmfSignal.label}
@@ -994,7 +1014,7 @@ const TAPage = async (props: TAProps) => {
 
                         return (
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Moving Average Deviation Rate (25)</span>
+                                <span>Moving Average Deviation Rate ({madrLen})</span>
                                 {madrSignal && (
                                     <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${madrSignal.className}`}>
                     {madrSignal.label}
