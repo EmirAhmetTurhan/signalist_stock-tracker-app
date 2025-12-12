@@ -51,6 +51,10 @@ export default function TAIndicatorSettings() {
 
     const [wprLen, setWprLen] = useState(searchParams.get("wpr_len") || "14");
 
+    const [diLen, setDiLen] = useState(searchParams.get("di_len") || "10");
+    const [diSmooth, setDiSmooth] = useState(searchParams.get("di_smooth") || "10");
+    const [diK, setDiK] = useState(searchParams.get("di_k") || "2");
+
     const [cmfLen, setCmfLen] = useState(searchParams.get("cmf_len") || "20");
 
     const [madrLen, setMadrLen] = useState(searchParams.get("madr_len") || "21");
@@ -67,10 +71,11 @@ export default function TAIndicatorSettings() {
     const showRsi = indicators.has("rsi");
     const showCci = indicators.has("cci");
     const showWpr = indicators.has("wpr");
+    const showDI = indicators.has("di");
     const showCmf = indicators.has("cmf");
     const showMadr = indicators.has("madr");
 
-    if (!showMacd && !showStoch && !showWaveTrend && !showDmi && !showMfi && !showSmi && !showRsi && !showCci && !showWpr && !showCmf && !showMadr) return null;
+    if (!showMacd && !showStoch && !showWaveTrend && !showDmi && !showMfi && !showSmi && !showRsi && !showCci && !showWpr && !showDI && !showCmf && !showMadr) return null;
 
     const handleSave = () => {
         const params = new URLSearchParams(searchParams.toString());
@@ -151,6 +156,16 @@ export default function TAIndicatorSettings() {
             if (wprLen !== "14") params.set("wpr_len", wprLen); else params.delete("wpr_len");
         } else {
             params.delete("wpr_len");
+        }
+
+        if (showDI) {
+            if (diLen !== "10") params.set("di_len", diLen); else params.delete("di_len");
+            if (diSmooth !== "10") params.set("di_smooth", diSmooth); else params.delete("di_smooth");
+            if (diK !== "2") params.set("di_k", diK); else params.delete("di_k");
+        } else {
+            params.delete("di_len");
+            params.delete("di_smooth");
+            params.delete("di_k");
         }
 
         if (showCmf) {
@@ -455,6 +470,45 @@ export default function TAIndicatorSettings() {
                                         onChange={(e) => setWprLen(e.target.value)}
                                         className="bg-[#0f0f0f] border-gray-600 h-8"
                                         min={1}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showDI && (
+                        <div className="grid gap-3 border-b border-gray-700 pb-4">
+                            <h4 className="font-medium text-yellow-500">Demand Index</h4>
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-gray-400">Period (10)</Label>
+                                    <Input
+                                        type="number"
+                                        value={diLen}
+                                        onChange={(e) => setDiLen(e.target.value)}
+                                        className="bg-[#0f0f0f] border-gray-600 h-8"
+                                        min={1}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-gray-400">Price Range (2)</Label>
+                                    <Input
+                                        type="number"
+                                        value={diK}
+                                        onChange={(e) => setDiK(e.target.value)}
+                                        className="bg-[#0f0f0f] border-gray-600 h-8"
+                                        min={0.1}
+                                        step={0.1}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label className="text-xs text-gray-400">Smooth (10)</Label>
+                                    <Input
+                                        type="number"
+                                        value={diSmooth}
+                                        onChange={(e) => setDiSmooth(e.target.value)}
+                                        className="bg-[#0f0f0f] border-gray-600 h-8"
+                                        min={0}
                                     />
                                 </div>
                             </div>

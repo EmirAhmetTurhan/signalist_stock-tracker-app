@@ -1,5 +1,6 @@
 export type NetVolumeInput = {
     time: number; // UTCTimestamp
+    open: number;
     close: number;
     volume: number;
 };
@@ -15,21 +16,14 @@ export function computeNetVolume(candles: NetVolumeInput[]): NetVolumePoint[] {
     const out: NetVolumePoint[] = [];
 
     for (let i = 0; i < candles.length; i++) {
-        if (i === 0) {
-            out.push({ time: candles[i].time, value: 0 });
-            continue;
-        }
-
-        const currentClose = candles[i].close;
-        const prevClose = candles[i - 1].close;
-        const vol = candles[i].volume;
+        const { open, close, volume } = candles[i];
 
         let netVol = 0;
 
-        if (currentClose > prevClose) {
-            netVol = vol;
-        } else if (currentClose < prevClose) {
-            netVol = -vol;
+        if (close > open) {
+            netVol = volume;
+        } else if (close < open) {
+            netVol = -volume;
         }
 
         out.push({

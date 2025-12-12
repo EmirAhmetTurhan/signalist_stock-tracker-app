@@ -3,6 +3,7 @@ export type DIInput = {
     high: number;
     low: number;
     close: number;
+    open: number;
     volume: number;
 };
 
@@ -11,93 +12,124 @@ export type DIPoint = {
     value: number;
 };
 
-function ema(values: number[], period: number): number[] {
+function calculateEMA(values: number[], period: number): number[] {
+    if (values.length === 0) return [];
     const k = 2 / (period + 1);
     const out = new Array(values.length).fill(0);
+
     out[0] = values[0];
+
     for (let i = 1; i < values.length; i++) {
-        out[i] = values[i] * k + out[i - 1] * (1 - k);
+        const val = Number.isFinite(values[i]) ? values[i] : 0;
+        out[i] = val * k + out[i - 1] * (1 - k);
     }
     return out;
 }
 
-function sma(values: number[], period: number): number[] {
+function calculateSMA(values: number[], period: number): number[] {
     const out = new Array(values.length).fill(0);
     let sum = 0;
     for (let i = 0; i < values.length; i++) {
         sum += values[i];
-        if (i >= period) sum -= values[i - period];
-        if (i >= period - 1) out[i] = sum / period;
-        else out[i] = sum / (i + 1);
+        if (i >= period) {
+            sum -= values[i - period];
+        }
+
+        if (i >= period - 1) {
+            out[i] = sum / period;
+        } else {
+            out[i] = sum / (i + 1);
+        }
     }
     return out;
 }
 
-export function computeDemandIndex(candles: DIInput[], length = 19): DIPoint[] {
+function highest(values: number[], index: number, length: number): number {
+    let maxVal = -Infinity;
+    const start = Math.max(0, index - length + 1);
+    for (let i = start; i <= index; i++) {
+        if (values[i] > maxVal) maxVal = values[i];
+    }
+    return maxVal;
+}
+
+function lowest(values: number[], index: number, length: number): number {
+    let minVal = Infinity;
+    const start = Math.max(0, index - length + 1);
+    for (let i = start; i <= index; i++) {
+        if (values[i] < minVal) minVal = values[i];
+    }
+    return minVal;
+}
+
+export function computeDemandIndex(
+    candles: DIInput[],
+    period = 10,
+    smooth = 10,
+    priceRange = 2
+): DIPoint[] {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
-    const prices = candles.map(c => (c.high + c.low + 2 * c.close) / 4);
-    const volumes = candles.map(c => c.volume);
+    const highs = candles.map(c => c.high);
+    const lows = candles.map(c => c.low);
 
-    const avgVol = sma(volumes, length);
-
-    const K = 3;
-
-    const buyPower: number[] = [];
-    const sellPower: number[] = [];
-
+    const rawVaSeries: number[] = [];
     for (let i = 0; i < candles.length; i++) {
-        if (i === 0) {
-            buyPower.push(volumes[i]);
-            sellPower.push(volumes[i]);
-            continue;
-        }
-
-        const P = prices[i];
-        const prevP = prices[i - 1];
-        const V = volumes[i];
-        const vAvg = avgVol[i] || 1;
-
-
-        let priceChange = P - prevP;
-
-        const TR = Math.max(candles[i].high, candles[i-1].close) - Math.min(candles[i].low, candles[i-1].close);
-        const cost = (K * Math.abs(priceChange)) / Math.max(TR, 0.00001); // 0 koruması
-
-        let bp = V;
-        let sp = V;
-
-        if (priceChange > 0) {
-            bp = V;
-            sp = V / Math.exp(cost);
-        }
-        else if (priceChange < 0) {
-            sp = V;
-            bp = V / Math.exp(cost);
-        }
-
-        buyPower.push(bp);
-        sellPower.push(sp);
+        const h = highest(highs, i, priceRange);
+        const l = lowest(lows, i, priceRange);
+        rawVaSeries.push(h - l);
     }
 
-    const smoothBP = ema(buyPower, length);
-    const smoothSP = ema(sellPower, length);
+    const vaSeries = calculateSMA(rawVaSeries, period);
 
-    const out: DIPoint[] = [];
+    const diRaw: number[] = [];
+
     for (let i = 0; i < candles.length; i++) {
-        const b = smoothBP[i];
-        const s = smoothSP[i];
+        const c = candles[i];
+        const open = c.open;
+        const close = c.close;
+        const volume = c.volume;
+
+        let p = open !== 0 ? (close - open) / open : 0;
+
+        let va = vaSeries[i];
+        if (va === 0) va = 1;
+
+        const k = (3 * close) / va;
+
+        p = p * k;
+
+        let bp = 0;
+        let sp = 0;
+
+        if (close > open) {
+            bp = volume;
+            sp = p !== 0 ? volume / p : volume; // p 0 ise koruma
+        } else {
+            bp = p !== 0 ? volume / p : volume;
+            sp = volume;
+        }
 
         let di = 0;
-        if ((b + s) !== 0) {
-            di = (100 * (b - s)) / (b + s);
+
+        const absBp = Math.abs(bp);
+        const absSp = Math.abs(sp);
+
+        if (absBp > absSp && bp !== 0) {
+            di = sp / bp;
+        } else if (sp !== 0) {
+            di = bp / sp;
+        } else {
+            di = 0;
         }
 
-        out.push({
-            time: candles[i].time,
-            value: di
-        });
+        diRaw.push(di);
     }
 
-    return out;
+    const diSmoothed = calculateEMA(diRaw, smooth);
+
+    return candles.map((c, i) => ({
+        time: c.time,
+        value: diSmoothed[i]
+    }));
 }
