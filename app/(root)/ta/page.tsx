@@ -36,1011 +36,584 @@ import { computeAD } from "@/lib/indicators/ad";
 import { computeNetVolume } from "@/lib/indicators/net_volume";
 import { computeMADR } from "@/lib/indicators/madr";
 
-// Ensure this page is always rendered dynamically so search param changes (like MACD settings)
-// immediately reflect in the UI without stale caching.
 export const dynamic = 'force-dynamic';
 
 type TAProps = {
-  searchParams?: Promise<{ symbol?: string }>;
+    searchParams?: Promise<{ symbol?: string }>;
+};
+
+type SignalLabel = "STRONG BUY" | "WEAK BUY" | "STRONG SELL" | "WEAK SELL" | "NEUTRAL";
+
+const SIGNAL_STYLES = {
+    "STRONG BUY": "bg-green-900/40 text-green-300 border border-green-700",
+    "WEAK BUY": "bg-green-900/20 text-green-300/80 border border-green-700/60",
+    "STRONG SELL": "bg-red-900/40 text-red-300 border border-red-700",
+    "WEAK SELL": "bg-red-900/20 text-red-300/80 border border-red-700/60",
+    "NEUTRAL": "bg-gray-800 text-gray-400 border border-gray-700"
+};
+
+const calculateSMA = (data: number[], window: number) => {
+    if (data.length < window) return null;
+    let sum = 0;
+    for(let i=0; i<window; i++) sum += data[data.length - 1 - i];
+    return sum / window;
 };
 
 const TAPage = async (props: TAProps) => {
-  const initialStocks = await searchStocks();
-  const search = (await props.searchParams) || {};
-  const symbol = (search.symbol || "").toUpperCase();
-  const indParam = String((search as any).ind || "");
+    const initialStocks = await searchStocks();
+    const search = (await props.searchParams) || {};
+    const symbol = (search.symbol || "").toUpperCase();
+    const indParam = String((search as any).ind || "");
 
-  const macdFast = Number((search as any).macd_fast) || 12;
-  const macdSlow = Number((search as any).macd_slow) || 26;
-  const macdSig = Number((search as any).macd_sig) || 9;
+    const macdFast = Number((search as any).macd_fast) || 12;
+    const macdSlow = Number((search as any).macd_slow) || 26;
+    const macdSig = Number((search as any).macd_sig) || 9;
+    const stochRsiLen = Number((search as any).stoch_rsi_len) || 14;
+    const stochLen = Number((search as any).stoch_len) || 14;
+    const stochK = Number((search as any).stoch_k) || 3;
+    const stochD = Number((search as any).stoch_d) || 3;
+    const wtAvgLen = Number((search as any).wt_avg_len) || 10;
+    const wtChannelLen = Number((search as any).wt_channel_len) || 21;
+    const wtMaLen = Number((search as any).wt_ma_len) || 4;
+    const dmiDiLen = Number((search as any).dmi_di_len) || 14;
+    const dmiAdxSmooth = Number((search as any).dmi_adx_smooth) || 14;
+    const mfiPeriod = Number((search as any).mfi_period) || 14;
+    const smiLongLen = Number((search as any).smi_long_len) || 20;
+    const smiShortLen = Number((search as any).smi_short_len) || 5;
+    const smiSigLen = Number((search as any).smi_sig_len) || 5;
+    const rsiLen = Number((search as any).rsi_len) || 14;
+    const rsiMaLen = Number((search as any).rsi_ma_len) || 14;
+    const cciLen = Number((search as any).cci_len) || 20;
+    const cciMaLen = Number((search as any).cci_ma_len) || 14;
+    const wprLen = Number((search as any).wpr_len) || 14;
+    const diLen = Number((search as any).di_len) || 10;
+    const diSmooth = Number((search as any).di_smooth) || 10;
+    const diK = Number((search as any).di_k) || 2;
+    const cmfLen = Number((search as any).cmf_len) || 20;
+    const madrLen = Number((search as any).madr_len) || 21;
 
-  const stochRsiLen = Number((search as any).stoch_rsi_len) || 14;
-  const stochLen = Number((search as any).stoch_len) || 14;
-  const stochK = Number((search as any).stoch_k) || 3;
-  const stochD = Number((search as any).stoch_d) || 3;
+    const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 730) : [];
+    const scriptBase = "https://s3.tradingview.com/external-embedding/embed-widget-";
 
-  const wtAvgLen = Number((search as any).wt_avg_len) || 10;
-  const wtChannelLen = Number((search as any).wt_channel_len) || 21;
-  const wtMaLen = Number((search as any).wt_ma_len) || 4;
-
-  const dmiDiLen = Number((search as any).dmi_di_len) || 14;
-  const dmiAdxSmooth = Number((search as any).dmi_adx_smooth) || 14;
-
-  const mfiPeriod = Number((search as any).mfi_period) || 14;
-
-  const smiLongLen = Number((search as any).smi_long_len) || 20;
-  const smiShortLen = Number((search as any).smi_short_len) || 5;
-  const smiSigLen = Number((search as any).smi_sig_len) || 5;
-
-  const rsiLen = Number((search as any).rsi_len) || 14;
-  const rsiMaLen = Number((search as any).rsi_ma_len) || 14;
-
-  const cciLen = Number((search as any).cci_len) || 20;
-  const cciMaLen = Number((search as any).cci_ma_len) || 14;
-
-  const wprLen = Number((search as any).wpr_len) || 14;
-
-  const diLen = Number((search as any).di_len) || 10;
-  const diSmooth = Number((search as any).di_smooth) || 10;
-  const diK = Number((search as any).di_k) || 2;
-
-  const cmfLen = Number((search as any).cmf_len) || 20;
-
-  const madrLen = Number((search as any).madr_len) || 21;
-
-  const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 730) : [];
-  const scriptBase = "https://s3.tradingview.com/external-embedding/embed-widget-";
-
-  // Best-effort fetch of company logo for the selected symbol
-  let logoUrl: string | undefined = undefined;
-  if (symbol) {
-    const token = process.env.FINNHUB_API_KEY || process.env.NEXT_PUBLIC_FINNHUB_API_KEY || '';
-    if (token) {
-      try {
-        const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${token}`;
-        const prof = await fetchJSON<{ logo?: string }>(profileUrl, 3600);
-        logoUrl = typeof prof?.logo === 'string' && prof.logo ? prof.logo : undefined;
-      } catch {}
-    }
-  }
-
-  const indicators = new Set(
-    indParam
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-
-  let macdData:
-    | { macd: { time: UTCTimestamp; value: number }[]; signal: { time: UTCTimestamp; value: number }[]; histogram: { time: UTCTimestamp; value: number; color: string }[] }
-    | undefined;
-  if (candles.length > 0 && indicators.has('macd')) {
-    const macdSeries = computeMACD(candles.map((c) => ({ time: c.time, close: c.close })),macdFast,macdSlow,macdSig);
-    const macd = macdSeries
-      .filter((p) => typeof p.macd === 'number')
-      .map((p) => ({ time: p.time, value: p.macd as number }));
-    const signal = macdSeries
-      .filter((p) => typeof p.signal === 'number')
-      .map((p) => ({ time: p.time, value: p.signal as number }));
-    const histogram = macdSeries
-      .filter((p) => typeof p.histogram === 'number')
-      .map((p) => ({
-        time: p.time,
-        value: p.histogram as number,
-        color: (p.histogram as number) >= 0 ? '#0db27a' : '#ef4444',
-      }));
-    macdData = { macd, signal, histogram };
-  }
-
-  let stochRsiData:
-    | { k: { time: UTCTimestamp; value: number }[]; d: { time: UTCTimestamp; value: number }[] }
-    | undefined;
-  if (candles.length > 0 && indicators.has('stochrsi')) {
-    const srsi = computeStochRSI(candles.map((c) => ({ time: c.time, close: c.close })),stochRsiLen,stochLen,stochK,stochD);
-    const k = srsi
-      .filter((p) => typeof p.k === 'number')
-      .map((p) => ({ time: p.time, value: p.k as number }));
-    const d = srsi
-      .filter((p) => typeof p.d === 'number')
-      .map((p) => ({ time: p.time, value: p.d as number }));
-    stochRsiData = { k, d };
-  }
-
-  let waveTrendData:
-    | {
-        wt1: { time: UTCTimestamp; value: number }[];
-        wt2: { time: UTCTimestamp; value: number }[];
-        crosses: { time: UTCTimestamp; cross: 1 | -1 }[];
-      }
-    | undefined;
-  if (candles.length > 0 && indicators.has('wavetrend')) {
-    const wt = computeWaveTrend(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })),wtAvgLen,wtChannelLen,wtMaLen);
-    const wt1 = wt
-      .filter((p) => typeof p.wt1 === 'number')
-      .map((p) => ({ time: p.time, value: p.wt1 as number }));
-    const wt2 = wt
-      .filter((p) => typeof p.wt2 === 'number')
-      .map((p) => ({ time: p.time, value: p.wt2 as number }));
-    const crosses = wt
-      .filter((p) => p.cross === 1 || p.cross === -1)
-      .map((p) => ({ time: p.time, cross: p.cross as 1 | -1 }));
-    waveTrendData = { wt1, wt2, crosses };
-  }
-
-  let dmiData:
-    | {
-        plusDI: { time: UTCTimestamp; value: number }[];
-        minusDI: { time: UTCTimestamp; value: number }[];
-        adx: { time: UTCTimestamp; value: number }[];
-      }
-    | undefined;
-  if (candles.length > 0 && indicators.has('dmi')) {
-    const dmi = computeDMI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })),dmiDiLen,dmiAdxSmooth);
-    const plusDI = dmi
-      .filter((p) => typeof p.plusDI === 'number')
-      .map((p) => ({ time: p.time, value: p.plusDI as number }));
-    const minusDI = dmi
-      .filter((p) => typeof p.minusDI === 'number')
-      .map((p) => ({ time: p.time, value: p.minusDI as number }));
-    const adx = dmi
-      .filter((p) => typeof p.adx === 'number')
-      .map((p) => ({ time: p.time, value: p.adx as number }));
-    dmiData = { plusDI, minusDI, adx };
-  }
-
-  let mfiData: { mfi: { time: UTCTimestamp; value: number }[] } | undefined;
-  if (candles.length > 0 && indicators.has('mfi')) {
-    const mfiSeries = computeMFI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume })),mfiPeriod);
-    const mfi = mfiSeries
-      .filter((p) => typeof p.mfi === 'number')
-      .map((p) => ({ time: p.time, value: p.mfi as number }));
-    mfiData = { mfi };
-  }
-
-    let smiData:
-        | { smi: { time: number; value: number }[]; signal: { time: number; value: number }[]; histogram: { time: number; value: number; color: string }[] }
-        | undefined;
-
-    if (candles.length > 0 && indicators.has('smi')) {
-        const smiSeries = computeSMI(candles.map((c) => ({ time: c.time, close: c.close })),smiLongLen,smiShortLen,smiSigLen);
-
-        const smi = smiSeries
-            .filter((p) => typeof p.smi === 'number')
-            .map((p) => ({ time: p.time, value: p.smi as number }));
-
-        const signal = smiSeries
-            .filter((p) => typeof p.signal === 'number')
-            .map((p) => ({ time: p.time, value: p.signal as number }));
-
-        const histogram = smiSeries
-            .filter((p) => typeof p.histogram === 'number')
-            .map((p) => ({
-                time: p.time,
-                value: p.histogram as number,
-                color: (p.histogram as number) >= 0 ? '#0db27a' : '#ef4444',
-            }));
-
-        smiData = { smi, signal, histogram };
+    let logoUrl: string | undefined = undefined;
+    if (symbol) {
+        const token = process.env.FINNHUB_API_KEY || process.env.NEXT_PUBLIC_FINNHUB_API_KEY || '';
+        if (token) {
+            try {
+                const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${token}`;
+                const prof = await fetchJSON<{ logo?: string }>(profileUrl, 3600);
+                logoUrl = typeof prof?.logo === 'string' && prof.logo ? prof.logo : undefined;
+            } catch {}
+        }
     }
 
-    let aoData: { time: number; value: number; color?: string }[] | undefined;
+    const activeIndicators = new Set(
+        indParam.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    );
 
-    if (candles.length > 0 && indicators.has('ao')) {
-        aoData = computeAO(candles.map((c) => ({
-            time: c.time,
-            high: c.high,
-            low: c.low
-        })));
-    }
 
-    let rsiData: { rsi: { time: number; value: number }[]; ma: { time: number; value: number }[] } | undefined;
+    let macdData, stochRsiData, waveTrendData, dmiData, mfiData, smiData, aoData, rsiData, cciData, wprData, diData, cmfData, adData, nvData, madrData;
 
-    if (candles.length > 0 && indicators.has('rsi')) {
-    const rsiRes = computeRSI(
-      candles.map((c) => ({ time: c.time, close: c.close })),rsiLen,rsiMaLen);
+    const signalLabels: Record<string, SignalLabel> = {};
 
-        const rsiLine = rsiRes
-            .filter((p) => typeof p.rsi === 'number')
-            .map((p) => ({ time: p.time, value: p.rsi as number }));
+    let totalScore = 0;
+    let signalCount = 0;
 
-        const maLine = rsiRes
-            .filter((p) => typeof p.ma === 'number')
-            .map((p) => ({ time: p.time, value: p.ma as number }));
+    const addSignal = (key: string, label: SignalLabel) => {
+        let score = 0;
+        if (label === "STRONG BUY") score = 2;
+        else if (label === "WEAK BUY") score = 1;
+        else if (label === "WEAK SELL") score = -1;
+        else if (label === "STRONG SELL") score = -2;
 
-        rsiData = { rsi: rsiLine, ma: maLine };
-    }
-
-    let cciData: { cci: { time: number; value: number }[]; ma: { time: number; value: number }[] } | undefined;
-
-    if (candles.length > 0 && indicators.has('cci')) {
-        const cciRes = computeCCI(candles.map((c) => ({
-            time: c.time,
-            high: c.high,
-            low: c.low,
-            close: c.close
-        })),cciLen,cciMaLen);
-
-        const cciLine = cciRes
-            .filter((p) => typeof p.cci === 'number')
-            .map((p) => ({ time: p.time, value: p.cci as number }));
-
-        const maLine = cciRes
-            .filter((p) => typeof p.ma === 'number')
-            .map((p) => ({ time: p.time, value: p.ma as number }));
-
-        cciData = { cci: cciLine, ma: maLine };
-    }
-
-    let wprData: { time: number; value: number }[] | undefined;
-
-    if (candles.length > 0 && indicators.has('wpr')) {
-        wprData = computeWPR(candles.map((c) => ({
-            time: c.time,
-            high: c.high,
-            low: c.low,
-            close: c.close
-        })),wprLen);
-    }
-
-    let diData: { time: number; value: number }[] | undefined;
-
-    if (candles.length > 0 && indicators.has('di')) {
-        diData = computeDemandIndex(candles.map((c) => ({
-            time: c.time,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            open: c.open,
-            volume: c.volume || 0
-        })), diLen, diSmooth, diK);
-    }
-
-    let cmfData: { time: number; value: number }[] | undefined;
-
-    if (candles.length > 0 && indicators.has('cmf')) {
-        cmfData = computeCMF(candles.map((c) => ({
-            time: c.time,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume || 0
-        })),cmfLen);
-    }
-
-    let adData: { time: number; value: number }[] | undefined;
-    const calculateSMA = (data: number[], window: number) => {
-        if (data.length < window) return null;
-        let sum = 0;
-        for(let i=0; i<window; i++) sum += data[data.length - 1 - i];
-        return sum / window;
+        totalScore += score;
+        signalCount++;
+        signalLabels[key] = label;
     };
 
-    if (candles.length > 0 && indicators.has('ad')) {
-        adData = computeAD(candles.map((c) => ({
-            time: c.time,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume || 0
-        })));
+    if (candles.length > 0) {
+        // --- MACD ---
+        try {
+            const macdSeries = computeMACD(candles.map((c) => ({ time: c.time, close: c.close })), macdFast, macdSlow, macdSig);
+            macdData = {
+                macd: macdSeries.filter((p) => typeof p.macd === 'number').map((p) => ({ time: p.time, value: p.macd as number })),
+                signal: macdSeries.filter((p) => typeof p.signal === 'number').map((p) => ({ time: p.time, value: p.signal as number })),
+                histogram: macdSeries.filter((p) => typeof p.histogram === 'number').map((p) => ({ time: p.time, value: p.histogram as number, color: (p.histogram as number) >= 0 ? '#0db27a' : '#ef4444' }))
+            };
+
+            const hist = macdData.histogram; const mac = macdData.macd; const sig = macdData.signal;
+            if (hist.length >= 2) {
+                const lastHist = hist[hist.length - 1].value; const prevHist = hist[hist.length - 2].value;
+                const lastMacd = mac[mac.length - 1].value; const lastSignal = sig[sig.length - 1].value;
+
+                if (lastMacd > lastSignal) addSignal("macd", lastHist > prevHist ? "STRONG BUY" : "WEAK BUY");
+                else if (lastMacd < lastSignal) addSignal("macd", lastHist < prevHist ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- RSI ---
+        try {
+            const rsiRes = computeRSI(candles.map((c) => ({ time: c.time, close: c.close })), rsiLen, rsiMaLen);
+            rsiData = {
+                rsi: rsiRes.filter((p) => typeof p.rsi === 'number').map((p) => ({ time: p.time, value: p.rsi as number })),
+                ma: rsiRes.filter((p) => typeof p.ma === 'number').map((p) => ({ time: p.time, value: p.ma as number }))
+            };
+            const rArr = rsiData.rsi; const mArr = rsiData.ma;
+            if (rArr.length > 0 && mArr.length > 0) {
+                const lastRSI = rArr[rArr.length - 1].value; const lastMA = mArr[mArr.length - 1].value;
+                if (lastRSI > lastMA) addSignal("rsi", lastRSI < 30 ? "STRONG BUY" : "WEAK BUY");
+                else addSignal("rsi", lastRSI > 70 ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- Stochastic RSI ---
+        try {
+            const srsi = computeStochRSI(candles.map((c) => ({ time: c.time, close: c.close })), stochRsiLen, stochLen, stochK, stochD);
+            stochRsiData = {
+                k: srsi.filter((p) => typeof p.k === 'number').map((p) => ({ time: p.time, value: p.k as number })),
+                d: srsi.filter((p) => typeof p.d === 'number').map((p) => ({ time: p.time, value: p.d as number }))
+            };
+            const kArr = stochRsiData.k; const dArr = stochRsiData.d;
+            if (kArr.length > 0 && dArr.length > 0) {
+                const lastK = kArr[kArr.length - 1].value; const lastD = dArr[dArr.length - 1].value;
+                if (lastK > lastD) addSignal("stochrsi", lastK < 20 ? "STRONG BUY" : "WEAK BUY");
+                else if (lastK < lastD) addSignal("stochrsi", lastK > 80 ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- WaveTrend ---
+        try {
+            const wt = computeWaveTrend(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })), wtAvgLen, wtChannelLen, wtMaLen);
+            waveTrendData = {
+                wt1: wt.filter((p) => typeof p.wt1 === 'number').map((p) => ({ time: p.time, value: p.wt1 as number })),
+                wt2: wt.filter((p) => typeof p.wt2 === 'number').map((p) => ({ time: p.time, value: p.wt2 as number })),
+                crosses: wt.filter((p) => p.cross === 1 || p.cross === -1).map((p) => ({ time: p.time, cross: p.cross as 1 | -1 }))
+            };
+            const w1 = waveTrendData.wt1; const w2 = waveTrendData.wt2;
+            if (w1.length > 0 && w2.length > 0) {
+                const lastW1 = w1[w1.length - 1].value; const lastW2 = w2[w2.length - 1].value;
+                if (lastW1 > lastW2) addSignal("wavetrend", lastW1 < -60 ? "STRONG BUY" : "WEAK BUY");
+                else if (lastW1 < lastW2) addSignal("wavetrend", lastW1 > 60 ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- DMI ---
+        try {
+            const dmi = computeDMI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })), dmiDiLen, dmiAdxSmooth);
+            dmiData = {
+                plusDI: dmi.filter((p) => typeof p.plusDI === 'number').map((p) => ({ time: p.time, value: p.plusDI as number })),
+                minusDI: dmi.filter((p) => typeof p.minusDI === 'number').map((p) => ({ time: p.time, value: p.minusDI as number })),
+                adx: dmi.filter((p) => typeof p.adx === 'number').map((p) => ({ time: p.time, value: p.adx as number }))
+            };
+            const plus = dmiData.plusDI; const minus = dmiData.minusDI; const adx = dmiData.adx;
+            if (plus.length > 0 && minus.length > 0 && adx.length > 0) {
+                const lPlus = plus[plus.length - 1].value; const lMinus = minus[minus.length - 1].value; const lAdx = adx[adx.length - 1].value;
+                if (lPlus > lMinus) addSignal("dmi", lAdx > 20 ? "STRONG BUY" : "WEAK BUY");
+                else if (lMinus > lPlus) addSignal("dmi", lAdx > 20 ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- MFI ---
+        try {
+            const mfiSeries = computeMFI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume })), mfiPeriod);
+            mfiData = { mfi: mfiSeries.filter((p) => typeof p.mfi === 'number').map((p) => ({ time: p.time, value: p.mfi as number })) };
+            const arr = mfiData.mfi;
+            if (arr.length >= 2) {
+                const last = arr[arr.length - 1].value; const prev = arr[arr.length - 2].value;
+                if (last < 20) addSignal("mfi", "STRONG BUY");
+                else if (last > 80) addSignal("mfi", "STRONG SELL");
+                else if (last > prev) addSignal("mfi", "WEAK BUY");
+                else if (last < prev) addSignal("mfi", "WEAK SELL");
+            }
+        } catch {}
+
+        // --- SMI ---
+        try {
+            const smiSeries = computeSMI(candles.map((c) => ({ time: c.time, close: c.close })), smiLongLen, smiShortLen, smiSigLen);
+            smiData = {
+                smi: smiSeries.filter((p) => typeof p.smi === 'number').map((p) => ({ time: p.time, value: p.smi as number })),
+                signal: smiSeries.filter((p) => typeof p.signal === 'number').map((p) => ({ time: p.time, value: p.signal as number })),
+                histogram: smiSeries.filter((p) => typeof p.histogram === 'number').map((p) => ({ time: p.time, value: p.histogram as number, color: (p.histogram as number) >= 0 ? '#0db27a' : '#ef4444' }))
+            };
+            const hist = smiData.histogram; const sLine = smiData.smi; const sigLine = smiData.signal;
+            if (hist.length >= 2) {
+                const lastHist = hist[hist.length-1].value; const prevHist = hist[hist.length-2].value;
+                const lastSmi = sLine[sLine.length-1].value; const lastSig = sigLine[sigLine.length-1].value;
+                if(lastSmi > lastSig) addSignal("smi", lastHist > prevHist ? "STRONG BUY" : "WEAK BUY");
+                else if(lastSmi < lastSig) addSignal("smi", lastHist < prevHist ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- AO ---
+        try {
+            aoData = computeAO(candles.map((c) => ({ time: c.time, high: c.high, low: c.low })));
+            if(aoData.length >= 2) {
+                const curr = aoData[aoData.length-1].value; const prev = aoData[aoData.length-2].value;
+                const rising = curr > prev;
+                if(curr > 0) addSignal("ao", rising ? "STRONG BUY" : "WEAK SELL");
+                else addSignal("ao", !rising ? "STRONG SELL" : "WEAK BUY");
+            }
+        } catch {}
+
+        // --- CCI ---
+        try {
+            const cciRes = computeCCI(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })), cciLen, cciMaLen);
+            cciData = {
+                cci: cciRes.filter((p) => typeof p.cci === 'number').map((p) => ({ time: p.time, value: p.cci as number })),
+                ma: cciRes.filter((p) => typeof p.ma === 'number').map((p) => ({ time: p.time, value: p.ma as number }))
+            };
+            const cArr = cciData.cci; const mArr = cciData.ma;
+            if (cArr.length > 0 && mArr.length > 0) {
+                const lCCI = cArr[cArr.length - 1].value; const lMA = mArr[mArr.length - 1].value;
+                if (lCCI > lMA) addSignal("cci", lCCI < -100 ? "STRONG BUY" : "WEAK BUY");
+                else addSignal("cci", lCCI > 100 ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- WPR ---
+        try {
+            wprData = computeWPR(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })), wprLen);
+            if(wprData.length >= 2) {
+                const cur = wprData[wprData.length-1].value; const prev = wprData[wprData.length-2].value;
+                if(cur < -80) addSignal("wpr", "STRONG BUY");
+                else if(cur > -20) addSignal("wpr", "STRONG SELL");
+                else addSignal("wpr", cur > prev ? "WEAK BUY" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- DI ---
+        try {
+            diData = computeDemandIndex(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, open: c.open, volume: c.volume || 0 })), diLen, diSmooth, diK);
+            if(diData.length >= 2) {
+                const cur = diData[diData.length-1].value; const prev = diData[diData.length-2].value;
+                if(cur > 0) addSignal("di", cur > prev ? "STRONG BUY" : "WEAK BUY");
+                else addSignal("di", cur < prev ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- CMF ---
+        try {
+            cmfData = computeCMF(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 })), cmfLen);
+            if(cmfData.length > 0) {
+                const val = cmfData[cmfData.length-1].value;
+                if(val > 0.05) addSignal("cmf", "STRONG BUY");
+                else if(val < -0.05) addSignal("cmf", "STRONG SELL");
+                else addSignal("cmf", val > 0 ? "WEAK BUY" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- AD ---
+        try {
+            adData = computeAD(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 })));
+            if(adData.length > 21) {
+                const values = adData.map(d => d.value);
+                const cur = values[values.length-1]; const prev = values[values.length-2];
+                const curSMA = calculateSMA(values, 21); const prevSMA = calculateSMA(values.slice(0, -1), 21);
+                if(curSMA !== null && prevSMA !== null) {
+                    if(prev <= prevSMA && cur > curSMA) addSignal("ad", "STRONG BUY");
+                    else if(prev >= prevSMA && cur < curSMA) addSignal("ad", "STRONG SELL");
+                    else addSignal("ad", cur > curSMA ? "WEAK BUY" : "WEAK SELL");
+                }
+            }
+        } catch {}
+
+        // --- Net Volume ---
+        try {
+            nvData = computeNetVolume(candles.map((c) => ({ time: c.time, open: c.open, close: c.close, volume: c.volume || 0 })));
+            if(nvData.length >= 2) {
+                const cur = nvData[nvData.length-1].value; const prev = nvData[nvData.length-2].value;
+                if(cur > 0) addSignal("netvol", cur > prev ? "STRONG BUY" : "WEAK BUY");
+                else if(cur < 0) addSignal("netvol", cur < prev ? "STRONG SELL" : "WEAK SELL");
+            }
+        } catch {}
+
+        // --- MADR ---
+        try {
+            madrData = computeMADR(candles.map((c) => ({ time: c.time, close: c.close })), madrLen);
+            if(madrData.length >= 2) {
+                const cur = madrData[madrData.length-1].value; const prev = madrData[madrData.length-2].value;
+                if(prev < 0 && cur > 0) addSignal("madr", "STRONG BUY");
+                else if(prev > 0 && cur < 0) addSignal("madr", "STRONG SELL");
+                else addSignal("madr", cur > 0 ? "WEAK BUY" : "WEAK SELL");
+            }
+        } catch {}
     }
 
-    let nvData: { time: number; value: number; color: string }[] | undefined;
 
-    if (candles.length > 0 && indicators.has('netvol')) {
-        nvData = computeNetVolume(candles.map((c) => ({
-            time: c.time,
-            open: c.open,
-            close: c.close,
-            volume: c.volume || 0
-        })));
+    let overallLabel: SignalLabel | null = null;
+    let overallColor = "hidden";
+
+    if (signalCount > 0) {
+        const avg = totalScore / signalCount;
+        if (avg >= 1.5) { overallLabel = "STRONG BUY"; overallColor = "bg-green-600 shadow-[0_0_15px_rgba(22,163,74,0.6)]"; }
+        else if (avg >= 0.5) { overallLabel = "BUY"; overallColor = "bg-green-500"; }
+        else if (avg <= -1.5) { overallLabel = "STRONG SELL"; overallColor = "bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.6)]"; }
+        else if (avg <= -0.5) { overallLabel = "SELL"; overallColor = "bg-red-500"; }
+        else { overallLabel = "NEUTRAL"; overallColor = "bg-gray-500"; }
     }
 
-    let madrData: { time: number; value: number }[] | undefined;
-
-    if (candles.length > 0 && indicators.has('madr')) {
-        madrData = computeMADR(candles.map((c) => ({
-            time: c.time,
-            close: c.close
-        })),madrLen);
-    }
-
-  return (
-    <div className="container py-6 flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-100">T/A</h1>
-        <div className="flex items-center gap-2">
-          <TAIndicatorsButton />
-          <TAIndicatorSettings />
-          <TASearch initialStocks={initialStocks} />
-        </div>
-      </div>
-
-      {symbol ? (
-        <div className="flex flex-col gap-3">
-          <div className="text-gray-400 flex items-center gap-2">
-            <div className="h-6 w-6 rounded bg-gray-700/60 flex items-center justify-center overflow-hidden">
-              {logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoUrl} alt={`${symbol} logo`} className="h-full w-full object-contain p-0.5" />
-              ) : (
-                <span className="text-white text-xs font-semibold">{symbol.slice(0, 1)}</span>
-              )}
+    return (
+        <div className="container py-6 flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+                <h1 className="text-2xl font-semibold text-gray-100">T/A</h1>
+                <div className="flex items-center gap-2">
+                    <TAIndicatorsButton />
+                    <TAIndicatorSettings />
+                    <TASearch initialStocks={initialStocks} />
+                </div>
             </div>
-            <span>{symbol} — Candlestick</span>
-          </div>
-          {candles && candles.length > 0 ? (
-            <LightweightCandleChart data={candles} height={560} />
-          ) : (
-            <TradingViewWidget
-              scriptUrl={`${scriptBase}advanced-chart.js`}
-              config={CANDLE_CHART_WIDGET_CONFIG(symbol)}
-              height={560}
-              className="custom-chart"
-            />
-          )}
-          {/* Indicators */}
-          {macdData && (
-            <div className="mt-2">
-              {(() => {
-                // Derive MACD signal label based on latest values
-                let macdSignal: { label: string; className: string } | undefined;
-                try {
-                  const hist = macdData.histogram || [];
-                  const mac = macdData.macd || [];
-                  const sig = macdData.signal || [];
-                  if (hist.length >= 2 && mac.length > 0 && sig.length > 0) {
-                    const lastHist = hist[hist.length - 1]?.value;
-                    const prevHist = hist[hist.length - 2]?.value;
-                    const lastMacd = mac[mac.length - 1]?.value;
-                    const lastSignal = sig[sig.length - 1]?.value;
-                    if (
-                      typeof lastHist === 'number' &&
-                      typeof prevHist === 'number' &&
-                      typeof lastMacd === 'number' &&
-                      typeof lastSignal === 'number'
-                    ) {
-                      if (lastMacd > lastSignal) {
-                        if (lastHist > prevHist) {
-                          macdSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                        } else if (lastHist < prevHist) {
-                          macdSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                        }
-                      } else if (lastMacd < lastSignal) {
-                        if (lastHist < prevHist) {
-                          macdSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                        } else if (lastHist > prevHist) {
-                          macdSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                        }
-                      }
-                    }
-                  }
-                } catch {}
 
-                return (
-                  <div className="text-gray-400 mb-1 flex items-center gap-2">
-                    <span>{`MACD (${macdFast}, ${macdSlow}, ${macdSig})`}</span>
-                    {macdSignal && (
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${macdSignal.className}`}>
-                        {macdSignal.label}
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-              <LightweightMACDChart key={`macd-${symbol}-${macdFast}-${macdSlow}-${macdSig}`} macd={macdData.macd} signal={macdData.signal} histogram={macdData.histogram} />
-              </div>
-          )}
-          {stochRsiData && (
-            <div className="mt-4">
-              {(() => {
-                // Derive Stoch RSI signal label based on latest %K (green) and %D (orange)
-                let stochSignal: { label: string; className: string } | undefined;
-                try {
-                  const kArr = stochRsiData.k || [];
-                  const dArr = stochRsiData.d || [];
-                  const lastK = kArr.length > 0 ? kArr[kArr.length - 1]?.value : undefined;
-                  const lastD = dArr.length > 0 ? dArr[dArr.length - 1]?.value : undefined;
-                  if (typeof lastK === 'number' && typeof lastD === 'number' && Number.isFinite(lastK) && Number.isFinite(lastD)) {
-                    if (lastK > lastD) {
-                      if (lastK < 20) {
-                        stochSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                      } else {
-                        stochSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                      }
-                    } else if (lastK < lastD) {
-                      if (lastK > 80) {
-                        stochSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                      } else {
-                        stochSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                      }
-                    }
-                  }
-                } catch {}
+            {symbol ? (
+                <div className="flex flex-col gap-3">
 
-                return (
-                  <div className="text-gray-400 mb-1 flex items-center gap-2">
-                    <span>
-                        {`Stochastic RSI (${stochRsiLen}, ${stochLen}, ${stochK}, ${stochD})`}
-                    </span>
-                    {stochSignal && (
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${stochSignal.className}`}>
-                        {stochSignal.label}
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-              <LightweightStochRSIChart key={`stoch-${stochRsiLen}-${stochLen}-${stochK}-${stochD}`} k={stochRsiData.k} d={stochRsiData.d} />
-            </div>
-          )}
-          {waveTrendData && (
-            <div className="mt-4">
-              {(() => {
-                // Derive WaveTrend signal based on latest wt1 (green) and wt2 (orange)
-                let wtSignal: { label: string; className: string } | undefined;
-                try {
-                  const w1 = waveTrendData.wt1 || [];
-                  const w2 = waveTrendData.wt2 || [];
-                  const lastW1 = w1.length > 0 ? w1[w1.length - 1]?.value : undefined;
-                  const lastW2 = w2.length > 0 ? w2[w2.length - 1]?.value : undefined;
-                  if (typeof lastW1 === 'number' && typeof lastW2 === 'number' && Number.isFinite(lastW1) && Number.isFinite(lastW2)) {
-                    if (lastW1 > lastW2) {
-                      // BUY side
-                      if (lastW1 < -60) {
-                        wtSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                      } else {
-                        wtSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                      }
-                    } else if (lastW1 < lastW2) {
-                      // SELL side
-                      if (lastW1 > 60) {
-                        wtSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                      } else {
-                        wtSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                      }
-                    }
-                    // If equal, omit
-                  }
-                } catch {}
-
-                return (
-                  <div className="text-gray-400 mb-1 flex items-center gap-2">
-                      <span>{`WaveTrend [LazyBear] (${wtAvgLen}, ${wtChannelLen}, ${wtMaLen})`}</span>
-                    {wtSignal && (
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${wtSignal.className}`}>
-                        {wtSignal.label}
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-              <LightweightWaveTrendChart wt1={waveTrendData.wt1} wt2={waveTrendData.wt2} crosses={waveTrendData.crosses} />
-            </div>
-          )}
-          {dmiData && (
-            <div className="mt-4">
-              {(() => {
-                // Derive DMI signal based on latest DI+ (green), DI- (red), and ADX
-                let dmiSignal: { label: string; className: string } | undefined;
-                try {
-                  const plus = dmiData.plusDI || [];
-                  const minus = dmiData.minusDI || [];
-                  const adxArr = dmiData.adx || [];
-                  const lastPlus = plus.length > 0 ? plus[plus.length - 1]?.value : undefined;
-                  const lastMinus = minus.length > 0 ? minus[minus.length - 1]?.value : undefined;
-                  const lastAdx = adxArr.length > 0 ? adxArr[adxArr.length - 1]?.value : undefined;
-                  if (
-                    typeof lastPlus === 'number' && Number.isFinite(lastPlus) &&
-                    typeof lastMinus === 'number' && Number.isFinite(lastMinus) &&
-                    typeof lastAdx === 'number' && Number.isFinite(lastAdx)
-                  ) {
-                    if (lastPlus > lastMinus) {
-                      if (lastAdx > 20) {
-                        dmiSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                      } else {
-                        dmiSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                      }
-                    } else if (lastMinus > lastPlus) {
-                      if (lastAdx > 20) {
-                        dmiSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                      } else {
-                        dmiSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                      }
-                    }
-                    // If equal or missing, omit
-                  }
-                } catch {}
-
-                return (
-                  <div className="text-gray-400 mb-1 flex items-center gap-2">
-                      <span>Directional Movement Index ({dmiDiLen}, {dmiAdxSmooth})</span>
-                    {dmiSignal && (
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${dmiSignal.className}`}>
-                        {dmiSignal.label}
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-              <LightweightDMIChart plusDI={dmiData.plusDI} minusDI={dmiData.minusDI} adx={dmiData.adx} />
-            </div>
-          )}
-          {mfiData && (
-            <div className="mt-4">
-              {(() => {
-                // Derive MFI signal based on latest and previous MFI values
-                let mfiSignal: { label: string; className: string } | undefined;
-                try {
-                  const arr = mfiData.mfi || [];
-                  if (arr.length >= 2) {
-                    const last = arr[arr.length - 1]?.value;
-                    const prev = arr[arr.length - 2]?.value;
-                    if (
-                      typeof last === 'number' && Number.isFinite(last) &&
-                      typeof prev === 'number' && Number.isFinite(prev)
-                    ) {
-                      // Priority strong zones first
-                      if (last < 20) {
-                        mfiSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                      } else if (last > 80) {
-                        mfiSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                      } else if (last > prev && last < 80) {
-                        mfiSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                      } else if (last < prev && last > 20) {
-                        mfiSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                      }
-                      // if equal or ambiguous, omit
-                    }
-                  }
-                } catch {}
-
-                return (
-                  <div className="text-gray-400 mb-1 flex items-center gap-2">
-                      <span>Money Flow Index ({mfiPeriod})</span>
-                    {mfiSignal && (
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${mfiSignal.className}`}>
-                        {mfiSignal.label}
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-              <LightweightMFIChart mfi={mfiData.mfi} />
-            </div>
-          )}
-            {smiData && (
-                <div className="mt-4">
-                    {(() => {
-                        let smiSignal: { label: string; className: string } | undefined;
-                        try {
-                            const hist = smiData.histogram || [];
-                            const sLine = smiData.smi || [];
-                            const sigLine = smiData.signal || [];
-
-                            if (hist.length >= 2 && sLine.length > 0 && sigLine.length > 0) {
-                                const lastHist = hist[hist.length - 1]?.value;
-                                const prevHist = hist[hist.length - 2]?.value;
-                                const lastSmi = sLine[sLine.length - 1]?.value;
-                                const lastSig = sigLine[sigLine.length - 1]?.value;
-
-                                if (
-                                    typeof lastHist === 'number' && typeof prevHist === 'number' &&
-                                    typeof lastSmi === 'number' && typeof lastSig === 'number'
-                                ) {
-                                    if (lastSmi > lastSig) {
-                                        if (lastHist > prevHist) {
-                                            smiSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                        } else {
-                                            smiSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                        }
-                                    } else if (lastSmi < lastSig) {
-                                        if (lastHist < prevHist) {
-                                            smiSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                        } else {
-                                            smiSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                        }
-                                    }
-                                }
-                            }
-                        } catch {}
-
-                        return (
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`SMI Ergodic Indicator (${smiLongLen}, ${smiShortLen}, ${smiSigLen})`}</span>
-                                {smiSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${smiSignal.className}`}>
-                    {smiSignal.label}
-                  </span>
+                    <div className="flex items-center justify-between">
+                        <div className="text-gray-400 flex items-center gap-2">
+                            <div className="h-6 w-6 rounded bg-gray-700/60 flex items-center justify-center overflow-hidden">
+                                {logoUrl ? (
+                                    <img src={logoUrl} alt={`${symbol} logo`} className="h-full w-full object-contain p-0.5" />
+                                ) : (
+                                    <span className="text-white text-xs font-semibold">{symbol.slice(0, 1)}</span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightSMIChart
-                        smi={smiData.smi}
-                        signal={smiData.signal}
-                        histogram={smiData.histogram}
-                    />
-                </div>
-            )}
-            {aoData && (
-                <div className="mt-4">
-                    {(() => {
-                        let aoSignal: { label: string; className: string } | undefined;
-                        try {
-                            if (aoData.length >= 2) {
-                                const current = aoData[aoData.length - 1];
-                                const prev = aoData[aoData.length - 2];
-                                const isRising = current.value > prev.value;
-                                const isPositive = current.value > 0;
+                            <span className="text-white font-medium text-lg">{symbol}</span>
+                            <span>— Candlestick</span>
+                        </div>
 
-                                if (isPositive) {
-                                    if (isRising) {
-                                        aoSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                    } else {
-                                        aoSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                    }
-                                } else {
-                                    // Negative territory
-                                    if (!isRising) {
-                                        aoSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                    } else {
-                                        aoSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                    }
-                                }
-                            }
-                        } catch {}
+                        {overallLabel && (
+                            <div className={`px-4 py-1.5 rounded-md text-sm font-bold text-white tracking-wide transition-all ${overallColor}`}>
+                                {overallLabel}
+                            </div>
+                        )}
+                    </div>
 
-                        return (
+                    {candles && candles.length > 0 ? (
+                        <LightweightCandleChart data={candles} height={560} />
+                    ) : (
+                        <TradingViewWidget
+                            scriptUrl={`${scriptBase}advanced-chart.js`}
+                            config={CANDLE_CHART_WIDGET_CONFIG(symbol)}
+                            height={560}
+                            className="custom-chart"
+                        />
+                    )}
+
+
+                    {activeIndicators.has('macd') && macdData && (
+                        <div className="mt-2">
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>{`MACD (${macdFast}, ${macdSlow}, ${macdSig})`}</span>
+                                {signalLabels["macd"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["macd"]]}`}>
+                      {signalLabels["macd"]}
+                    </span>
+                                )}
+                            </div>
+                            <LightweightMACDChart macd={macdData.macd} signal={macdData.signal} histogram={macdData.histogram} />
+                        </div>
+                    )}
+
+                    {activeIndicators.has('rsi') && rsiData && (
+                        <div className="mt-4">
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>{`RSI (${rsiLen}, ${rsiMaLen})`}</span>
+                                {signalLabels["rsi"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["rsi"]]}`}>
+                      {signalLabels["rsi"]}
+                    </span>
+                                )}
+                            </div>
+                            <LightweightRSIChart rsi={rsiData.rsi} ma={rsiData.ma} />
+                        </div>
+                    )}
+
+                    {activeIndicators.has('stochrsi') && stochRsiData && (
+                        <div className="mt-4">
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>{`Stoch RSI (${stochRsiLen}, ${stochLen}, ${stochK}, ${stochD})`}</span>
+                                {signalLabels["stochrsi"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["stochrsi"]]}`}>
+                        {signalLabels["stochrsi"]}
+                    </span>
+                                )}
+                            </div>
+                            <LightweightStochRSIChart k={stochRsiData.k} d={stochRsiData.d} />
+                        </div>
+                    )}
+
+                    {activeIndicators.has('wavetrend') && waveTrendData && (
+                        <div className="mt-4">
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>{`WaveTrend (${wtAvgLen}, ${wtChannelLen}, ${wtMaLen})`}</span>
+                                {signalLabels["wavetrend"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["wavetrend"]]}`}>
+                        {signalLabels["wavetrend"]}
+                    </span>
+                                )}
+                            </div>
+                            <LightweightWaveTrendChart wt1={waveTrendData.wt1} wt2={waveTrendData.wt2} crosses={waveTrendData.crosses} />
+                        </div>
+                    )}
+
+                    {activeIndicators.has('dmi') && dmiData && (
+                        <div className="mt-4">
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>{`DMI (${dmiDiLen}, ${dmiAdxSmooth})`}</span>
+                                {signalLabels["dmi"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["dmi"]]}`}>
+                         {signalLabels["dmi"]}
+                     </span>
+                                )}
+                            </div>
+                            <LightweightDMIChart plusDI={dmiData.plusDI} minusDI={dmiData.minusDI} adx={dmiData.adx} />
+                        </div>
+                    )}
+
+                    {activeIndicators.has('mfi') && mfiData && (
+                        <div className="mt-4">
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>{`MFI (${mfiPeriod})`}</span>
+                                {signalLabels["mfi"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["mfi"]]}`}>
+                         {signalLabels["mfi"]}
+                     </span>
+                                )}
+                            </div>
+                            <LightweightMFIChart mfi={mfiData.mfi} />
+                        </div>
+                    )}
+
+                    {activeIndicators.has('smi') && smiData && (
+                        <div className="mt-4">
+                            <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                <span>{`SMI (${smiLongLen}, ${smiShortLen}, ${smiSigLen})`}</span>
+                                {signalLabels["smi"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["smi"]]}`}>
+                         {signalLabels["smi"]}
+                     </span>
+                                )}
+                            </div>
+                            <LightweightSMIChart smi={smiData.smi} signal={smiData.signal} histogram={smiData.histogram} />
+                        </div>
+                    )}
+
+                    {activeIndicators.has('ao') && aoData && (
+                        <div className="mt-4">
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
                                 <span>Awesome Oscillator</span>
-                                {aoSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${aoSignal.className}`}>
-                    {aoSignal.label}
-                  </span>
+                                {signalLabels["ao"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["ao"]]}`}>
+                         {signalLabels["ao"]}
+                     </span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightAOChart data={aoData} />
-                </div>
-            )}
+                            <LightweightAOChart data={aoData} />
+                        </div>
+                    )}
 
-            {rsiData && (
-                <div className="mt-4">
-                    {(() => {
-
-                        let rsiSignal: { label: string; className: string } | undefined;
-                        try {
-                            const rArr = rsiData.rsi || [];
-                            const mArr = rsiData.ma || [];
-
-                            if (rArr.length > 0 && mArr.length > 0) {
-                                const lastRSI = rArr[rArr.length - 1].value;
-                                const lastMA = mArr[mArr.length - 1].value;
-
-                                if (lastRSI > lastMA) {
-
-                                    if (lastRSI < 30) {
-                                        rsiSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                    } else {
-                                        rsiSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                    }
-                                } else {
-
-                                    if (lastRSI > 70) {
-                                        rsiSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                    } else {
-                                        rsiSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                    }
-                                }
-                            }
-                        } catch {}
-
-                        return (
+                    {activeIndicators.has('cci') && cciData && (
+                        <div className="mt-4">
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`Relative Strength Index (${rsiLen}, ${rsiMaLen})`}</span>
-                                {rsiSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${rsiSignal.className}`}>
-                    {rsiSignal.label}
-                  </span>
+                                <span>{`CCI (${cciLen}, ${cciMaLen})`}</span>
+                                {signalLabels["cci"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["cci"]]}`}>
+                         {signalLabels["cci"]}
+                     </span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightRSIChart key={`rsi-${symbol}-${rsiLen}`} rsi={rsiData.rsi} ma={rsiData.ma} />
-                </div>
-            )}
+                            <LightweightCCIChart cci={cciData.cci} ma={cciData.ma} />
+                        </div>
+                    )}
 
-            {cciData && (
-                <div className="mt-4">
-                    {(() => {
-                        let cciSignal: { label: string; className: string } | undefined;
-                        try {
-                            const cArr = cciData.cci || [];
-                            const mArr = cciData.ma || [];
-
-                            if (cArr.length > 0 && mArr.length > 0) {
-                                const lastCCI = cArr[cArr.length - 1].value;
-                                const lastMA = mArr[mArr.length - 1].value;
-
-                                if (lastCCI > lastMA) {
-                                    if (lastCCI < -100) {
-                                        cciSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                    } else {
-                                        cciSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                    }
-                                }
-                                else {
-                                    if (lastCCI > 100) {
-                                        cciSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                    } else {
-                                        cciSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                    }
-                                }
-                            }
-                        } catch {}
-
-                        return (
+                    {activeIndicators.has('wpr') && wprData && (
+                        <div className="mt-4">
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`Commodity Channel Index (${cciLen}, ${cciMaLen})`}</span>
-                                {cciSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cciSignal.className}`}>
-                    {cciSignal.label}
-                  </span>
+                                <span>{`Williams %R (${wprLen})`}</span>
+                                {signalLabels["wpr"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["wpr"]]}`}>
+                         {signalLabels["wpr"]}
+                     </span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightCCIChart cci={cciData.cci} ma={cciData.ma} />
-                </div>
-            )}
+                            <LightweightWPRChart data={wprData} />
+                        </div>
+                    )}
 
-            {wprData && (
-                <div className="mt-4">
-                    {(() => {
-                        let wprSignal: { label: string; className: string } | undefined;
-                        try {
-                            if (wprData.length >= 2) {
-                                const current = wprData[wprData.length - 1].value;
-                                const prev = wprData[wprData.length - 2].value;
-
-                                if (current < -80) {
-                                    wprSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                } else if (current > -20) {
-                                    wprSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                }
-                                else if (current > prev) {
-                                    wprSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                } else {
-                                    wprSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                }
-                            }
-                        } catch {}
-
-                        return (
+                    {activeIndicators.has('di') && diData && (
+                        <div className="mt-4">
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Williams %R ({wprLen})</span>
-                                {wprSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${wprSignal.className}`}>
-                    {wprSignal.label}
-                  </span>
+                                <span>{`Demand Index (${diLen}, ${diK}, ${diSmooth})`}</span>
+                                {signalLabels["di"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["di"]]}`}>
+                         {signalLabels["di"]}
+                     </span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightWPRChart data={wprData} />
-                </div>
-            )}
+                            <LightweightDIChart data={diData} />
+                        </div>
+                    )}
 
-            {diData && (
-                <div className="mt-4">
-                    {(() => {
-                        let diSignal: { label: string; className: string } | undefined;
-
-                        try {
-                            if (diData.length >= 2) {
-                                const current = diData[diData.length - 1].value; // Son değer
-                                const prev = diData[diData.length - 2].value;    // Bir önceki değer
-
-                                if (current > 0) {
-                                    if (current > prev) {
-                                        diSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                    } else {
-                                        diSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                    }
-                                } else {
-                                    if (current < prev) {
-                                        diSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                    } else {
-                                        diSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                    }
-                                }
-                            }
-                        } catch {}
-
-                        return (
+                    {activeIndicators.has('cmf') && cmfData && (
+                        <div className="mt-4">
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Demand Index ({diLen}, {diK}, {diSmooth})</span>
-
-                                {diSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${diSignal.className}`}>
-                                        {diSignal.label}
-                                    </span>
+                                <span>{`CMF (${cmfLen})`}</span>
+                                {signalLabels["cmf"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["cmf"]]}`}>
+                         {signalLabels["cmf"]}
+                     </span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightDIChart data={diData} />
-                </div>
-            )}
+                            <LightweightCMFChart data={cmfData} />
+                        </div>
+                    )}
 
-            {cmfData && (
-                <div className="mt-4">
-                    {(() => {
-                        let cmfSignal: { label: string; className: string } | undefined;
-                        try {
-                            if (cmfData.length > 0) {
-                                const val = cmfData[cmfData.length - 1].value;
-
-                                if (val > 0.05) {
-                                    cmfSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                } else if (val < -0.05) {
-                                    cmfSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                } else if (val > 0) {
-                                    cmfSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                } else {
-                                    cmfSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                }
-                            }
-                        } catch {}
-
-                        return (
+                    {activeIndicators.has('ad') && adData && (
+                        <div className="mt-4">
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Chaikin Money Flow ({cmfLen})</span>
-                                {cmfSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cmfSignal.className}`}>
-                    {cmfSignal.label}
-                  </span>
+                                <span>A/D</span>
+                                {signalLabels["ad"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["ad"]]}`}>
+                         {signalLabels["ad"]}
+                     </span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightCMFChart data={cmfData} />
-                </div>
-            )}
+                            <LightweightADChart data={adData} />
+                        </div>
+                    )}
 
-            {adData && (
-                <div className="mt-4">
-                    {(() => {
-                        let adSignal: { label: string; className: string } | undefined;
-                        try {
-                            if (adData.length > 21) {
-                                const values = adData.map(d => d.value);
-
-                                const currentAD = values[values.length - 1];
-                                const prevAD = values[values.length - 2];
-
-                                const currentSMA = calculateSMA(values, 21);
-                                const prevSMA = calculateSMA(values.slice(0, -1), 21);
-
-                                if (currentSMA !== null && prevSMA !== null) {
-                                    if (prevAD <= prevSMA && currentAD > currentSMA) {
-                                        adSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                    }
-                                    else if (prevAD >= prevSMA && currentAD < currentSMA) {
-                                        adSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                    }
-                                    else if (currentAD > currentSMA) {
-                                        adSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                    }
-                                    else {
-                                        adSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                    }
-                                }
-                            }
-                        } catch {}
-
-                        return (
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Accumulation/Distribution</span>
-                                {adSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${adSignal.className}`}>
-                    {adSignal.label}
-                  </span>
-                                )}
-                            </div>
-                        );
-                    })()}
-                    <LightweightADChart data={adData} />
-                </div>
-            )}
-
-            {nvData && (
-                <div className="mt-4">
-                    {(() => {
-                        let nvSignal: { label: string; className: string } | undefined;
-                        try {
-                            if (nvData.length >= 2) {
-                                const current = nvData[nvData.length - 1].value;
-                                const prev = nvData[nvData.length - 2].value;
-
-                                if (current > 0) {
-                                    if (current > prev) {
-                                        nvSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                    } else {
-                                        nvSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                    }
-                                }
-                                else if (current < 0) {
-                                    if (current < prev) {
-                                        nvSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                    } else {
-                                        nvSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                    }
-                                }
-                            }
-                        } catch {}
-
-                        return (
+                    {activeIndicators.has('netvol') && nvData && (
+                        <div className="mt-4">
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
                                 <span>Net Volume</span>
-                                {nvSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${nvSignal.className}`}>
-                    {nvSignal.label}
-                  </span>
+                                {signalLabels["netvol"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["netvol"]]}`}>
+                         {signalLabels["netvol"]}
+                     </span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightNetVolumeChart data={nvData} />
-                </div>
-            )}
+                            <LightweightNetVolumeChart data={nvData} />
+                        </div>
+                    )}
 
-            {madrData && (
-                <div className="mt-4">
-                    {(() => {
-                        let madrSignal: { label: string; className: string } | undefined;
-                        try {
-                            if (madrData.length >= 2) {
-                                const current = madrData[madrData.length - 1].value;
-                                const prev = madrData[madrData.length - 2].value;
-
-                                if (prev < 0 && current > 0) {
-                                    madrSignal = { label: 'STRONG BUY', className: 'bg-green-900/40 text-green-300 border border-green-700' };
-                                }
-                                else if (prev > 0 && current < 0) {
-                                    madrSignal = { label: 'STRONG SELL', className: 'bg-red-900/40 text-red-300 border border-red-700' };
-                                }
-                                else if (current > 0) {
-                                    madrSignal = { label: 'WEAK BUY', className: 'bg-green-900/20 text-green-300/80 border border-green-700/60' };
-                                }
-                                else {
-                                    madrSignal = { label: 'WEAK SELL', className: 'bg-red-900/20 text-red-300/80 border border-red-700/60' };
-                                }
-                            }
-                        } catch {}
-
-                        return (
+                    {activeIndicators.has('madr') && madrData && (
+                        <div className="mt-4">
                             <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Moving Average Deviation Rate ({madrLen})</span>
-                                {madrSignal && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${madrSignal.className}`}>
-                    {madrSignal.label}
-                  </span>
+                                <span>{`MADR (${madrLen})`}</span>
+                                {signalLabels["madr"] && (
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["madr"]]}`}>
+                         {signalLabels["madr"]}
+                     </span>
                                 )}
                             </div>
-                        );
-                    })()}
-                    <LightweightMADRChart data={madrData} />
+                            <LightweightMADRChart data={madrData} />
+                        </div>
+                    )}
+
                 </div>
+            ) : (
+                <div className="text-gray-400">Use the Search button to choose a brand and view its candlestick chart.</div>
             )}
         </div>
-      ) : (
-        <div className="text-gray-400">Use the Search button to choose a brand and view its candlestick chart.</div>
-      )}
-    </div>
-  );
+    );
 };
 
 export default TAPage;

@@ -77,7 +77,7 @@ export default function TAIndicatorSettings() {
 
     if (!showMacd && !showStoch && !showWaveTrend && !showDmi && !showMfi && !showSmi && !showRsi && !showCci && !showWpr && !showDI && !showCmf && !showMadr) return null;
 
-    const handleSave = () => {
+    const handleSave = async () => {
         const params = new URLSearchParams(searchParams.toString());
 
         if (showMacd) {
