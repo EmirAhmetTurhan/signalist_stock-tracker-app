@@ -18,6 +18,7 @@ import LightweightNetVolumeChart from "@/components/LightweightNetVolumeChart";
 import LightweightMADRChart from "@/components/LightweightMADRChart";
 import TAIndicatorSettings from "@/components/TAIndicatorSettings";
 import TradingViewWidget from "@/components/TradingViewWidget";
+import BacktestMonitor from "@/components/BacktestMonitor";
 import { searchStocks, getDailyCandles, fetchJSON } from "@/lib/actions/finnhub.actions";
 import { CANDLE_CHART_WIDGET_CONFIG } from "@/lib/constants";
 import { computeMACD } from "@/lib/indicators/macd";
@@ -346,9 +347,9 @@ const TAPage = async (props: TAProps) => {
     if (signalCount > 0) {
         const avg = totalScore / signalCount;
         if (avg >= 1.5) { overallLabel = "STRONG BUY"; overallColor = "bg-green-600 shadow-[0_0_15px_rgba(22,163,74,0.6)]"; }
-        else if (avg >= 0.5) { overallLabel = "BUY"; overallColor = "bg-green-500"; }
+        else if (avg >= 0.5) { overallLabel = "WEAK BUY"; overallColor = "bg-green-500"; }
         else if (avg <= -1.5) { overallLabel = "STRONG SELL"; overallColor = "bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.6)]"; }
-        else if (avg <= -0.5) { overallLabel = "SELL"; overallColor = "bg-red-500"; }
+        else if (avg <= -0.5) { overallLabel = "WEAK SELL"; overallColor = "bg-red-500"; }
         else { overallLabel = "NEUTRAL"; overallColor = "bg-gray-500"; }
     }
 
@@ -399,210 +400,267 @@ const TAPage = async (props: TAProps) => {
 
 
                     {activeIndicators.has('macd') && macdData && (
-                        <div className="mt-2">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`MACD (${macdFast}, ${macdSlow}, ${macdSig})`}</span>
-                                {signalLabels["macd"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["macd"]]}`}>
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`MACD (${macdFast}, ${macdSlow}, ${macdSig})`}</span>
+                                    {signalLabels["macd"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["macd"]]}`}>
                       {signalLabels["macd"]}
                     </span>
-                                )}
+                                    )}
+                                </div>
+
+                                {/* BURAYA EKLİYORUZ */}
+                                <BacktestMonitor indicatorName="MACD" candles={candles} data={macdData} />
+
                             </div>
                             <LightweightMACDChart macd={macdData.macd} signal={macdData.signal} histogram={macdData.histogram} />
                         </div>
                     )}
 
                     {activeIndicators.has('rsi') && rsiData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`RSI (${rsiLen}, ${rsiMaLen})`}</span>
-                                {signalLabels["rsi"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["rsi"]]}`}>
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`RSI (${rsiLen}, ${rsiMaLen})`}</span>
+                                    {signalLabels["rsi"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["rsi"]]}`}>
                       {signalLabels["rsi"]}
                     </span>
-                                )}
+                                    )}
+                                </div>
+
+                                {/* BURAYA EKLİYORUZ */}
+                                <BacktestMonitor indicatorName="RSI" candles={candles} data={rsiData} />
+
                             </div>
                             <LightweightRSIChart rsi={rsiData.rsi} ma={rsiData.ma} />
                         </div>
                     )}
 
                     {activeIndicators.has('stochrsi') && stochRsiData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`Stoch RSI (${stochRsiLen}, ${stochLen}, ${stochK}, ${stochD})`}</span>
-                                {signalLabels["stochrsi"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["stochrsi"]]}`}>
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 mb-1 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`Stoch RSI (${stochRsiLen}, ${stochLen}, ${stochK}, ${stochD})`}</span>
+                                    {signalLabels["stochrsi"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["stochrsi"]]}`}>
                         {signalLabels["stochrsi"]}
                     </span>
-                                )}
+                                    )}
+                                </div>
+
+                                {/* BURAYA EKLİYORUZ */}
+                                <BacktestMonitor indicatorName="STOCHRSI" candles={candles} data={stochRsiData} />
+
                             </div>
                             <LightweightStochRSIChart k={stochRsiData.k} d={stochRsiData.d} />
                         </div>
                     )}
 
                     {activeIndicators.has('wavetrend') && waveTrendData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`WaveTrend (${wtAvgLen}, ${wtChannelLen}, ${wtMaLen})`}</span>
-                                {signalLabels["wavetrend"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["wavetrend"]]}`}>
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`WaveTrend (${wtAvgLen}, ${wtChannelLen}, ${wtMaLen})`}</span>
+                                    {signalLabels["wavetrend"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["wavetrend"]]}`}>
                         {signalLabels["wavetrend"]}
                     </span>
-                                )}
+                                    )}
+                                </div>
+
+                                {/* BURAYA EKLİYORUZ */}
+                                <BacktestMonitor indicatorName="WAVETREND" candles={candles} data={waveTrendData} />
+
                             </div>
                             <LightweightWaveTrendChart wt1={waveTrendData.wt1} wt2={waveTrendData.wt2} crosses={waveTrendData.crosses} />
                         </div>
                     )}
 
                     {activeIndicators.has('dmi') && dmiData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`DMI (${dmiDiLen}, ${dmiAdxSmooth})`}</span>
-                                {signalLabels["dmi"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["dmi"]]}`}>
-                         {signalLabels["dmi"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`DMI (${dmiDiLen}, ${dmiAdxSmooth})`}</span>
+                                    {signalLabels["dmi"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["dmi"]]}`}>
+                        {signalLabels["dmi"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="DMI" candles={candles} data={dmiData} />
                             </div>
                             <LightweightDMIChart plusDI={dmiData.plusDI} minusDI={dmiData.minusDI} adx={dmiData.adx} />
                         </div>
                     )}
 
                     {activeIndicators.has('mfi') && mfiData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`MFI (${mfiPeriod})`}</span>
-                                {signalLabels["mfi"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["mfi"]]}`}>
-                         {signalLabels["mfi"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`MFI (${mfiPeriod})`}</span>
+                                    {signalLabels["mfi"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["mfi"]]}`}>
+                        {signalLabels["mfi"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="MFI" candles={candles} data={mfiData} />
                             </div>
                             <LightweightMFIChart mfi={mfiData.mfi} />
                         </div>
                     )}
 
                     {activeIndicators.has('smi') && smiData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`SMI (${smiLongLen}, ${smiShortLen}, ${smiSigLen})`}</span>
-                                {signalLabels["smi"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["smi"]]}`}>
-                         {signalLabels["smi"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`SMI (${smiLongLen}, ${smiShortLen}, ${smiSigLen})`}</span>
+                                    {signalLabels["smi"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["smi"]]}`}>
+                        {signalLabels["smi"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="SMI" candles={candles} data={smiData} />
                             </div>
                             <LightweightSMIChart smi={smiData.smi} signal={smiData.signal} histogram={smiData.histogram} />
                         </div>
                     )}
 
                     {activeIndicators.has('ao') && aoData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Awesome Oscillator</span>
-                                {signalLabels["ao"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["ao"]]}`}>
-                         {signalLabels["ao"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">Awesome Oscillator</span>
+                                    {signalLabels["ao"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["ao"]]}`}>
+                        {signalLabels["ao"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="AO" candles={candles} data={aoData} />
                             </div>
                             <LightweightAOChart data={aoData} />
                         </div>
                     )}
 
                     {activeIndicators.has('cci') && cciData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`CCI (${cciLen}, ${cciMaLen})`}</span>
-                                {signalLabels["cci"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["cci"]]}`}>
-                         {signalLabels["cci"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`CCI (${cciLen}, ${cciMaLen})`}</span>
+                                    {signalLabels["cci"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["cci"]]}`}>
+                        {signalLabels["cci"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="CCI" candles={candles} data={cciData} />
                             </div>
                             <LightweightCCIChart cci={cciData.cci} ma={cciData.ma} />
                         </div>
                     )}
 
                     {activeIndicators.has('wpr') && wprData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`Williams %R (${wprLen})`}</span>
-                                {signalLabels["wpr"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["wpr"]]}`}>
-                         {signalLabels["wpr"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`Williams %R (${wprLen})`}</span>
+                                    {signalLabels["wpr"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["wpr"]]}`}>
+                        {signalLabels["wpr"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="WPR" candles={candles} data={wprData} />
                             </div>
                             <LightweightWPRChart data={wprData} />
                         </div>
                     )}
 
                     {activeIndicators.has('di') && diData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`Demand Index (${diLen}, ${diK}, ${diSmooth})`}</span>
-                                {signalLabels["di"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["di"]]}`}>
-                         {signalLabels["di"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`Demand Index (${diLen}, ${diK}, ${diSmooth})`}</span>
+                                    {signalLabels["di"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["di"]]}`}>
+                        {signalLabels["di"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="DI" candles={candles} data={diData} />
                             </div>
                             <LightweightDIChart data={diData} />
                         </div>
                     )}
 
                     {activeIndicators.has('cmf') && cmfData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`CMF (${cmfLen})`}</span>
-                                {signalLabels["cmf"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["cmf"]]}`}>
-                         {signalLabels["cmf"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`CMF (${cmfLen})`}</span>
+                                    {signalLabels["cmf"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["cmf"]]}`}>
+                        {signalLabels["cmf"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="CMF" candles={candles} data={cmfData} />
                             </div>
                             <LightweightCMFChart data={cmfData} />
                         </div>
                     )}
 
                     {activeIndicators.has('ad') && adData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>A/D</span>
-                                {signalLabels["ad"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["ad"]]}`}>
-                         {signalLabels["ad"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">A/D</span>
+                                    {signalLabels["ad"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["ad"]]}`}>
+                        {signalLabels["ad"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="AD" candles={candles} data={adData} />
                             </div>
                             <LightweightADChart data={adData} />
                         </div>
                     )}
 
                     {activeIndicators.has('netvol') && nvData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>Net Volume</span>
-                                {signalLabels["netvol"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["netvol"]]}`}>
-                         {signalLabels["netvol"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">Net Volume</span>
+                                    {signalLabels["netvol"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["netvol"]]}`}>
+                        {signalLabels["netvol"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="NETVOL" candles={candles} data={nvData} />
                             </div>
                             <LightweightNetVolumeChart data={nvData} />
                         </div>
                     )}
 
                     {activeIndicators.has('madr') && madrData && (
-                        <div className="mt-4">
-                            <div className="text-gray-400 mb-1 flex items-center gap-2">
-                                <span>{`MADR (${madrLen})`}</span>
-                                {signalLabels["madr"] && (
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${SIGNAL_STYLES[signalLabels["madr"]]}`}>
-                         {signalLabels["madr"]}
-                     </span>
-                                )}
+                        <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="text-gray-400 flex items-center gap-2">
+                                    <span className="text-lg font-medium text-gray-200">{`MADR (${madrLen})`}</span>
+                                    {signalLabels["madr"] && (
+                                        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["madr"]]}`}>
+                        {signalLabels["madr"]}
+                    </span>
+                                    )}
+                                </div>
+                                <BacktestMonitor indicatorName="MADR" candles={candles} data={madrData} />
                             </div>
                             <LightweightMADRChart data={madrData} />
                         </div>

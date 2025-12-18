@@ -208,16 +208,34 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
             if (data && data.s === 'ok' && Array.isArray(data.t) && data.t.length > 0) {
                 const out: CandleDataPoint[] = [];
                 for (let i = 0; i < data.t.length; i++) {
-                    const o = Number(data.o?.[i]);
-                    const h = Number(data.h?.[i]);
-                    const l = Number(data.l?.[i]);
-                    const c = Number(data.c?.[i]);
-                    const v = Number(data.v?.[i]);
-                    if ([o, h, l, c].every((v) => Number.isFinite(v))) {
-                        const item: CandleDataPoint = { time: data.t[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
-                        if (Number.isFinite(v)) item.volume = v as number;
-                        out.push(item);
-                    }
+                    const oRaw = data.o?.[i];
+                    const hRaw = data.h?.[i];
+                    const lRaw = data.l?.[i];
+                    const cRaw = data.c?.[i];
+                    const vRaw = data.v?.[i];
+
+                    // Finnhub may return nulls; Number(null) => 0 which corrupts indicators.
+                    // Treat only strictly positive finite numbers as valid OHLC values.
+                    const valid = [oRaw, hRaw, lRaw, cRaw].every(
+                        (x) => typeof x === 'number' && Number.isFinite(x) && x > 0
+                    );
+                    if (!valid) continue;
+
+                    const o = oRaw as number;
+                    const h = hRaw as number;
+                    const l = lRaw as number;
+                    const c = cRaw as number;
+                    if (!(l <= h)) continue; // basic sanity check
+
+                    const item: CandleDataPoint = {
+                        time: data.t[i] as UTCTimestamp,
+                        open: o,
+                        high: h,
+                        low: l,
+                        close: c,
+                    };
+                    if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
+                    out.push(item);
                 }
                 if (out.length > 0) return out;
             }
@@ -236,24 +254,34 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
         const result = json?.chart?.result?.[0];
         const ts: number[] | undefined = result?.timestamp;
         const quote = result?.indicators?.quote?.[0] || {};
-        const opens: number[] | undefined = quote.open;
-        const highs: number[] | undefined = quote.high;
-        const lows: number[] | undefined = quote.low;
-        const closes: number[] | undefined = quote.close;
-        const volumes: number[] | undefined = quote.volume;
+        const opens: Array<number | null> | undefined = quote.open;
+        const highs: Array<number | null> | undefined = quote.high;
+        const lows: Array<number | null> | undefined = quote.low;
+        const closes: Array<number | null> | undefined = quote.close;
+        const volumes: Array<number | null> | undefined = quote.volume;
         if (Array.isArray(ts) && ts.length) {
             const out: CandleDataPoint[] = [];
             for (let i = 0; i < ts.length; i++) {
-                const o = Number(opens?.[i]);
-                const h = Number(highs?.[i]);
-                const l = Number(lows?.[i]);
-                const c = Number(closes?.[i]);
-                const v = Number(volumes?.[i]);
-                if ([o, h, l, c].every((v) => Number.isFinite(v))) {
-                    const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
-                    if (Number.isFinite(v)) item.volume = v as number;
-                    out.push(item);
-                }
+                const oRaw = opens?.[i];
+                const hRaw = highs?.[i];
+                const lRaw = lows?.[i];
+                const cRaw = closes?.[i];
+                const vRaw = volumes?.[i];
+
+                const valid = [oRaw, hRaw, lRaw, cRaw].every(
+                    (x) => typeof x === 'number' && Number.isFinite(x) && (x as number) > 0
+                );
+                if (!valid) continue;
+
+                const o = oRaw as number;
+                const h = hRaw as number;
+                const l = lRaw as number;
+                const c = cRaw as number;
+                if (!(l <= h)) continue;
+
+                const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
+                if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
+                out.push(item);
             }
             if (out.length > 0) return out;
         }
