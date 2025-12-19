@@ -93,7 +93,7 @@ const TAPage = async (props: TAProps) => {
     const cmfLen = Number((search as any).cmf_len) || 20;
     const madrLen = Number((search as any).madr_len) || 21;
 
-    const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 730) : [];
+    const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 3650) : [];
     const scriptBase = "https://s3.tradingview.com/external-embedding/embed-widget-";
 
     let logoUrl: string | undefined = undefined;
