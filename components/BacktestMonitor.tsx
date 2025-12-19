@@ -282,13 +282,13 @@ export default function BacktestMonitor({
             </div>
 
             <div className="flex flex-col">
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Genel Başarı</span>
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Backtesting</span>
                 <div className="flex items-center gap-1.5 mt-0.5">
            <span className="text-[10px] text-gray-300 font-medium bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">
-             {stats.totalSignals} Gün
+             {stats.totalSignals} Days
            </span>
                     <span className="text-[10px] text-gray-400">
-             {stats.wins} Doğru
+             {stats.wins} Hit
            </span>
                 </div>
             </div>
