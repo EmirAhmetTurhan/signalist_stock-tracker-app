@@ -2,8 +2,18 @@
 
 import React, { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { calculateWinRate, Candle, BacktestHistoryItem } from "@/lib/backtest-utils";
+import { useRouter, useSearchParams } from "next/navigation";
+import { RefreshCw, History, CheckCircle2, XCircle, TrendingUp, TrendingDown } from "lucide-react";
+import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/optimizer-utils";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog";
 
-type Candle = { time: string | number; close: number; high: number; low: number };
 type IndicatorData = any;
 
 interface BacktestMonitorProps {
@@ -15,245 +25,49 @@ interface BacktestMonitorProps {
     };
 }
 
-// YARDIMCI: Hareketli Ortalama Hesabı (AD indikatörü için gerekli)
-const calculateSMA = (data: number[], window: number) => {
-    if (data.length < window) return null;
-    let sum = 0;
-    for(let i=0; i<window; i++) sum += data[data.length - 1 - i];
-    return sum / window;
-};
-
 export default function BacktestMonitor({
-                                            indicatorName,
-                                            candles,
-                                            data,
-                                            config = { lookForward: 5 },
-                                        }: BacktestMonitorProps) {
-    const [stats, setStats] = useState({ winRate: 0, totalSignals: 0, wins: 0 });
+    indicatorName,
+    candles,
+    data,
+    config = { lookForward: 5 },
+}: BacktestMonitorProps) {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const [stats, setStats] = useState<{
+        winRate: number;
+        totalSignals: number;
+        wins: number;
+        history: BacktestHistoryItem[];
+    }>({ winRate: 0, totalSignals: 0, wins: 0, history: [] });
     const [animatedPercent, setAnimatedPercent] = useState(0);
+    const [isOptimizing, setIsOptimizing] = useState(false);
 
     useEffect(() => {
-        if (!candles || candles.length === 0 || !data) return;
-
-        let wins = 0;
-        let totalSignals = 0;
-        const { lookForward } = config;
-
-        // Verilerin oturması için güvenli başlangıç
-        const startIndex = 50;
-        const endIndex = candles.length - lookForward;
-
-        for (let i = startIndex; i < endIndex; i++) {
-            const currentPrice = candles[i].close;
-            const futurePrice = candles[i + lookForward].close;
-
-            let signal: "BUY" | "SELL" | null = null;
-
-            // ======================================================
-            // SENİN PAGE.TSX DOSYANDAKİ MANTIKLARIN BİREBİR AYNISI
-            // ======================================================
-
-            // --- 1. MACD ---
-            if (indicatorName === "MACD" && data.macd && data.signal) {
-                const macd = data.macd[i]?.value;
-                const sig = data.signal[i]?.value;
-                // Logic: Macd > Signal ise (Strong Buy veya Weak Buy fark etmez) -> BUY
-                if (macd > sig) signal = "BUY";
-                else if (macd < sig) signal = "SELL";
-            }
-
-            // --- 2. RSI ---
-            else if (indicatorName === "RSI" && data.rsi && data.ma) {
-                const rsi = data.rsi[i]?.value;
-                const ma = data.ma[i]?.value;
-                // Logic: RSI > MA ise (Strong Buy veya Weak Buy) -> BUY
-                if (rsi > ma) signal = "BUY";
-                else signal = "SELL";
-            }
-
-            // --- 3. STOCH RSI ---
-            else if (indicatorName === "STOCHRSI" && data.k && data.d) {
-                const k = data.k[i]?.value;
-                const d = data.d[i]?.value;
-                // Logic: K > D ise (Strong Buy veya Weak Buy) -> BUY
-                if (k > d) signal = "BUY";
-                else if (k < d) signal = "SELL";
-            }
-
-            // --- 4. WAVE TREND ---
-            else if (indicatorName === "WAVETREND" && data.wt1 && data.wt2) {
-                const wt1 = data.wt1[i]?.value;
-                const wt2 = data.wt2[i]?.value;
-                // Logic: WT1 > WT2 ise -> BUY
-                if (wt1 > wt2) signal = "BUY";
-                else if (wt1 < wt2) signal = "SELL";
-            }
-
-            // --- 5. DMI ---
-            else if (indicatorName === "DMI" && data.plusDI && data.minusDI) {
-                const plus = data.plusDI[i]?.value;
-                const minus = data.minusDI[i]?.value;
-                // Logic: +DI > -DI ise -> BUY
-                if (plus > minus) signal = "BUY";
-                else if (minus > plus) signal = "SELL";
-            }
-
-            // --- 6. MFI (Karmaşık Mantık) ---
-            else if (indicatorName === "MFI" && data.mfi) {
-                const last = data.mfi[i]?.value;
-                const prev = data.mfi[i-1]?.value;
-
-                // Senin Sıralaman:
-                // 1. last < 20 -> STRONG BUY
-                // 2. last > 80 -> STRONG SELL
-                // 3. last > prev -> WEAK BUY
-                // 4. last < prev -> WEAK SELL
-
-                if (last < 20) signal = "BUY";
-                else if (last > 80) signal = "SELL";
-                else if (last > prev) signal = "BUY";
-                else if (last < prev) signal = "SELL";
-            }
-
-            // --- 7. SMI ---
-            else if (indicatorName === "SMI" && data.smi && data.signal) {
-                const smi = data.smi[i]?.value;
-                const sig = data.signal[i]?.value;
-                // Logic: SMI > Signal ise -> BUY
-                if (smi > sig) signal = "BUY";
-                else if (smi < sig) signal = "SELL";
-            }
-
-            // --- 8. AO (Awesome Oscillator) ---
-            else if (indicatorName === "AO" && data[i]) {
-                const curr = data[i]?.value;
-                const prev = data[i-1]?.value;
-                const rising = curr > prev;
-
-                // Senin Logic:
-                // curr > 0 -> (rising ? STRONG BUY : WEAK SELL)
-                // else     -> (!rising ? STRONG SELL : WEAK BUY)
-
-                if (curr > 0) {
-                    signal = rising ? "BUY" : "SELL";
-                } else {
-                    signal = !rising ? "SELL" : "BUY";
-                }
-            }
-
-            // --- 9. CCI ---
-            else if (indicatorName === "CCI" && data.cci && data.ma) {
-                const cci = data.cci[i]?.value;
-                const ma = data.ma[i]?.value;
-                // Logic: CCI > MA ise (Strong/Weak) -> BUY
-                if (cci > ma) signal = "BUY";
-                else signal = "SELL";
-            }
-
-            // --- 10. WPR (Williams %R) ---
-            else if (indicatorName === "WPR" && data[i]) {
-                const cur = data[i]?.value;
-                const prev = data[i-1]?.value;
-
-                // Senin Logic:
-                // cur < -80 -> STRONG BUY
-                // cur > -20 -> STRONG SELL
-                // else -> (cur > prev ? WEAK BUY : WEAK SELL)
-
-                if (cur < -80) signal = "BUY";
-                else if (cur > -20) signal = "SELL";
-                else signal = cur > prev ? "BUY" : "SELL";
-            }
-
-            // --- 11. DI (Demand Index) ---
-            else if (indicatorName === "DI" && data[i]) {
-                const cur = data[i]?.value;
-                const prev = data[i-1]?.value;
-
-                // Senin Logic:
-                // cur > 0 -> (cur > prev ? STRONG BUY : WEAK BUY) -> Her türlü BUY
-                // else    -> (cur < prev ? STRONG SELL : WEAK SELL) -> Her türlü SELL
-
-                if (cur > 0) signal = "BUY";
-                else signal = "SELL";
-            }
-
-            // --- 12. CMF ---
-            else if (indicatorName === "CMF" && data[i]) {
-                const val = data[i]?.value;
-                // Senin Logic:
-                // val > 0.05 -> STRONG BUY
-                // val < -0.05 -> STRONG SELL
-                // else -> (val > 0 ? WEAK BUY : WEAK SELL)
-
-                if (val > 0) signal = "BUY"; // 0.05'ten büyükse de BUY, 0 ile 0.05 arasındaysa da BUY
-                else signal = "SELL";
-            }
-
-            // --- 13. AD (Accumulation/Distribution) ---
-            else if (indicatorName === "AD" && data[i]) {
-                // Client side'da basit SMA hesabı yapmamız lazım veya basitleştirmemiz lazım.
-                // Senin Logic: Cur > SMA(21) -> (Prev durumuna göre Strong veya Weak) ama sonuçta BUY
-                const values = [];
-                // Geriye dönük 22 veri lazım SMA için
-                for(let k=0; k<22; k++) {
-                    if (data[i-k]) values.push(data[i-k].value);
-                }
-                if (values.length >= 22) {
-                    const cur = values[0];
-                    // Basit SMA hesabı (Son 21 veri)
-                    let sum = 0; for(let s=0; s<21; s++) sum += values[s];
-                    const curSMA = sum / 21;
-
-                    if (cur > curSMA) signal = "BUY";
-                    else signal = "SELL";
-                }
-            }
-
-            // --- 14. Net Volume ---
-            else if (indicatorName === "NETVOL" && data[i]) {
-                const cur = data[i]?.value;
-                const prev = data[i-1]?.value;
-                // Logic: cur > 0 -> BUY, cur < 0 -> SELL
-                if (cur > 0) signal = "BUY"; // Rising veya Falling fark etmez, 0 üstü BUY
-                else if (cur < 0) signal = "SELL";
-            }
-
-            // --- 15. MADR ---
-            else if (indicatorName === "MADR" && data[i]) {
-                const cur = data[i]?.value;
-                // Logic: cur > 0 -> BUY (Weak veya Strong), cur < 0 -> SELL
-                if (cur > 0) signal = "BUY";
-                else signal = "SELL";
-            }
-
-
-            // ======================================================
-            // SONUÇ HESAPLAMA (Short Dahil)
-            // ======================================================
-            if (signal) {
-                totalSignals++;
-
-                // Long İşlem Başarısı
-                if (signal === "BUY" && futurePrice > currentPrice) {
-                    wins++;
-                }
-                // Short İşlem Başarısı (Düşüşten kazanç)
-                else if (signal === "SELL" && futurePrice < currentPrice) {
-                    wins++;
-                }
-            }
-        }
-
-        const calculatedWinRate = totalSignals > 0 ? (wins / totalSignals) * 100 : 0;
-        setStats({ winRate: calculatedWinRate, totalSignals: totalSignals, wins });
+        const result = calculateWinRate(indicatorName, candles, data, config);
+        setStats(result);
 
         const timer = setTimeout(() => {
-            setAnimatedPercent(calculatedWinRate);
+            setAnimatedPercent(result.winRate);
         }, 300);
 
         return () => clearTimeout(timer);
     }, [indicatorName, candles, data, config]);
+
+    const handleRegenerate = () => {
+        setIsOptimizing(true);
+        setTimeout(() => {
+            const result = findBestParameter(indicatorName, candles, config);
+            if (result && result.bestVal !== -1) {
+                const params = new URLSearchParams(searchParams.toString());
+                const paramName = OPTIMIZABLE_INDICATORS[indicatorName]?.param;
+                if (paramName) {
+                    params.set(paramName, result.bestVal.toString());
+                    router.push(`${window.location.pathname}?${params.toString()}`);
+                }
+            }
+            setIsOptimizing(false);
+        }, 50);
+    };
 
     // Görsel (UI) Kısımları
     const size = 56;
@@ -271,6 +85,17 @@ export default function BacktestMonitor({
 
     return (
         <div className="flex items-center gap-3 bg-gray-900/40 border border-gray-800 rounded-lg p-2 pr-4 shadow-sm backdrop-blur-sm ml-auto">
+            {OPTIMIZABLE_INDICATORS[indicatorName] && (
+                <button
+                    onClick={handleRegenerate}
+                    disabled={isOptimizing}
+                    className="p-1.5 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-200 disabled:opacity-50 group"
+                    title="Optimize parameters"
+                >
+                    <RefreshCw className={cn("w-3.5 h-3.5", isOptimizing && "animate-spin")} />
+                </button>
+            )}
+
             <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
                 <svg className="w-full h-full transform -rotate-90">
                     <circle cx={size / 2} cy={size / 2} r={radius} stroke="currentColor" strokeWidth={strokeWidth} fill="transparent" className="text-gray-800" />
@@ -284,12 +109,74 @@ export default function BacktestMonitor({
             <div className="flex flex-col">
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Backtesting</span>
                 <div className="flex items-center gap-1.5 mt-0.5">
-           <span className="text-[10px] text-gray-300 font-medium bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">
-             {stats.totalSignals} Days
-           </span>
+                    <span className="text-[10px] text-gray-300 font-medium bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">
+                        {stats.totalSignals} Days
+                    </span>
                     <span className="text-[10px] text-gray-400">
-             {stats.wins} Hit
-           </span>
+                        {stats.wins} Hit
+                    </span>
+
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <button className="p-1 hover:bg-gray-800 rounded transition-colors text-gray-500 hover:text-gray-300 ml-1" title="İşlem Geçmişi">
+                                <History className="w-3 h-3" />
+                            </button>
+                        </DialogTrigger>
+                        <DialogContent className="sm:max-w-[600px] bg-gray-950 border-gray-800 text-gray-100">
+                            <DialogHeader>
+                                <DialogTitle className="flex items-center gap-2 text-gray-200">
+                                    <History className="w-5 h-5" />
+                                    {indicatorName} İşlem Geçmişi
+                                </DialogTitle>
+                            </DialogHeader>
+                            <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                <table className="w-full text-xs text-left">
+                                    <thead className="sticky top-0 bg-gray-950 text-gray-400 uppercase text-[10px] border-b border-gray-800">
+                                        <tr>
+                                            <th className="py-2 px-3">Tarih</th>
+                                            <th className="py-2 px-3">Sinyal</th>
+                                            <th className="py-2 px-3 text-right">Fiyat</th>
+                                            <th className="py-2 px-3 text-right">Hedef ({config.lookForward}G)</th>
+                                            <th className="py-2 px-3 text-center">Sonuç</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-900">
+                                        {[...stats.history].reverse().map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-gray-900/40 transition-colors">
+                                                <td className="py-2 px-3 text-gray-400">
+                                                    {typeof item.time === 'number'
+                                                        ? new Date(item.time * 1000).toLocaleDateString()
+                                                        : item.time}
+                                                </td>
+                                                <td className="py-2 px-3">
+                                                    <span className={cn(
+                                                        "flex items-center gap-1 font-bold",
+                                                        item.signal === "BUY" ? "text-emerald-400" : "text-red-400"
+                                                    )}>
+                                                        {item.signal === "BUY" ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                                                        {item.signal}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2 px-3 text-right font-medium">{item.price.toFixed(2)}</td>
+                                                <td className="py-2 px-3 text-right text-gray-400">{item.futurePrice.toFixed(2)}</td>
+                                                <td className="py-2 px-3 text-center">
+                                                    {item.isWin ? (
+                                                        <span className="inline-flex items-center gap-1 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                                            <CheckCircle2 className="w-3 h-3" /> HIT
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 text-red-400 bg-red-400/10 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                                            <XCircle className="w-3 h-3" /> MISS
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </DialogContent>
+                    </Dialog>
                 </div>
             </div>
         </div>

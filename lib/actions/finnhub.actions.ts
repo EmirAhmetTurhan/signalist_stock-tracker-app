@@ -292,3 +292,149 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
     return [];
 }
 
+export async function get4HourCandles(symbol: string, days = 3650): Promise<CandleDataPoint[]> {
+    const to = Math.floor(Date.now() / 1000);
+    // APIs typically limit 4H/intraday to recent 2 years (~720 days)
+    const recentDays = Math.min(days, 720);
+    const cut = to - recentDays * 24 * 60 * 60;
+    const from = to - days * 24 * 60 * 60;
+
+    let olderCandles: CandleDataPoint[] = [];
+    if (days > 720) {
+        try {
+            // Get 10-year daily candles to seed indicator calculations and provide full history
+            const dailyData = await getDailyCandles(symbol, days);
+            // Drop candles that fall into the 4H range to prevent overlapping
+            const filteredDaily = dailyData.filter((c) => c.time < cut);
+
+            // We MUST split each historical daily bar into TWO synthetic 4H bars so that moving averages
+            // (which expect a constant frequency of 2 bars per day) calculate correctly across boundaries!
+            for (const daily of filteredDaily) {
+                const midPrice = (daily.open + daily.close) / 2;
+                // Bar 1 (09:30 - 13:30 equivalent)
+                olderCandles.push({
+                    time: daily.time,
+                    open: daily.open,
+                    high: daily.high,
+                    low: daily.low,
+                    close: midPrice,
+                    volume: daily.volume ? daily.volume / 2 : 0
+                });
+                // Bar 2 (13:30 - 16:00 equivalent)
+                olderCandles.push({
+                    time: (daily.time + 4 * 3600) as UTCTimestamp,
+                    open: midPrice,
+                    high: daily.high,
+                    low: daily.low,
+                    close: daily.close,
+                    volume: daily.volume ? daily.volume / 2 : 0
+                });
+            }
+        } catch (e) {
+            console.error('get4HourCandles older daily fallback error', e);
+        }
+    }
+
+    let recentCandles: CandleDataPoint[] = [];
+
+    // Use Yahoo Finance 1h interval to perfectly assemble 4H candles 
+    // This perfectly aligns to exchange hours (TradingView splits US equities into two RTH 4H candles per day).
+    try {
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1h&period1=${cut}&period2=${to}`;
+        const res = await fetch(yahooUrl, { cache: 'force-cache', next: { revalidate: 600 } });
+        if (!res.ok) throw new Error(`Yahoo chart fetch failed: ${res.status}`);
+        const json: any = await res.json();
+        const result = json?.chart?.result?.[0];
+        const ts: number[] | undefined = result?.timestamp;
+        const quote = result?.indicators?.quote?.[0] || {};
+        const opens: Array<number | null> | undefined = quote.open;
+        const highs: Array<number | null> | undefined = quote.high;
+        const lows: Array<number | null> | undefined = quote.low;
+        const closes: Array<number | null> | undefined = quote.close;
+        const volumes: Array<number | null> | undefined = quote.volume;
+
+        if (Array.isArray(ts) && ts.length) {
+            const byDate = new Map<string, CandleDataPoint[]>();
+
+            for (let i = 0; i < ts.length; i++) {
+                const oRaw = opens?.[i];
+                const hRaw = highs?.[i];
+                const lRaw = lows?.[i];
+                const cRaw = closes?.[i];
+                const vRaw = volumes?.[i];
+
+                const valid = [oRaw, hRaw, lRaw, cRaw].every(
+                    (x) => typeof x === 'number' && Number.isFinite(x) && (x as number) > 0
+                );
+                if (!valid) continue;
+
+                const o = oRaw as number;
+                const h = hRaw as number;
+                const l = lRaw as number;
+                const c = cRaw as number;
+                if (!(l <= h)) continue;
+
+                const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
+                if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
+
+                // Group by UTC date string.
+                const dateStr = new Date(ts[i] * 1000).toISOString().split('T')[0];
+                if (!byDate.has(dateStr)) byDate.set(dateStr, []);
+                byDate.get(dateStr)!.push(item);
+            }
+
+            for (const [, items] of byDate.entries()) {
+                if (items.length === 0) continue;
+
+                let chunkStartTime = items[0].time;
+                let currentChunk: CandleDataPoint[] = [];
+
+                for (const item of items) {
+                    if (item.time < chunkStartTime + 4 * 3600) {
+                        currentChunk.push(item);
+                    } else {
+                        // Finalize previous 4H bucket
+                        recentCandles.push({
+                            time: currentChunk[0].time,
+                            open: currentChunk[0].open,
+                            high: Math.max(...currentChunk.map(x => x.high)),
+                            low: Math.min(...currentChunk.map(x => x.low)),
+                            close: currentChunk[currentChunk.length - 1].close,
+                            volume: currentChunk.reduce((acc, curr) => acc + (curr.volume || 0), 0)
+                        });
+                        // Start new bucket
+                        currentChunk = [item];
+                        chunkStartTime = item.time;
+                    }
+                }
+
+                if (currentChunk.length > 0) {
+                    recentCandles.push({
+                        time: currentChunk[0].time,
+                        open: currentChunk[0].open,
+                        high: Math.max(...currentChunk.map(x => x.high)),
+                        low: Math.min(...currentChunk.map(x => x.low)),
+                        close: currentChunk[currentChunk.length - 1].close,
+                        volume: currentChunk.reduce((acc, curr) => acc + (curr.volume || 0), 0)
+                    });
+                }
+            }
+        }
+    } catch (e) {
+        console.error('get4HourCandles Yahoo error', e);
+    }
+
+    // Combine them
+    let combined = [...olderCandles];
+
+    // Ensure chronological merge with no overlaps
+    if (combined.length > 0 && recentCandles.length > 0) {
+        const lastOldTime = combined[combined.length - 1].time;
+        recentCandles = recentCandles.filter(c => c.time > lastOldTime);
+    }
+
+    combined = combined.concat(recentCandles);
+
+    return combined;
+}
+
