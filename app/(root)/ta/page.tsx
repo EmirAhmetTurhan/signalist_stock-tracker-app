@@ -1,5 +1,6 @@
 import TASearch from "@/components/TASearch";
 import TAIndicatorsButton from "@/components/TAIndicatorsButton";
+import TAIntervalButton from "@/components/TAIntervalButton";
 import LightweightCandleChart from "@/components/LightweightCandleChart";
 import LightweightMACDChart from "@/components/LightweightMACDChart";
 import LightweightStochRSIChart from "@/components/LightweightStochRSIChart";
@@ -19,7 +20,10 @@ import LightweightMADRChart from "@/components/LightweightMADRChart";
 import TAIndicatorSettings from "@/components/TAIndicatorSettings";
 import TradingViewWidget from "@/components/TradingViewWidget";
 import BacktestMonitor from "@/components/BacktestMonitor";
-import { searchStocks, getDailyCandles, fetchJSON } from "@/lib/actions/finnhub.actions";
+import TAStrategiesButton from "@/components/TAStrategiesButton";
+import StrategyBacktestMonitor from "@/components/StrategyBacktestMonitor";
+import CustomStrategyPanel from "@/components/CustomStrategyPanel";
+import { searchStocks, getDailyCandles, get4HourCandles, fetchJSON } from "@/lib/actions/finnhub.actions";
 import { CANDLE_CHART_WIDGET_CONFIG } from "@/lib/constants";
 import { computeMACD } from "@/lib/indicators/macd";
 import { computeStochRSI } from "@/lib/indicators/stochrsi";
@@ -36,6 +40,8 @@ import { computeCMF } from "@/lib/indicators/cmf";
 import { computeAD } from "@/lib/indicators/ad";
 import { computeNetVolume } from "@/lib/indicators/net_volume";
 import { computeMADR } from "@/lib/indicators/madr";
+import { computeALMA } from "@/lib/indicators/alma";
+import { computeBollingerBands } from "@/lib/indicators/bollinger";
 
 export const dynamic = 'force-dynamic';
 
@@ -56,7 +62,7 @@ const SIGNAL_STYLES = {
 const calculateSMA = (data: number[], window: number) => {
     if (data.length < window) return null;
     let sum = 0;
-    for(let i=0; i<window; i++) sum += data[data.length - 1 - i];
+    for (let i = 0; i < window; i++) sum += data[data.length - 1 - i];
     return sum / window;
 };
 
@@ -65,6 +71,9 @@ const TAPage = async (props: TAProps) => {
     const search = (await props.searchParams) || {};
     const symbol = (search.symbol || "").toUpperCase();
     const indParam = String((search as any).ind || "");
+    const intervalParam = String((search as any).interval || "1d");
+    const strategyParam = String((search as any).strategy || "");
+    const isRsiCciStrategy = strategyParam === "rsi_cci_wt";
 
     const macdFast = Number((search as any).macd_fast) || 12;
     const macdSlow = Number((search as any).macd_slow) || 26;
@@ -93,8 +102,26 @@ const TAPage = async (props: TAProps) => {
     const cmfLen = Number((search as any).cmf_len) || 20;
     const madrLen = Number((search as any).madr_len) || 21;
 
-    const candles: CandleDataPoint[] = symbol ? await getDailyCandles(symbol, 3650) : [];
+    const almaLen = Number((search as any).alma_len) || 9;
+    const almaOffset = Number((search as any).alma_offset) || 0.85;
+    const almaSigma = Number((search as any).alma_sigma) || 6;
+    const almaColor = (search as any).alma_color || "#fbbf24";
+    const almaOpacity = Number((search as any).alma_opacity ?? 100);
+    const almaWidth = Number((search as any).alma_width || 2);
+    const almaStyle = Number((search as any).alma_style || 0);
+
+    const bbLen = Number((search as any).bb_len) || 20;
+    const bbStdDev = Number((search as any).bb_stddev) || 2;
+    const bbOffset = Number((search as any).bb_offset) || 0;
+    const bbColor = (search as any).bb_color || "#3b82f6";
+    const bbOpacity = Number((search as any).bb_opacity ?? 100);
+    const bbWidth = Number((search as any).bb_width || 1);
+
+    const candles: CandleDataPoint[] = symbol
+        ? (intervalParam === "4h" ? await get4HourCandles(symbol, 3650) : await getDailyCandles(symbol, 3650))
+        : [];
     const scriptBase = "https://s3.tradingview.com/external-embedding/embed-widget-";
+    const closes = candles.map((c) => ({ time: c.time, close: c.close }));
 
     let logoUrl: string | undefined = undefined;
     if (symbol) {
@@ -104,7 +131,7 @@ const TAPage = async (props: TAProps) => {
                 const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(symbol)}&token=${token}`;
                 const prof = await fetchJSON<{ logo?: string }>(profileUrl, 3600);
                 logoUrl = typeof prof?.logo === 'string' && prof.logo ? prof.logo : undefined;
-            } catch {}
+            } catch { }
         }
     }
 
@@ -112,8 +139,15 @@ const TAPage = async (props: TAProps) => {
         indParam.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
     );
 
+    // Strateji seçiliyken ilgili indikatörleri otomatik aktif et
+    if (isRsiCciStrategy) {
+        activeIndicators.add('rsi');
+        activeIndicators.add('cci');
+        activeIndicators.add('wavetrend');
+    }
 
-    let macdData, stochRsiData, waveTrendData, dmiData, mfiData, smiData, aoData, rsiData, cciData, wprData, diData, cmfData, adData, nvData, madrData;
+
+    let macdData, stochRsiData, waveTrendData, dmiData, mfiData, smiData, aoData, rsiData, cciData, wprData, diData, cmfData, adData, nvData, madrData, almaData, bbData;
 
     const signalLabels: Record<string, SignalLabel> = {};
 
@@ -150,7 +184,7 @@ const TAPage = async (props: TAProps) => {
                 if (lastMacd > lastSignal) addSignal("macd", lastHist > prevHist ? "STRONG BUY" : "WEAK BUY");
                 else if (lastMacd < lastSignal) addSignal("macd", lastHist < prevHist ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- RSI ---
         try {
@@ -165,7 +199,7 @@ const TAPage = async (props: TAProps) => {
                 if (lastRSI > lastMA) addSignal("rsi", lastRSI < 30 ? "STRONG BUY" : "WEAK BUY");
                 else addSignal("rsi", lastRSI > 70 ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- Stochastic RSI ---
         try {
@@ -180,7 +214,7 @@ const TAPage = async (props: TAProps) => {
                 if (lastK > lastD) addSignal("stochrsi", lastK < 20 ? "STRONG BUY" : "WEAK BUY");
                 else if (lastK < lastD) addSignal("stochrsi", lastK > 80 ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- WaveTrend ---
         try {
@@ -196,7 +230,7 @@ const TAPage = async (props: TAProps) => {
                 if (lastW1 > lastW2) addSignal("wavetrend", lastW1 < -60 ? "STRONG BUY" : "WEAK BUY");
                 else if (lastW1 < lastW2) addSignal("wavetrend", lastW1 > 60 ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- DMI ---
         try {
@@ -212,7 +246,7 @@ const TAPage = async (props: TAProps) => {
                 if (lPlus > lMinus) addSignal("dmi", lAdx > 20 ? "STRONG BUY" : "WEAK BUY");
                 else if (lMinus > lPlus) addSignal("dmi", lAdx > 20 ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- MFI ---
         try {
@@ -226,7 +260,7 @@ const TAPage = async (props: TAProps) => {
                 else if (last > prev) addSignal("mfi", "WEAK BUY");
                 else if (last < prev) addSignal("mfi", "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- SMI ---
         try {
@@ -238,23 +272,23 @@ const TAPage = async (props: TAProps) => {
             };
             const hist = smiData.histogram; const sLine = smiData.smi; const sigLine = smiData.signal;
             if (hist.length >= 2) {
-                const lastHist = hist[hist.length-1].value; const prevHist = hist[hist.length-2].value;
-                const lastSmi = sLine[sLine.length-1].value; const lastSig = sigLine[sigLine.length-1].value;
-                if(lastSmi > lastSig) addSignal("smi", lastHist > prevHist ? "STRONG BUY" : "WEAK BUY");
-                else if(lastSmi < lastSig) addSignal("smi", lastHist < prevHist ? "STRONG SELL" : "WEAK SELL");
+                const lastHist = hist[hist.length - 1].value; const prevHist = hist[hist.length - 2].value;
+                const lastSmi = sLine[sLine.length - 1].value; const lastSig = sigLine[sigLine.length - 1].value;
+                if (lastSmi > lastSig) addSignal("smi", lastHist > prevHist ? "STRONG BUY" : "WEAK BUY");
+                else if (lastSmi < lastSig) addSignal("smi", lastHist < prevHist ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- AO ---
         try {
             aoData = computeAO(candles.map((c) => ({ time: c.time, high: c.high, low: c.low })));
-            if(aoData.length >= 2) {
-                const curr = aoData[aoData.length-1].value; const prev = aoData[aoData.length-2].value;
+            if (aoData.length >= 2) {
+                const curr = aoData[aoData.length - 1].value; const prev = aoData[aoData.length - 2].value;
                 const rising = curr > prev;
-                if(curr > 0) addSignal("ao", rising ? "STRONG BUY" : "WEAK SELL");
+                if (curr > 0) addSignal("ao", rising ? "STRONG BUY" : "WEAK SELL");
                 else addSignal("ao", !rising ? "STRONG SELL" : "WEAK BUY");
             }
-        } catch {}
+        } catch { }
 
         // --- CCI ---
         try {
@@ -269,75 +303,108 @@ const TAPage = async (props: TAProps) => {
                 if (lCCI > lMA) addSignal("cci", lCCI < -100 ? "STRONG BUY" : "WEAK BUY");
                 else addSignal("cci", lCCI > 100 ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- WPR ---
         try {
             wprData = computeWPR(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })), wprLen);
-            if(wprData.length >= 2) {
-                const cur = wprData[wprData.length-1].value; const prev = wprData[wprData.length-2].value;
-                if(cur < -80) addSignal("wpr", "STRONG BUY");
-                else if(cur > -20) addSignal("wpr", "STRONG SELL");
+            if (wprData.length >= 2) {
+                const cur = wprData[wprData.length - 1].value; const prev = wprData[wprData.length - 2].value;
+                if (cur < -80) addSignal("wpr", "STRONG BUY");
+                else if (cur > -20) addSignal("wpr", "STRONG SELL");
                 else addSignal("wpr", cur > prev ? "WEAK BUY" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- DI ---
         try {
             diData = computeDemandIndex(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, open: c.open, volume: c.volume || 0 })), diLen, diSmooth, diK);
-            if(diData.length >= 2) {
-                const cur = diData[diData.length-1].value; const prev = diData[diData.length-2].value;
-                if(cur > 0) addSignal("di", cur > prev ? "STRONG BUY" : "WEAK BUY");
+            if (diData.length >= 2) {
+                const cur = diData[diData.length - 1].value; const prev = diData[diData.length - 2].value;
+                if (cur > 0) addSignal("di", cur > prev ? "STRONG BUY" : "WEAK BUY");
                 else addSignal("di", cur < prev ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- CMF ---
         try {
             cmfData = computeCMF(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 })), cmfLen);
-            if(cmfData.length > 0) {
-                const val = cmfData[cmfData.length-1].value;
-                if(val > 0.05) addSignal("cmf", "STRONG BUY");
-                else if(val < -0.05) addSignal("cmf", "STRONG SELL");
+            if (cmfData.length > 0) {
+                const val = cmfData[cmfData.length - 1].value;
+                if (val > 0.05) addSignal("cmf", "STRONG BUY");
+                else if (val < -0.05) addSignal("cmf", "STRONG SELL");
                 else addSignal("cmf", val > 0 ? "WEAK BUY" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- AD ---
         try {
             adData = computeAD(candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 })));
-            if(adData.length > 21) {
+            if (adData.length > 21) {
                 const values = adData.map(d => d.value);
-                const cur = values[values.length-1]; const prev = values[values.length-2];
+                const cur = values[values.length - 1]; const prev = values[values.length - 2];
                 const curSMA = calculateSMA(values, 21); const prevSMA = calculateSMA(values.slice(0, -1), 21);
-                if(curSMA !== null && prevSMA !== null) {
-                    if(prev <= prevSMA && cur > curSMA) addSignal("ad", "STRONG BUY");
-                    else if(prev >= prevSMA && cur < curSMA) addSignal("ad", "STRONG SELL");
+                if (curSMA !== null && prevSMA !== null) {
+                    if (prev <= prevSMA && cur > curSMA) addSignal("ad", "STRONG BUY");
+                    else if (prev >= prevSMA && cur < curSMA) addSignal("ad", "STRONG SELL");
                     else addSignal("ad", cur > curSMA ? "WEAK BUY" : "WEAK SELL");
                 }
             }
-        } catch {}
+        } catch { }
 
         // --- Net Volume ---
         try {
             nvData = computeNetVolume(candles.map((c) => ({ time: c.time, open: c.open, close: c.close, volume: c.volume || 0 })));
-            if(nvData.length >= 2) {
-                const cur = nvData[nvData.length-1].value; const prev = nvData[nvData.length-2].value;
-                if(cur > 0) addSignal("netvol", cur > prev ? "STRONG BUY" : "WEAK BUY");
-                else if(cur < 0) addSignal("netvol", cur < prev ? "STRONG SELL" : "WEAK SELL");
+            if (nvData.length >= 2) {
+                const cur = nvData[nvData.length - 1].value; const prev = nvData[nvData.length - 2].value;
+                if (cur > 0) addSignal("netvol", cur > prev ? "STRONG BUY" : "WEAK BUY");
+                else if (cur < 0) addSignal("netvol", cur < prev ? "STRONG SELL" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
 
         // --- MADR ---
         try {
             madrData = computeMADR(candles.map((c) => ({ time: c.time, close: c.close })), madrLen);
-            if(madrData.length >= 2) {
-                const cur = madrData[madrData.length-1].value; const prev = madrData[madrData.length-2].value;
-                if(prev < 0 && cur > 0) addSignal("madr", "STRONG BUY");
-                else if(prev > 0 && cur < 0) addSignal("madr", "STRONG SELL");
+            if (madrData.length >= 2) {
+                const cur = madrData[madrData.length - 1].value; const prev = madrData[madrData.length - 2].value;
+                if (prev < 0 && cur > 0) addSignal("madr", "STRONG BUY");
+                else if (prev > 0 && cur < 0) addSignal("madr", "STRONG SELL");
                 else addSignal("madr", cur > 0 ? "WEAK BUY" : "WEAK SELL");
             }
-        } catch {}
+        } catch { }
+
+        // --- ALMA ---
+        try {
+            if (activeIndicators.has("alma")) {
+                almaData = computeALMA(closes, almaLen, almaOffset, almaSigma);
+                if (almaData.length > 2 && candles.length > 2) {
+                    const lastCandle = candles[candles.length - 1];
+                    const prevCandle = candles[candles.length - 2];
+                    const lastAlma = almaData[almaData.length - 1].value;
+                    const prevAlma = almaData[almaData.length - 2].value;
+
+                    if (prevCandle.close < prevAlma && lastCandle.close > lastAlma) addSignal("alma", "STRONG BUY");
+                    else if (prevCandle.close > prevAlma && lastCandle.close < lastAlma) addSignal("alma", "STRONG SELL");
+                    else if (lastCandle.close > lastAlma) addSignal("alma", "WEAK BUY");
+                    else if (lastCandle.close < lastAlma) addSignal("alma", "WEAK SELL");
+                }
+            }
+
+            if (activeIndicators.has("bb")) {
+                bbData = computeBollingerBands(closes, bbLen, bbStdDev, bbOffset);
+                if (bbData.length > 2 && candles.length > 2) {
+                    const lastCandle = candles[candles.length - 1];
+                    const prevCandle = candles[candles.length - 2];
+                    const lastBB = bbData[bbData.length - 1];
+                    const prevBB = bbData[bbData.length - 2];
+
+                    if (prevCandle.close < prevBB.lower && lastCandle.close > lastBB.lower) addSignal("bb", "STRONG BUY"); // Lower band cross up
+                    else if (prevCandle.close > prevBB.upper && lastCandle.close < lastBB.upper) addSignal("bb", "STRONG SELL"); // Upper band cross down
+                    else if (lastCandle.close > lastBB.basis && prevCandle.close <= prevBB.basis) addSignal("bb", "WEAK BUY"); // Basis cross up
+                    else if (lastCandle.close < lastBB.basis && prevCandle.close >= prevBB.basis) addSignal("bb", "WEAK SELL"); // Basis cross down
+                }
+            }
+        } catch { }
     }
 
 
@@ -359,6 +426,8 @@ const TAPage = async (props: TAProps) => {
                 <h1 className="text-2xl font-semibold text-gray-100">T/A</h1>
                 <div className="flex items-center gap-2">
                     <TAIndicatorsButton />
+                    <TAStrategiesButton />
+                    <TAIntervalButton />
                     <TAIndicatorSettings />
                     <TASearch initialStocks={initialStocks} />
                 </div>
@@ -388,7 +457,23 @@ const TAPage = async (props: TAProps) => {
                     </div>
 
                     {candles && candles.length > 0 ? (
-                        <LightweightCandleChart data={candles} height={560} />
+                        <LightweightCandleChart
+                            data={candles}
+                            height={560}
+                            almaData={almaData}
+                            almaStyleConfig={{
+                                color: almaColor,
+                                opacity: almaOpacity,
+                                width: almaWidth,
+                                style: almaStyle
+                            }}
+                            bbData={activeIndicators.has("bb") ? bbData : undefined}
+                            bbStyleConfig={{
+                                color: bbColor,
+                                opacity: bbOpacity,
+                                width: bbWidth
+                            }}
+                        />
                     ) : (
                         <TradingViewWidget
                             scriptUrl={`${scriptBase}advanced-chart.js`}
@@ -399,6 +484,100 @@ const TAPage = async (props: TAProps) => {
                     )}
 
 
+                    {/* ===================== STRATEJİ PANELİ ===================== */}
+                    {isRsiCciStrategy && rsiData && cciData && (
+                        <div className="p-4 border border-violet-800/50 rounded-xl bg-violet-950/10 shadow-[0_0_20px_rgba(139,92,246,0.08)]">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-violet-400 animate-pulse" />
+                                    <span className="text-base font-semibold text-violet-200">Strateji: RSI + CCI + WaveTrend</span>
+                                    <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full border border-gray-700">
+                                        3 indikatör aynı yönde → işlem açılır
+                                    </span>
+                                </div>
+                                <StrategyBacktestMonitor
+                                    strategyName="RSI_CCI_WT"
+                                    candles={candles}
+                                    rsiData={rsiData}
+                                    cciData={cciData}
+                                    waveTrendData={waveTrendData}
+                                />
+                            </div>
+                            <div className="grid grid-cols-4 gap-2 text-xs text-gray-400">
+                                <div className="bg-gray-900/60 rounded-lg p-2.5 border border-gray-800">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">RSI Sinyali</div>
+                                    {rsiData.rsi.length > 0 && rsiData.ma.length > 0 ? (
+                                        <span className={`font-semibold text-sm ${rsiData.rsi[rsiData.rsi.length - 1].value > rsiData.ma[rsiData.ma.length - 1].value
+                                            ? 'text-emerald-400' : 'text-red-400'
+                                            }`}>
+                                            {rsiData.rsi[rsiData.rsi.length - 1].value > rsiData.ma[rsiData.ma.length - 1].value ? '▲ AL' : '▼ SAT'}
+                                        </span>
+                                    ) : <span className="text-gray-600">—</span>}
+                                </div>
+                                <div className="bg-gray-900/60 rounded-lg p-2.5 border border-gray-800">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">CCI Sinyali</div>
+                                    {cciData.cci.length > 0 && cciData.ma.length > 0 ? (
+                                        <span className={`font-semibold text-sm ${cciData.cci[cciData.cci.length - 1].value > cciData.ma[cciData.ma.length - 1].value
+                                            ? 'text-emerald-400' : 'text-red-400'
+                                            }`}>
+                                            {cciData.cci[cciData.cci.length - 1].value > cciData.ma[cciData.ma.length - 1].value ? '▲ AL' : '▼ SAT'}
+                                        </span>
+                                    ) : <span className="text-gray-600">—</span>}
+                                </div>
+                                <div className="bg-gray-900/60 rounded-lg p-2.5 border border-gray-800">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">WaveTrend Sinyali</div>
+                                    {waveTrendData && waveTrendData.wt1.length > 0 && waveTrendData.wt2.length > 0 ? (
+                                        <span className={`font-semibold text-sm ${waveTrendData.wt1[waveTrendData.wt1.length - 1].value > waveTrendData.wt2[waveTrendData.wt2.length - 1].value
+                                            ? 'text-emerald-400' : 'text-red-400'
+                                            }`}>
+                                            {waveTrendData.wt1[waveTrendData.wt1.length - 1].value > waveTrendData.wt2[waveTrendData.wt2.length - 1].value ? '▲ AL' : '▼ SAT'}
+                                        </span>
+                                    ) : <span className="text-gray-600">—</span>}
+                                </div>
+                                <div className="bg-gray-900/60 rounded-lg p-2.5 border border-gray-800">
+                                    <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Strateji Kararı</div>
+                                    {rsiData.rsi.length > 0 && cciData.cci.length > 0 ? (() => {
+                                        const rsiBuy = rsiData.rsi[rsiData.rsi.length - 1].value > rsiData.ma[rsiData.ma.length - 1].value;
+                                        const cciBuy = cciData.cci[cciData.cci.length - 1].value > cciData.ma[cciData.ma.length - 1].value;
+                                        const wtBuy = waveTrendData && waveTrendData.wt1.length > 0
+                                            ? waveTrendData.wt1[waveTrendData.wt1.length - 1].value > waveTrendData.wt2[waveTrendData.wt2.length - 1].value
+                                            : null;
+                                        const votes = [rsiBuy, cciBuy, wtBuy].filter(v => v !== null);
+                                        const buyCount = votes.filter(v => v === true).length;
+                                        const sellCount = votes.filter(v => v === false).length;
+                                        if (buyCount === votes.length) return <span className="font-bold text-sm text-emerald-300">✓ AL</span>;
+                                        if (sellCount === votes.length) return <span className="font-bold text-sm text-red-300">✗ SAT</span>;
+                                        return <span className="font-semibold text-sm text-yellow-400">⚡ ÇELİŞKİ</span>;
+                                    })() : <span className="text-gray-600">—</span>}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ===================== CUSTOM STRATEJİ PANELİ ===================== */}
+                    <CustomStrategyPanel
+                        candles={candles}
+                        allData={{
+                            rsiData,
+                            cciData,
+                            waveTrendData,
+                            macdData,
+                            stochRsiData,
+                            dmiData,
+                            smiData,
+                            aoData: aoData ? (aoData as { time: string | number; value: number }[]) : undefined,
+                            mfiData: mfiData ? { mfi: mfiData.mfi } : undefined,
+                            wprData: wprData ? (wprData as { time: string | number; value: number }[]) : undefined,
+                            diData: diData ? (diData as { time: string | number; value: number }[]) : undefined,
+                            cmfData: cmfData ? (cmfData as { time: string | number; value: number }[]) : undefined,
+                            adData: adData ? (adData as { time: string | number; value: number }[]) : undefined,
+                            nvData: nvData ? (nvData as { time: string | number; value: number }[]) : undefined,
+                            madrData: madrData ? (madrData as { time: string | number; value: number }[]) : undefined,
+                            almaData: almaData ? (almaData as { time: string | number; value: number }[]) : undefined,
+                            bbData: bbData,
+                        }}
+                    />
+
                     {activeIndicators.has('macd') && macdData && (
                         <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">
                             <div className="flex items-center justify-between mb-4">
@@ -406,8 +585,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`MACD (${macdFast}, ${macdSlow}, ${macdSig})`}</span>
                                     {signalLabels["macd"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["macd"]]}`}>
-                      {signalLabels["macd"]}
-                    </span>
+                                            {signalLabels["macd"]}
+                                        </span>
                                     )}
                                 </div>
 
@@ -426,8 +605,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`RSI (${rsiLen}, ${rsiMaLen})`}</span>
                                     {signalLabels["rsi"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["rsi"]]}`}>
-                      {signalLabels["rsi"]}
-                    </span>
+                                            {signalLabels["rsi"]}
+                                        </span>
                                     )}
                                 </div>
 
@@ -446,8 +625,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`Stoch RSI (${stochRsiLen}, ${stochLen}, ${stochK}, ${stochD})`}</span>
                                     {signalLabels["stochrsi"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["stochrsi"]]}`}>
-                        {signalLabels["stochrsi"]}
-                    </span>
+                                            {signalLabels["stochrsi"]}
+                                        </span>
                                     )}
                                 </div>
 
@@ -466,8 +645,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`WaveTrend (${wtAvgLen}, ${wtChannelLen}, ${wtMaLen})`}</span>
                                     {signalLabels["wavetrend"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["wavetrend"]]}`}>
-                        {signalLabels["wavetrend"]}
-                    </span>
+                                            {signalLabels["wavetrend"]}
+                                        </span>
                                     )}
                                 </div>
 
@@ -486,8 +665,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`DMI (${dmiDiLen}, ${dmiAdxSmooth})`}</span>
                                     {signalLabels["dmi"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["dmi"]]}`}>
-                        {signalLabels["dmi"]}
-                    </span>
+                                            {signalLabels["dmi"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="DMI" candles={candles} data={dmiData} />
@@ -503,8 +682,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`MFI (${mfiPeriod})`}</span>
                                     {signalLabels["mfi"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["mfi"]]}`}>
-                        {signalLabels["mfi"]}
-                    </span>
+                                            {signalLabels["mfi"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="MFI" candles={candles} data={mfiData} />
@@ -520,8 +699,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`SMI (${smiLongLen}, ${smiShortLen}, ${smiSigLen})`}</span>
                                     {signalLabels["smi"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["smi"]]}`}>
-                        {signalLabels["smi"]}
-                    </span>
+                                            {signalLabels["smi"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="SMI" candles={candles} data={smiData} />
@@ -537,8 +716,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">Awesome Oscillator</span>
                                     {signalLabels["ao"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["ao"]]}`}>
-                        {signalLabels["ao"]}
-                    </span>
+                                            {signalLabels["ao"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="AO" candles={candles} data={aoData} />
@@ -554,8 +733,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`CCI (${cciLen}, ${cciMaLen})`}</span>
                                     {signalLabels["cci"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["cci"]]}`}>
-                        {signalLabels["cci"]}
-                    </span>
+                                            {signalLabels["cci"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="CCI" candles={candles} data={cciData} />
@@ -571,8 +750,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`Williams %R (${wprLen})`}</span>
                                     {signalLabels["wpr"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["wpr"]]}`}>
-                        {signalLabels["wpr"]}
-                    </span>
+                                            {signalLabels["wpr"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="WPR" candles={candles} data={wprData} />
@@ -588,8 +767,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`Demand Index (${diLen}, ${diK}, ${diSmooth})`}</span>
                                     {signalLabels["di"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["di"]]}`}>
-                        {signalLabels["di"]}
-                    </span>
+                                            {signalLabels["di"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="DI" candles={candles} data={diData} />
@@ -605,8 +784,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`CMF (${cmfLen})`}</span>
                                     {signalLabels["cmf"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["cmf"]]}`}>
-                        {signalLabels["cmf"]}
-                    </span>
+                                            {signalLabels["cmf"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="CMF" candles={candles} data={cmfData} />
@@ -622,8 +801,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">A/D</span>
                                     {signalLabels["ad"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["ad"]]}`}>
-                        {signalLabels["ad"]}
-                    </span>
+                                            {signalLabels["ad"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="AD" candles={candles} data={adData} />
@@ -639,8 +818,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">Net Volume</span>
                                     {signalLabels["netvol"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["netvol"]]}`}>
-                        {signalLabels["netvol"]}
-                    </span>
+                                            {signalLabels["netvol"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="NETVOL" candles={candles} data={nvData} />
@@ -656,8 +835,8 @@ const TAPage = async (props: TAProps) => {
                                     <span className="text-lg font-medium text-gray-200">{`MADR (${madrLen})`}</span>
                                     {signalLabels["madr"] && (
                                         <span className={`text-xs font-bold px-3 py-1 rounded-full border ${SIGNAL_STYLES[signalLabels["madr"]]}`}>
-                        {signalLabels["madr"]}
-                    </span>
+                                            {signalLabels["madr"]}
+                                        </span>
                                     )}
                                 </div>
                                 <BacktestMonitor indicatorName="MADR" candles={candles} data={madrData} />

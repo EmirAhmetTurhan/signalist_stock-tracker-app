@@ -1,10 +1,10 @@
 'use server';
 
-import {auth} from "@/lib/better-auth/auth";
-import {inngest} from "@/lib/inngest/client";
-import {headers} from "next/headers";
+import { auth } from "@/lib/better-auth/auth";
+import { inngest } from "@/lib/inngest/client";
+import { headers } from "next/headers";
 
-export const signUpWithEmail = async ({ email, password, fullName, country, investmentGoals, riskTolerance, preferredIndustry }:SignUpFormData) => {
+export const signUpWithEmail = async ({ email, password, fullName, country, investmentGoals, riskTolerance, preferredIndustry }: SignUpFormData) => {
 
     if (!auth) {
         return { success: false, error: "Auth service not initialized (Internal Server Error)" };
@@ -17,14 +17,14 @@ export const signUpWithEmail = async ({ email, password, fullName, country, inve
             headers: await headers(),
         });
 
-        if(response) {
+        if (response) {
             await inngest.send({
                 name: 'app/user.created',
                 data: { email, name: fullName, country, investmentGoals, riskTolerance, preferredIndustry, }
             })
         }
 
-        return { success: true, data: response}
+        return { success: true, data: response }
 
     } catch (e) {
         console.log('Sign up failed', e)
@@ -42,7 +42,7 @@ export const signInWithEmail = async ({ email, password }: SignInFormData) => {
     try {
         const response = await auth.api.signInEmail({ body: { email, password } })
 
-        return { success: true, data: response}
+        return { success: true, data: response }
     } catch (e) {
         console.log('Sign in failed', e)
         return { success: false, error: 'Sign in failed' }
@@ -52,8 +52,27 @@ export const signInWithEmail = async ({ email, password }: SignInFormData) => {
 export const signOut = async () => {
     try {
         await auth.api.signOut({ headers: await headers() });
-    } catch(e) {
+    } catch (e) {
         console.log('Sign out failed', e);
         return { success: false, error: 'Sign out failed' };
+    }
+}
+
+export const updateProfile = async ({ name, image }: { name?: string, image?: string }) => {
+    if (!auth) {
+        return { success: false, error: "Auth service not initialized (Internal Server Error)" };
+    }
+
+    try {
+        const response = await auth.api.updateUser({
+            body: { name, image },
+            headers: await headers()
+        });
+
+        return { success: true, data: response };
+    } catch (e) {
+        console.log('Update profile failed', e);
+        const errorMessage = e instanceof Error ? e.message : 'Update profile failed';
+        return { success: false, error: errorMessage };
     }
 }

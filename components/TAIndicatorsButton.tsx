@@ -21,7 +21,7 @@ const TAIndicatorsButton = () => {
     const indParam = searchParams.get("ind") || "";
 
     const selected = useMemo(() =>
-            new Set(indParam.split(",").filter(Boolean).map((s) => s.trim().toLowerCase())),
+        new Set(indParam.split(",").filter(Boolean).map((s) => s.trim().toLowerCase())),
         [indParam]);
 
     const macdFast = searchParams.get("macd_fast") || "12";
@@ -60,6 +60,13 @@ const TAIndicatorsButton = () => {
     const cmfLen = searchParams.get("cmf_len") || "20";
 
     const madrLen = searchParams.get("madr_len") || "21";
+
+    const almaLen = searchParams.get("alma_len") || "9";
+    const almaOffset = searchParams.get("alma_offset") || "0.85";
+    const almaSigma = searchParams.get("alma_sigma") || "6";
+
+    const bbLen = searchParams.get("bb_len") || "20";
+    const bbStdDev = searchParams.get("bb_stddev") || "2";
 
     const toggle = (key: string) => {
         const params = new URLSearchParams(searchParams.toString());
@@ -220,6 +227,21 @@ const TAIndicatorsButton = () => {
                     MADR ({madrLen})
                 </DropdownMenuCheckboxItem>
 
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("alma")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("alma")}
+                >
+                    ALMA ({almaLen}, {almaOffset}, {almaSigma})
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("bb")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("bb")}
+                >
+                    Bollinger Bantları ({bbLen}, {bbStdDev})
+                </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
         </DropdownMenu>
     );

@@ -59,6 +59,24 @@ export default function TAIndicatorSettings() {
 
     const [madrLen, setMadrLen] = useState(searchParams.get("madr_len") || "21");
 
+    const [almaLen, setAlmaLen] = useState(searchParams.get("alma_len") || "9");
+    const [almaOffset, setAlmaOffset] = useState(searchParams.get("alma_offset") || "0.85");
+    const [almaSigma, setAlmaSigma] = useState(searchParams.get("alma_sigma") || "6");
+    const [almaColor, setAlmaColor] = useState(searchParams.get("alma_color") || "#fbbf24");
+    const [almaOpacity, setAlmaOpacity] = useState(searchParams.get("alma_opacity") || "100");
+    const [almaWidth, setAlmaWidth] = useState(searchParams.get("alma_width") || "2");
+    const [almaLineStyle, setAlmaLineStyle] = useState(searchParams.get("alma_style") || "0"); // 0: Solid, 1: Dotted, 2: Dashed
+
+    const [almaTab, setAlmaTab] = useState("inputs"); // "inputs" | "style"
+
+    const [bbLen, setBbLen] = useState(searchParams.get("bb_len") || "20");
+    const [bbStdDev, setBbStdDev] = useState(searchParams.get("bb_stddev") || "2");
+    const [bbOffset, setBbOffset] = useState(searchParams.get("bb_offset") || "0");
+    const [bbColor, setBbColor] = useState(searchParams.get("bb_color") || "#3b82f6");
+    const [bbOpacity, setBbOpacity] = useState(searchParams.get("bb_opacity") || "100");
+    const [bbWidth, setBbWidth] = useState(searchParams.get("bb_width") || "1");
+    const [bbTab, setBbTab] = useState("inputs");
+
     const indParam = searchParams.get("ind") || "";
     const indicators = new Set(indParam.split(",").filter(Boolean));
 
@@ -74,8 +92,10 @@ export default function TAIndicatorSettings() {
     const showDI = indicators.has("di");
     const showCmf = indicators.has("cmf");
     const showMadr = indicators.has("madr");
+    const showAlma = indicators.has("alma");
+    const showBb = indicators.has("bb");
 
-    if (!showMacd && !showStoch && !showWaveTrend && !showDmi && !showMfi && !showSmi && !showRsi && !showCci && !showWpr && !showDI && !showCmf && !showMadr) return null;
+    if (!showMacd && !showStoch && !showWaveTrend && !showDmi && !showMfi && !showSmi && !showRsi && !showCci && !showWpr && !showDI && !showCmf && !showMadr && !showAlma && !showBb) return null;
 
     const handleSave = async () => {
         const params = new URLSearchParams(searchParams.toString());
@@ -178,6 +198,40 @@ export default function TAIndicatorSettings() {
             if (madrLen !== "21") params.set("madr_len", madrLen); else params.delete("madr_len");
         } else {
             params.delete("madr_len");
+        }
+
+        if (showAlma) {
+            if (almaLen !== "9") params.set("alma_len", almaLen); else params.delete("alma_len");
+            if (almaOffset !== "0.85") params.set("alma_offset", almaOffset); else params.delete("alma_offset");
+            if (almaSigma !== "6") params.set("alma_sigma", almaSigma); else params.delete("alma_sigma");
+            if (almaColor !== "#fbbf24") params.set("alma_color", almaColor); else params.delete("alma_color");
+            if (almaOpacity !== "100") params.set("alma_opacity", almaOpacity); else params.delete("alma_opacity");
+            if (almaWidth !== "2") params.set("alma_width", almaWidth); else params.delete("alma_width");
+            if (almaLineStyle !== "0") params.set("alma_style", almaLineStyle); else params.delete("alma_style");
+        } else {
+            params.delete("alma_len");
+            params.delete("alma_offset");
+            params.delete("alma_sigma");
+            params.delete("alma_color");
+            params.delete("alma_opacity");
+            params.delete("alma_width");
+            params.delete("alma_style");
+        }
+
+        if (showBb) {
+            if (bbLen !== "20") params.set("bb_len", bbLen); else params.delete("bb_len");
+            if (bbStdDev !== "2") params.set("bb_stddev", bbStdDev); else params.delete("bb_stddev");
+            if (bbOffset !== "0") params.set("bb_offset", bbOffset); else params.delete("bb_offset");
+            if (bbColor !== "#3b82f6") params.set("bb_color", bbColor); else params.delete("bb_color");
+            if (bbOpacity !== "100") params.set("bb_opacity", bbOpacity); else params.delete("bb_opacity");
+            if (bbWidth !== "1") params.set("bb_width", bbWidth); else params.delete("bb_width");
+        } else {
+            params.delete("bb_len");
+            params.delete("bb_stddev");
+            params.delete("bb_offset");
+            params.delete("bb_color");
+            params.delete("bb_opacity");
+            params.delete("bb_width");
         }
 
         const newUrl = `${pathname}?${params.toString()}`;
@@ -548,6 +602,293 @@ export default function TAIndicatorSettings() {
                                     />
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    {showAlma && (
+                        <div className="grid gap-3 border-b border-gray-700 pb-4">
+                            <div className="flex items-center justify-between">
+                                <h4 className="font-medium text-yellow-500">Arnaud Legoux Moving Average (ALMA)</h4>
+                                <div className="flex items-center gap-3 text-xs bg-gray-900 px-2 py-1 rounded-lg border border-gray-800">
+                                    <button
+                                        className={almaTab === "inputs" ? "text-white font-medium" : "text-gray-500 hover:text-gray-300"}
+                                        onClick={() => setAlmaTab("inputs")}
+                                    >
+                                        Girdiler
+                                    </button>
+                                    <button
+                                        className={almaTab === "style" ? "text-white font-medium" : "text-gray-500 hover:text-gray-300"}
+                                        onClick={() => setAlmaTab("style")}
+                                    >
+                                        Stil
+                                    </button>
+                                </div>
+                            </div>
+
+                            {almaTab === "inputs" && (
+                                <div className="grid grid-cols-3 gap-2 mt-2">
+                                    <div>
+                                        <Label className="text-xs text-gray-400">Uzunluk (9)</Label>
+                                        <Input
+                                            type="number"
+                                            value={almaLen}
+                                            onChange={(e) => setAlmaLen(e.target.value)}
+                                            className="bg-[#0f0f0f] border-gray-600 h-8"
+                                            min={1}
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-gray-400">Uzantı (0.85)</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={almaOffset}
+                                            onChange={(e) => setAlmaOffset(e.target.value)}
+                                            className="bg-[#0f0f0f] border-gray-600 h-8"
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label className="text-xs text-gray-400">Sigma (6)</Label>
+                                        <Input
+                                            type="number"
+                                            value={almaSigma}
+                                            onChange={(e) => setAlmaSigma(e.target.value)}
+                                            className="bg-[#0f0f0f] border-gray-600 h-8"
+                                            min={1}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            {almaTab === "style" && (
+                                <div className="space-y-5 mt-2 bg-[#0f0f0f] p-4 rounded-xl border border-gray-800">
+                                    {/* Renk Paleti */}
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <Label className="text-xs text-gray-400">Renk</Label>
+                                            <div
+                                                className="w-6 h-6 rounded-md border border-gray-600"
+                                                style={{ backgroundColor: almaColor }}
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-10 gap-1.5 pt-1">
+                                            {[
+                                                "#ffffff", "#e5e7eb", "#9ca3af", "#4b5563", "#1f2937", "#000000", "#ef4444", "#f97316", "#f59e0b", "#84cc16",
+                                                "#10b981", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#fca5a5", "#fdba74", "#fcd34d", "#bef264",
+                                                "#6ee7b7", "#67e8f9", "#93c5fd", "#a5b4fc", "#d8b4fe", "#f9a8d4", "#b91c1c", "#c2410c", "#b45309", "#4d7c0f",
+                                                "#047857", "#0e7490", "#1d4ed8", "#4338ca", "#7e22ce", "#be185d", "#7f1d1d", "#7c2d12", "#78350f", "#3f6212",
+                                                "#064e3b", "#164e63", "#1e3a8a", "#312e81", "#581c87", "#831843"
+                                            ].map(color => (
+                                                <button
+                                                    key={color}
+                                                    onClick={() => setAlmaColor(color)}
+                                                    className={`w-full aspect-square rounded-sm transition-transform ${almaColor === color ? 'ring-2 ring-white scale-110' : 'hover:scale-110'}`}
+                                                    style={{ backgroundColor: color }}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Şeffaflık */}
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <Label className="text-xs text-gray-400">Şeffaflık</Label>
+                                            <span className="text-xs bg-gray-800 px-2 py-1 rounded border border-gray-700">{almaOpacity}%</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={almaOpacity}
+                                            onChange={(e) => setAlmaOpacity(e.target.value)}
+                                            className="w-full accent-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* Kalınlık */}
+                                    <div className="space-y-2">
+                                        <Label className="text-xs text-gray-400">Kalınlık</Label>
+                                        <div className="grid grid-cols-4 gap-0 border border-gray-700 rounded-lg overflow-hidden">
+                                            {[1, 2, 3, 4].map((width) => (
+                                                <button
+                                                    key={width}
+                                                    onClick={() => setAlmaWidth(width.toString())}
+                                                    className={`h-9 flex items-center justify-center border-r border-gray-700 last:border-r-0 transition-colors
+                                                        ${almaWidth === width.toString() ? 'bg-gray-200' : 'bg-gray-900 hover:bg-gray-800'}`}
+                                                >
+                                                    <div
+                                                        className="w-6 bg-current rounded-full"
+                                                        style={{
+                                                            height: width + 'px',
+                                                            color: almaWidth === width.toString() ? '#000' : '#fff'
+                                                        }}
+                                                    />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Çizgi stili */}
+                                    <div className="space-y-2">
+                                        <Label className="text-xs text-gray-400">Çizgi Stili</Label>
+                                        <div className="grid grid-cols-3 gap-0 border border-gray-700 rounded-lg overflow-hidden">
+                                            {/* 0: Solid, 2: Dashed, 1: Dotted (LW Charts mapping: 0=Solid, 1=Dotted, 2=Dashed) */}
+                                            {[
+                                                { val: "0", label: "Solid", dashed: false, dotted: false },
+                                                { val: "2", label: "Dashed", dashed: true, dotted: false },
+                                                { val: "1", label: "Dotted", dashed: false, dotted: true }
+                                            ].map((style) => (
+                                                <button
+                                                    key={style.val}
+                                                    onClick={() => setAlmaLineStyle(style.val)}
+                                                    className={`h-9 flex items-center justify-center border-r border-gray-700 last:border-r-0 transition-colors
+                                                        ${almaLineStyle === style.val ? 'bg-gray-200' : 'bg-gray-900 hover:bg-gray-800'}`}
+                                                >
+                                                    <div
+                                                        className="w-8 border-t-2"
+                                                        style={{
+                                                            borderColor: almaLineStyle === style.val ? '#000' : '#fff',
+                                                            borderStyle: style.dashed ? 'dashed' : style.dotted ? 'dotted' : 'solid',
+                                                        }}
+                                                    />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {showBb && (
+                        <div className="grid gap-3 border-b border-gray-700 pb-4">
+                            <div className="flex items-center justify-between">
+                                <h4 className="font-medium text-yellow-500">Bollinger Bantları</h4>
+                                <div className="flex items-center gap-3 text-xs bg-gray-900 px-2 py-1 rounded-lg border border-gray-800">
+                                    <button
+                                        className={bbTab === "inputs" ? "text-white font-medium" : "text-gray-500 hover:text-gray-300"}
+                                        onClick={() => setBbTab("inputs")}
+                                    >
+                                        Girdiler
+                                    </button>
+                                    <button
+                                        className={bbTab === "style" ? "text-white font-medium" : "text-gray-500 hover:text-gray-300"}
+                                        onClick={() => setBbTab("style")}
+                                    >
+                                        Stil
+                                    </button>
+                                </div>
+                            </div>
+
+                            {bbTab === "inputs" && (
+                                <div className="grid grid-cols-2 gap-4 mt-2">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-gray-400">Uzunluk (20)</Label>
+                                        <Input
+                                            type="number"
+                                            value={bbLen}
+                                            onChange={(e) => setBbLen(e.target.value)}
+                                            className="bg-[#0f0f0f] border-gray-600 h-8"
+                                            min={1}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-gray-400">StdSapma (2)</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.1"
+                                            value={bbStdDev}
+                                            onChange={(e) => setBbStdDev(e.target.value)}
+                                            className="bg-[#0f0f0f] border-gray-600 h-8"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-gray-400">Uzantı (0)</Label>
+                                        <Input
+                                            type="number"
+                                            value={bbOffset}
+                                            onChange={(e) => setBbOffset(e.target.value)}
+                                            className="bg-[#0f0f0f] border-gray-600 h-8"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-gray-400">Temel HO Türü</Label>
+                                        <select disabled className="w-full bg-[#0f0f0f] border border-gray-600 h-8 rounded-md text-sm px-2 text-gray-400">
+                                            <option>SMA</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+
+                            {bbTab === "style" && (
+                                <div className="space-y-5 mt-2 bg-[#0f0f0f] p-4 rounded-xl border border-gray-800">
+                                    {/* Renk Paleti */}
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                            <Label className="text-xs text-gray-400">Renk</Label>
+                                            <div
+                                                className="w-6 h-6 rounded-md border border-gray-600"
+                                                style={{ backgroundColor: bbColor }}
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-10 gap-1.5 pt-1">
+                                            {[
+                                                "#ffffff", "#e5e7eb", "#9ca3af", "#4b5563", "#1f2937", "#000000", "#ef4444", "#f97316", "#f59e0b", "#84cc16",
+                                                "#10b981", "#06b6d4", "#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#fca5a5", "#fdba74", "#fcd34d", "#bef264",
+                                                "#6ee7b7", "#67e8f9", "#93c5fd", "#a5b4fc", "#d8b4fe", "#f9a8d4", "#b91c1c", "#c2410c", "#b45309", "#4d7c0f",
+                                                "#047857", "#0e7490", "#1d4ed8", "#4338ca", "#7e22ce", "#be185d", "#7f1d1d", "#7c2d12", "#78350f", "#3f6212",
+                                                "#064e3b", "#164e63", "#1e3a8a", "#312e81", "#581c87", "#831843"
+                                            ].map(color => (
+                                                <button
+                                                    key={color}
+                                                    onClick={() => setBbColor(color)}
+                                                    className={`w-full aspect-square rounded-sm transition-transform ${bbColor === color ? 'ring-2 ring-white scale-110' : 'hover:scale-110'}`}
+                                                    style={{ backgroundColor: color }}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Şeffaflık */}
+                                    <div className="space-y-3">
+                                        <div className="flex justify-between items-center">
+                                            <Label className="text-xs text-gray-400">Arkaplan Şeffaflık</Label>
+                                            <span className="text-xs bg-gray-800 px-2 py-1 rounded border border-gray-700">{bbOpacity}%</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min="0"
+                                            max="100"
+                                            value={bbOpacity}
+                                            onChange={(e) => setBbOpacity(e.target.value)}
+                                            className="w-full accent-blue-500"
+                                        />
+                                    </div>
+
+                                    {/* Kalınlık */}
+                                    <div className="space-y-2">
+                                        <Label className="text-xs text-gray-400">Çizgi Kalınlığı</Label>
+                                        <div className="grid grid-cols-4 gap-0 border border-gray-700 rounded-lg overflow-hidden">
+                                            {[1, 2, 3, 4].map((width) => (
+                                                <button
+                                                    key={width}
+                                                    onClick={() => setBbWidth(width.toString())}
+                                                    className={`h-9 flex items-center justify-center border-r border-gray-700 last:border-r-0 transition-colors
+                                                        ${bbWidth === width.toString() ? 'bg-gray-200' : 'bg-gray-900 hover:bg-gray-800'}`}
+                                                >
+                                                    <div
+                                                        className="w-6 bg-current rounded-full"
+                                                        style={{
+                                                            height: width + 'px',
+                                                            color: bbWidth === width.toString() ? '#000' : '#fff'
+                                                        }}
+                                                    />
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
