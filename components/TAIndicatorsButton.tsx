@@ -242,6 +242,32 @@ const TAIndicatorsButton = () => {
                 >
                     Bollinger Bantları ({bbLen}, {bbStdDev})
                 </DropdownMenuCheckboxItem>
+
+                <DropdownMenuSeparator className="bg-gray-600" />
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("patterns")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("patterns")}
+                >
+                    Candle Pattern Recognition
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("fractals")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("fractals")}
+                >
+                    Historical Fractals
+                </DropdownMenuCheckboxItem>
+
+                <DropdownMenuCheckboxItem
+                    checked={selected.has("sr")}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggle("sr")}
+                >
+                    Support &amp; Resistance
+                </DropdownMenuCheckboxItem>
             </DropdownMenuContent>
         </DropdownMenu>
     );

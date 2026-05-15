@@ -23,6 +23,9 @@ import BacktestMonitor from "@/components/BacktestMonitor";
 import TAStrategiesButton from "@/components/TAStrategiesButton";
 import StrategyBacktestMonitor from "@/components/StrategyBacktestMonitor";
 import CustomStrategyPanel from "@/components/CustomStrategyPanel";
+import CandlePatternPanel from "@/components/CandlePatternPanel";
+import HistoricalFractalsPanel from "@/components/HistoricalFractalsPanel";
+import SRPanel from "@/components/SRPanel";
 import { searchStocks, getDailyCandles, get4HourCandles, fetchJSON } from "@/lib/actions/finnhub.actions";
 import { CANDLE_CHART_WIDGET_CONFIG } from "@/lib/constants";
 import { computeMACD } from "@/lib/indicators/macd";
@@ -42,6 +45,9 @@ import { computeNetVolume } from "@/lib/indicators/net_volume";
 import { computeMADR } from "@/lib/indicators/madr";
 import { computeALMA } from "@/lib/indicators/alma";
 import { computeBollingerBands } from "@/lib/indicators/bollinger";
+import { detectCandlePatterns, CandlePattern } from "@/lib/indicators/candlePatterns";
+import { detectHistoricalFractals, FractalResult } from "@/lib/indicators/historicalFractals";
+import { detectSupportResistance, SRResult } from "@/lib/indicators/supportResistance";
 
 export const dynamic = 'force-dynamic';
 
@@ -148,6 +154,9 @@ const TAPage = async (props: TAProps) => {
 
 
     let macdData, stochRsiData, waveTrendData, dmiData, mfiData, smiData, aoData, rsiData, cciData, wprData, diData, cmfData, adData, nvData, madrData, almaData, bbData;
+    let candlePatternData: CandlePattern[] = [];
+    let fractalResult: FractalResult | null = null;
+    let srResult: SRResult | null = null;
 
     const signalLabels: Record<string, SignalLabel> = {};
 
@@ -405,6 +414,28 @@ const TAPage = async (props: TAProps) => {
                 }
             }
         } catch { }
+
+        // --- Candle Pattern Recognition ---
+        try {
+            if (activeIndicators.has('patterns')) {
+                candlePatternData = detectCandlePatterns(candles);
+            }
+        } catch { }
+
+        // --- Historical Fractals ---
+        try {
+            if (activeIndicators.has('fractals')) {
+                const intervalSecs = intervalParam === '4h' ? 14400 : 86400;
+                fractalResult = detectHistoricalFractals(candles, 30, 15, 5, intervalSecs);
+            }
+        } catch { }
+
+        // --- Support & Resistance ---
+        try {
+            if (activeIndicators.has('sr')) {
+                srResult = detectSupportResistance(candles);
+            }
+        } catch { }
     }
 
 
@@ -473,6 +504,9 @@ const TAPage = async (props: TAProps) => {
                                 opacity: bbOpacity,
                                 width: bbWidth
                             }}
+                            candlePatterns={activeIndicators.has('patterns') ? candlePatternData : undefined}
+                            fractalProjection={activeIndicators.has('fractals') && fractalResult ? fractalResult.projectedLine : undefined}
+                            srLevels={activeIndicators.has('sr') && srResult ? srResult.levels : undefined}
                         />
                     ) : (
                         <TradingViewWidget
@@ -483,6 +517,31 @@ const TAPage = async (props: TAProps) => {
                         />
                     )}
 
+
+                    {/* ===================== CANDLE PATTERN PANEL ===================== */}
+                    {activeIndicators.has('patterns') && candles && candles.length > 0 && (
+                        <CandlePatternPanel patterns={candlePatternData} interval={intervalParam} />
+                    )}
+
+                    {/* ===================== HISTORICAL FRACTALS PANEL ===================== */}
+                    {activeIndicators.has('fractals') && candles && candles.length > 0 && (
+                        fractalResult
+                            ? <HistoricalFractalsPanel result={fractalResult} interval={intervalParam} />
+                            : <div className="p-4 border border-gray-800 rounded-xl bg-gray-950/20 mt-4">
+                                <span className="text-lg font-medium text-gray-200">Historical Fractals</span>
+                                <p className="text-gray-500 text-sm mt-2">Not enough historical data to find similar patterns. Try a symbol with more history.</p>
+                            </div>
+                    )}
+
+                    {/* ===================== SUPPORT & RESISTANCE PANEL ===================== */}
+                    {activeIndicators.has('sr') && candles && candles.length > 0 && (
+                        srResult
+                            ? <SRPanel result={srResult} />
+                            : <div className="p-4 border border-gray-800 rounded-xl bg-gray-950/20 mt-4">
+                                <span className="text-lg font-medium text-gray-200">Support &amp; Resistance</span>
+                                <p className="text-gray-500 text-sm mt-2">Not enough data to detect levels. Try a symbol with more history.</p>
+                            </div>
+                    )}
 
                     {/* ===================== STRATEJİ PANELİ ===================== */}
                     {isRsiCciStrategy && rsiData && cciData && (
