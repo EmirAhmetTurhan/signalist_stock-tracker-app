@@ -1,7 +1,7 @@
 import { createPriceAlertAction } from '@/lib/actions/alerts.actions';
 import { CONDITION_OPTIONS } from '@/lib/constants';
 import Link from 'next/link';
-import AlertStockSelector from '@/components/AlertStockSelector';
+import AlertStockSelector from '@/components/alerts/AlertStockSelector';
 
 type CreateAlertPageProps = {
   searchParams?: Promise<{ symbol?: string; company?: string }>;

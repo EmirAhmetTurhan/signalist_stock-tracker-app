@@ -3,8 +3,9 @@ import { getCurrentUserWatchlist } from '@/lib/actions/watchlist.actions';
 import { getUserAlerts } from '@/lib/actions/alerts.actions';
 import { fetchJSON } from '@/lib/actions/finnhub.actions';
 import { formatPrice, formatChangePercent, getChangeColorClass, getAlertText } from '@/lib/utils';
-import WatchlistTable from '@/components/WatchlistTable';
-import AlertActions from '@/components/AlertActions';
+import WatchlistTable from '@/components/watchlist/WatchlistTable';
+import AlertActions from '@/components/alerts/AlertActions';
+export const dynamic = 'force-dynamic';
 
 const WatchlistPage = async () => {
   const items = await getCurrentUserWatchlist();
@@ -15,7 +16,7 @@ const WatchlistPage = async () => {
   let logosMap: Record<string, string | undefined> = {};
   if (alertsWithQuotes.length > 0) {
     const uniqSymbols = Array.from(new Set(alertsWithQuotes.map((a) => a.symbol.toUpperCase())));
-    const token = process.env.FINNHUB_API_KEY || process.env.NEXT_PUBLIC_FINNHUB_API_KEY || '';
+    const token = process.env.FINNHUB_API_KEY || '';
     if (token) {
       const quotes: Record<string, { c?: number; dp?: number }> = {};
       const logos: Record<string, string | undefined> = {};

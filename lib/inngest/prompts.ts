@@ -198,6 +198,8 @@ Apple Stock Jumped After Great Earnings Report
 </div>
 </div>`
 
+// NOTE: Bu prompt şu anda hiçbir Inngest fonksiyonu tarafından kullanılmamaktadır.
+// Gelecekte Finnhub → TradingView sembol eşleştirme özelliği için ayrılmıştır.
 export const TRADINGVIEW_SYMBOL_MAPPING_PROMPT = `You are an expert in financial markets and trading platforms. Your task is to find the correct TradingView symbol that corresponds to a given Finnhub stock symbol.
 
 Stock information from Finnhub:

@@ -12,6 +12,7 @@ export interface PriceAlertItem extends Document {
   active: boolean;
   lastNotifiedOn?: Date | null;
   createdAt: Date;
+  updatedAt: Date;
 }
 
 const PriceAlertSchema = new Schema<PriceAlertItem>(
@@ -26,9 +27,8 @@ const PriceAlertSchema = new Schema<PriceAlertItem>(
     frequency: { type: String, enum: ['daily'], default: 'daily' },
     active: { type: Boolean, default: true },
     lastNotifiedOn: { type: Date, default: null },
-    createdAt: { type: Date, default: () => new Date() },
   },
-  { timestamps: false }
+  { timestamps: true }
 );
 
 // Helpful compound index for querying active daily alerts per symbol

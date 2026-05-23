@@ -66,8 +66,10 @@ export function computeWaveTrend(
     return (v - e) / (denom || 1e-12);
   });
 
-  const wt1Arr = ema(ci, n2); // TCI
-  const wt2Arr = sma(ci.map((_, i) => (typeof wt1Arr[i] === 'number' ? (wt1Arr[i] as number) : 0)), signal);
+  const wt1Arr = ema(ci, n2); // TCI (Trend Confirmation Indicator)
+  // wt2 = SMA of wt1 (sinyal çizgisi). wt1'deki undefined değerler 0 ile değiştirilir
+  const wt1Values: number[] = wt1Arr.map((v) => (typeof v === 'number' ? v : 0));
+  const wt2Arr = sma(wt1Values, signal);
 
   const out: WTPoint[] = candles.map((c, i) => ({
     time: c.time,

@@ -1,5 +1,8 @@
-import Header from "@/components/Header";
+import Header from "@/components/layout/Header";
 import { headers } from "next/headers";
+import dynamic from "next/dynamic";
+
+const FloatingChatButton = dynamic(() => import("@/components/ai/FloatingChatButton"));
 import { auth } from "@/lib/better-auth/auth";
 import { redirect } from "next/navigation";
 
@@ -22,6 +25,8 @@ const Layout = async ({ children }: { children: React.ReactNode }) => {
             <div className="container py-10">
                 {children}
             </div>
+
+            <FloatingChatButton />
         </main>
     )
 }

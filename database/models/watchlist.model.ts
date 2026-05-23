@@ -14,7 +14,7 @@ const WatchlistSchema = new Schema<WatchlistItem>(
     company: { type: String, required: true, trim: true },
     addedAt: { type: Date, default: () => new Date() },
   },
-  { timestamps: false }
+  { timestamps: true }
 );
 
 // Prevent duplicate symbols per user

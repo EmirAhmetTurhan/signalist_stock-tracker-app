@@ -722,6 +722,8 @@ export const STOCK_ALERT_LOWER_EMAIL_TEMPLATE = `<!DOCTYPE html>
 </body>
 </html>`;
 
+// NOTE: Bu şablon henüz hiçbir Inngest fonksiyonu veya gönderici tarafından kullanılmamaktadır.
+// Gelecekte hacim bazlı alarm özelliği için ayrılmıştır.
 export const VOLUME_ALERT_EMAIL_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -942,6 +944,8 @@ export const VOLUME_ALERT_EMAIL_TEMPLATE = `<!DOCTYPE html>
 </body>
 </html>`;
 
+// NOTE: Bu şablon henüz hiçbir Inngest fonksiyonu veya gönderici tarafından kullanılmamaktadır.
+// Gelecekte inaktif kullanıcı hatırlatma özelliği için ayrılmıştır.
 export const INACTIVE_USER_REMINDER_EMAIL_TEMPLATE = `<!DOCTYPE html>
 <html lang="en">
 <head>

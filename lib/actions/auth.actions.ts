@@ -3,8 +3,19 @@
 import { auth } from "@/lib/better-auth/auth";
 import { inngest } from "@/lib/inngest/client";
 import { headers } from "next/headers";
+import { signUpSchema, signInSchema, validate } from "@/lib/validations/schemas";
 
-export const signUpWithEmail = async ({ email, password, fullName, country, investmentGoals, riskTolerance, preferredIndustry }: SignUpFormData) => {
+function logError(context: string, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[Auth] ${context}: ${message}`);
+}
+
+export const signUpWithEmail = async (input: SignUpFormData) => {
+    const parsed = validate(signUpSchema, input);
+    if (!parsed.success) {
+        return { success: false, error: parsed.error };
+    }
+    const { email, password, fullName, country, investmentGoals, riskTolerance, preferredIndustry } = parsed.data;
 
     if (!auth) {
         return { success: false, error: "Auth service not initialized (Internal Server Error)" };
@@ -13,52 +24,53 @@ export const signUpWithEmail = async ({ email, password, fullName, country, inve
     try {
         const response = await auth.api.signUpEmail({
             body: { email, password, name: fullName },
-            // ensure cookies/session are properly set in a Next.js app router environment
             headers: await headers(),
         });
 
         if (response) {
             await inngest.send({
                 name: 'app/user.created',
-                data: { email, name: fullName, country, investmentGoals, riskTolerance, preferredIndustry, }
-            })
+                data: { email, name: fullName, country, investmentGoals, riskTolerance, preferredIndustry }
+            });
         }
 
-        return { success: true, data: response }
-
+        return { success: true, data: response };
     } catch (e) {
-        console.log('Sign up failed', e)
-        const errorMessage = e instanceof Error ? e.message : 'Sign up failed'
-        return { success: false, error: errorMessage }
+        logError('Sign up failed', e);
+        return { success: false, error: 'Sign up failed' };
     }
-}
+};
 
-export const signInWithEmail = async ({ email, password }: SignInFormData) => {
+export const signInWithEmail = async (input: SignInFormData) => {
+    const parsed = validate(signInSchema, input);
+    if (!parsed.success) {
+        return { success: false, error: parsed.error };
+    }
+    const { email, password } = parsed.data;
 
     if (!auth) {
         return { success: false, error: "Auth service not initialized (Internal Server Error)" };
     }
 
     try {
-        const response = await auth.api.signInEmail({ body: { email, password } })
-
-        return { success: true, data: response }
+        const response = await auth.api.signInEmail({ body: { email, password } });
+        return { success: true, data: response };
     } catch (e) {
-        console.log('Sign in failed', e)
-        return { success: false, error: 'Sign in failed' }
+        logError('Sign in failed', e);
+        return { success: false, error: 'Sign in failed' };
     }
-}
+};
 
 export const signOut = async () => {
     try {
         await auth.api.signOut({ headers: await headers() });
     } catch (e) {
-        console.log('Sign out failed', e);
+        logError('Sign out failed', e);
         return { success: false, error: 'Sign out failed' };
     }
-}
+};
 
-export const updateProfile = async ({ name, image }: { name?: string, image?: string }) => {
+export const updateProfile = async ({ name, image }: { name?: string; image?: string }) => {
     if (!auth) {
         return { success: false, error: "Auth service not initialized (Internal Server Error)" };
     }
@@ -66,13 +78,11 @@ export const updateProfile = async ({ name, image }: { name?: string, image?: st
     try {
         const response = await auth.api.updateUser({
             body: { name, image },
-            headers: await headers()
+            headers: await headers(),
         });
-
         return { success: true, data: response };
     } catch (e) {
-        console.log('Update profile failed', e);
-        const errorMessage = e instanceof Error ? e.message : 'Update profile failed';
-        return { success: false, error: errorMessage };
+        logError('Update profile failed', e);
+        return { success: false, error: 'Update profile failed' };
     }
-}
+};

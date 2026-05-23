@@ -7,7 +7,15 @@ import { getNews } from "@/lib/actions/finnhub.actions";
 import { getFormattedTodayDate } from "@/lib/utils";
 import { connectToDatabase } from "@/database/mongoose";
 import PriceAlert from "@/database/models/price-alert.model";
-import { fetchJSON } from "@/lib/actions/finnhub.actions";
+import { fetchJSON, getDailyCandles, get4HourCandles } from "@/lib/actions/finnhub.actions";
+import { Report } from "@/database/models/report.model";
+import AIJob from "@/database/models/ai-job.model";
+import Notification from "@/database/models/notification.model";
+import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";
+import type { Candle } from "@/lib/ta/backtest";
+import { INDICATOR_NAMES, mapIndicatorData, DEFAULT_PARAMS } from "@/lib/ai/tools";
+import { calculateWinRate } from "@/lib/ta/backtest";
+import { computeIndicators } from "@/lib/ta/compute";
 
 // Local typing to satisfy TS without altering public contracts
 type UserForNewsEmail = { id: string; email: string; name: string };
@@ -17,8 +25,7 @@ type AICandidate = { content?: AIContent };
 type AIResponse = { candidates?: AICandidate[] };
 
 export const sendSignUpEmail = inngest.createFunction(
-    { id: 'sign-up-email' },
-    { event: 'app/user.created'},
+    { id: 'sign-up-email', triggers: [{ event: 'app/user.created'}] },
     async ({ event, step }) => {
         const userProfile = `
             - Country: ${event.data.country}
@@ -60,8 +67,7 @@ export const sendSignUpEmail = inngest.createFunction(
 )
 
 export const sendDailyNewsSummary = inngest.createFunction(
-    { id: 'daily-news-summary' },
-    [ { event: 'app/send.daily.news' }, { cron: '0 12 * * *' } ],
+    { id: 'daily-news-summary', triggers: [ { event: 'app/send.daily.news' }, { cron: '0 12 * * *' } ] },
     async ({ step }) => {
         // Step #1: Get all users for news delivery
         const users = await step.run('get-all-users', getAllUsersForNewsEmail)
@@ -133,8 +139,7 @@ export const sendDailyNewsSummary = inngest.createFunction(
 
 // Daily evaluation of price alerts; shares the same cadence as news
 export const evaluateDailyPriceAlerts = inngest.createFunction(
-    { id: 'daily-price-alerts' },
-    [ { event: 'app/evaluate.price.alerts' }, { cron: '0 12 * * *' } ],
+    { id: 'daily-price-alerts', triggers: [ { event: 'app/evaluate.price.alerts' }, { cron: '0 12 * * *' } ] },
     async ({ step }) => {
         // Load active daily alerts
         const alerts = await step.run('load-active-alerts', async () => {
@@ -153,7 +158,7 @@ export const evaluateDailyPriceAlerts = inngest.createFunction(
             groups.set(key, list);
         }
 
-        const token = process.env.FINNHUB_API_KEY || process.env.NEXT_PUBLIC_FINNHUB_API_KEY || '';
+        const token = process.env.FINNHUB_API_KEY || '';
         const now = new Date();
 
         for (const [symbol, items] of groups) {
@@ -201,3 +206,332 @@ export const evaluateDailyPriceAlerts = inngest.createFunction(
         return { success: true, message: 'Price alerts evaluated' };
     }
 )
+
+// ---- AI Agent Arka Plan İşlemleri ----
+
+export const aiOptimizeParameter = inngest.createFunction(
+    { id: 'ai-optimize-parameter', retries: 0, triggers: [{ event: 'ai/optimize-parameter' }] },
+    async ({ event, step }) => {
+        const data = event.data as { jobId?: string; batchId?: string; symbol?: string; indicator?: string; interval?: string; userId?: string };
+        const jobId = data.jobId || 'unknown';
+        const batchId = data.batchId || null;
+        const symbol = data.symbol || 'UNKNOWN';
+        const indicator = data.indicator || 'UNKNOWN';
+        const interval = data.interval || '1d';
+
+        const userId = data.userId || 'inngest-system';
+
+        // Adim 1: Veritabaninda 'running' durumunda AIJob olustur + ilk step
+        await step.run('create-ai-job', async () => {
+            await connectToDatabase();
+            await AIJob.create({
+                userId,
+                type: 'optimize_parameter',
+                status: 'running',
+                title: `${symbol} için ${indicator} optimizasyonu`,
+                source: 'chat',
+                jobId,
+                batchId,
+                input: { symbol, indicator, interval },
+                startedAt: new Date(),
+                steps: [
+                  { name: 'create-job', status: 'completed', detail: 'Analysis job created', completedAt: new Date() },
+                  { name: 'fetch-candles', status: 'running', detail: `Fetching historical candle data for ${symbol}...` },
+                ],
+            });
+        });
+
+        // Adim 2: Gercek TA hesaplamasi (brute-force optimizasyon)
+        let bestValue: number | null = null;
+        let winRate: number | null = null;
+        let paramName = '?';
+
+        try {
+            const result = await step.run('run-optimization', async () => {
+                const name = indicator.toUpperCase();
+                const config = OPTIMIZABLE_INDICATORS[name];
+                if (!config) throw new Error(`${indicator} is not optimizable`);
+
+                const candles: Candle[] = interval === '4h'
+                    ? await get4HourCandles(symbol, 3650)
+                    : await getDailyCandles(symbol, 3650);
+
+                if (!candles || candles.length === 0) {
+                    throw new Error(`Insufficient candle data for ${symbol}`);
+                }
+
+                // Step guncelle: veri cekildi, optimizasyon basliyor
+                await connectToDatabase();
+                await AIJob.updateOne({ jobId }, { $set: {
+                  'steps.1.status': 'completed',
+                  'steps.1.completedAt': new Date(),
+                  'steps.1.detail': `Fetched ${candles.length} candles for ${symbol}`,
+                }});
+                await AIJob.updateOne({ jobId }, { $push: {
+                  steps: { name: 'run-optimization', status: 'running', detail: `Computing ${name} for all parameter values...` },
+                }});
+
+                const optResult = findBestParameter(name, candles);
+
+                // Step guncelle: optimizasyon tamamlandi
+                await connectToDatabase();
+                await AIJob.updateOne({ jobId }, { $set: {
+                  'steps.2.status': 'completed',
+                  'steps.2.completedAt': new Date(),
+                  'steps.2.detail': `${name} optimization complete. Best result found.`,
+                }});
+                await AIJob.updateOne({ jobId }, { $push: {
+                  steps: { name: 'finalize', status: 'running', detail: 'Saving results...' },
+                }});
+
+                return optResult;
+            });
+
+            if (result && result.bestVal !== -1) {
+                bestValue = result.bestVal;
+                winRate = Math.round(result.bestWinRate * 100) / 100;
+                paramName = OPTIMIZABLE_INDICATORS[indicator.toUpperCase()]?.param ?? '?';
+            }
+        } catch (e) {
+            // Hata durumunda raporu 'failed' olarak isaretle + kullanici dostu hata mesaji
+            const errMsg = String(e);
+            const userFriendlyError =
+              errMsg.includes('403') || errMsg.includes('access') || errMsg.includes('denied')
+                ? `Borsa veri saglayicisi (Finnhub) ${symbol} icin erisimi reddetti veya hata verdi.`
+                : errMsg.includes('Insufficient') || errMsg.includes('candle')
+                ? `${symbol} icin yeterli mum verisi bulunamadi. Bu hisse piyasada yeni olabilir.`
+                : `Optimizasyon sirasinda beklenmeyen bir hata olustu: ${errMsg.slice(0, 200)}`;
+
+            await step.run('mark-failed', async () => {
+                await connectToDatabase();
+                await AIJob.updateOne({ jobId }, { $set: { status: 'failed', errorMessage: userFriendlyError, updatedAt: new Date() } });
+                await AIJob.updateOne({ jobId }, { $push: { steps: { name: 'error', status: 'failed', detail: userFriendlyError, completedAt: new Date() } } });
+                
+                await Notification.create({
+                    userId,
+                    type: 'ai_job_failed',
+                    title: 'Optimizasyon Başarısız',
+                    message: `${symbol} için ${indicator} optimizasyonu sırasında bir hata oluştu.`,
+                    jobId
+                });
+            });
+            return { success: false, jobId, error: String(e) };
+        }
+
+        // Adim 3: Raporu gercek sonuclarla olustur ve isi 'completed' yap
+        await step.run('update-report', async () => {
+            await connectToDatabase();
+            
+            const fullData = {
+                symbol,
+                indicator,
+                interval,
+                bestValue,
+                winRate,
+                parameter: paramName,
+                completedAt: new Date(),
+            };
+
+            const report = await Report.create({
+                jobId,
+                userId,
+                symbol,
+                indicator,
+                bestValue,
+                winRate,
+                fullData,
+                status: 'completed',
+            });
+
+            await AIJob.updateOne(
+                { jobId },
+                {
+                    $set: {
+                        status: 'completed',
+                        reportId: report._id.toString(),
+                        completedAt: new Date(),
+                        'steps.3.status': 'completed',
+                        'steps.3.completedAt': new Date(),
+                        'steps.3.detail': `Best ${paramName}: ${bestValue} (${winRate}% win rate)`,
+                    },
+                }
+            );
+
+            await Notification.create({
+                userId,
+                type: 'ai_job_completed',
+                title: 'Optimizasyon Tamamlandı',
+                message: `${symbol} için ${indicator} optimizasyonu başarıyla sonuçlandı. Win Rate: %${winRate}`,
+                jobId,
+                reportId: report._id.toString(),
+                actionUrl: `/archive/reports/${report._id.toString()}`
+            });
+        });
+
+        return {
+            success: true,
+            jobId,
+            message: `${symbol} için ${indicator} optimizasyonu tamamlandı. Best ${paramName}: ${bestValue}, Win Rate: ${winRate}%`,
+            symbol,
+            indicator,
+            interval,
+            bestValue,
+            winRate,
+            parameter: paramName,
+        };
+    }
+)
+
+export const aiRankIndicatorsJob = inngest.createFunction(
+    { id: 'ai-rank-indicators', retries: 0, triggers: [{ event: 'ai/rank-indicators' }] },
+    async ({ event, step }) => {
+        const data = event.data as { jobId?: string; symbol?: string; interval?: string; years?: number; indicators?: string[]; isSingle?: boolean; topN?: number };
+        const jobId = data.jobId || 'unknown';
+        const symbol = data.symbol || 'UNKNOWN';
+        const interval = data.interval || '1d';
+        const years = data.years || 5;
+        const topN = data.topN || 5;
+        const isSingle = data.isSingle || false;
+        const requestedIndicators = data.indicators;
+        
+        const days = Math.round(years * 365);
+
+        const userId = (data as any).userId || 'inngest-system';
+
+        await step.run('create-ai-job', async () => {
+            await connectToDatabase();
+            await AIJob.create({
+                userId,
+                type: isSingle ? 'find_best_indicator' : 'rank_indicators',
+                status: 'running',
+                title: `${symbol} için İndikatör Sıralaması`,
+                source: 'chat',
+                jobId,
+                input: { symbol, indicator: isSingle ? 'FIND_BEST' : 'RANK', interval, years },
+                startedAt: new Date(),
+                steps: [
+                  { name: 'init', status: 'completed', detail: 'Analysis job started', completedAt: new Date() },
+                  { name: 'fetch-candles', status: 'running', detail: `Fetching ${years} years of historical data for ${symbol}...` },
+                ],
+            });
+        });
+
+        let results: { name: string; winRate: number; signals: number }[] = [];
+
+        try {
+            results = await step.run('run-ranking', async () => {
+                const candles: Candle[] = interval === '4h'
+                    ? await get4HourCandles(symbol, days)
+                    : await getDailyCandles(symbol, days);
+
+                if (!candles || candles.length === 0) {
+                    throw new Error(`Insufficient candle data for ${symbol}`);
+                }
+
+                await connectToDatabase();
+                await AIJob.updateOne({ jobId }, { $set: {
+                  'steps.1.status': 'completed',
+                  'steps.1.completedAt': new Date(),
+                  'steps.1.detail': `Fetched data (${candles.length} candles)`,
+                }});
+                await AIJob.updateOne({ jobId }, { $push: {
+                  steps: { name: 'compute', status: 'running', detail: `Computing technical indicators...` },
+                }});
+
+                const toTest = requestedIndicators ?? INDICATOR_NAMES.filter((n) => OPTIMIZABLE_INDICATORS[n.toUpperCase()]);
+                const activeSet = new Set(toTest.map((s) => s.toLowerCase()));
+                const computed = computeIndicators(candles as any, activeSet, DEFAULT_PARAMS);
+
+                await connectToDatabase();
+                await AIJob.updateOne({ jobId }, { $set: {
+                  'steps.2.status': 'completed',
+                  'steps.2.completedAt': new Date(),
+                  'steps.2.detail': `Indicators computed.`,
+                }});
+                await AIJob.updateOne({ jobId }, { $push: {
+                  steps: { name: 'backtest', status: 'running', detail: `Running historical backtests...` },
+                }});
+
+                const testResults: { name: string; winRate: number; signals: number }[] = [];
+                for (const ind of toTest) {
+                    const idata = mapIndicatorData(computed, ind.toLowerCase());
+                    if (!idata) continue;
+                    try {
+                        const { winRate, totalSignals } = calculateWinRate(ind.toUpperCase(), candles, idata, { lookForward: 5 });
+                        testResults.push({ name: ind.toUpperCase(), winRate: Math.round(winRate * 100) / 100, signals: totalSignals });
+                    } catch { /* ignore single error */ }
+                }
+                
+                testResults.sort((a, b) => b.winRate - a.winRate);
+                return testResults;
+            });
+            
+        } catch (e) {
+            const errMsg = String(e);
+            await step.run('mark-failed', async () => {
+                await connectToDatabase();
+                await AIJob.updateOne({ jobId }, { $set: { status: 'failed', errorMessage: errMsg, updatedAt: new Date() } });
+                await AIJob.updateOne({ jobId }, { $push: { steps: { name: 'error', status: 'failed', detail: errMsg, completedAt: new Date() } } });
+                
+                await Notification.create({
+                    userId,
+                    type: 'ai_job_failed',
+                    title: 'İndikatör Sıralaması Başarısız',
+                    message: `${symbol} analizi sırasında bir hata oluştu.`,
+                    jobId
+                });
+            });
+            return { success: false, jobId, error: errMsg };
+        }
+
+        await step.run('update-report', async () => {
+            const finalRanked = results.slice(0, topN);
+            await connectToDatabase();
+
+            const fullData = {
+                symbol,
+                interval,
+                best: isSingle ? finalRanked : undefined,
+                ranked: !isSingle ? finalRanked : undefined,
+                results: results,
+                completedAt: new Date(),
+            };
+
+            const report = await Report.create({
+                jobId,
+                userId,
+                symbol,
+                indicator: isSingle ? 'FIND_BEST' : 'RANK',
+                bestValue: finalRanked.length > 0 ? finalRanked[0].winRate : null,
+                winRate: finalRanked.length > 0 ? finalRanked[0].winRate : null,
+                fullData,
+            });
+
+            await AIJob.updateOne(
+                { jobId },
+                {
+                    $set: {
+                        status: 'completed',
+                        reportId: report._id.toString(),
+                        completedAt: new Date(),
+                        'steps.3.status': 'completed',
+                        'steps.3.completedAt': new Date(),
+                        'steps.3.detail': `Backtests completed successfully.`,
+                    },
+                }
+            );
+
+            await Notification.create({
+                userId,
+                type: 'ai_job_completed',
+                title: 'İndikatör Sıralaması Tamamlandı',
+                message: `${symbol} için teknik göstergeler başarıyla analiz edildi.`,
+                jobId,
+                reportId: report._id.toString(),
+                actionUrl: `/archive/reports/${report._id.toString()}`
+            });
+        });
+
+        return { success: true, jobId };
+    }
+);

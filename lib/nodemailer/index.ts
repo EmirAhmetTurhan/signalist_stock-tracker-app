@@ -79,3 +79,24 @@ export const sendPriceAlertEmail = async ({
 
     await transporter.sendMail(mailOptions);
 }
+
+export const sendSmartAlertEmail = async ({
+  email, name, symbol, conditions,
+}: {
+  email: string; name: string; symbol: string; conditions: string;
+}) => {
+  const mailOptions = {
+    from: '"Signalist Smart Alerts" <signalist@jsmastery.pro>',
+    to: email,
+    subject: `🤖 Smart Alert Triggered: ${name} (${symbol})`,
+    html: `<div style="background:#141414;color:#ccc;padding:24px;font-family:Arial">
+      <h2 style="color:#fdd458">Smart Alert Triggered</h2>
+      <h3 style="color:#fff">${name}</h3>
+      <p><strong style="color:#fdd458">${symbol}</strong></p>
+      <p style="color:#9095a1">Conditions: ${conditions}</p>
+      <p style="color:#9095a1;margin-top:24px">All conditions were met based on the latest market data.</p>
+      <a href="http://localhost:3000/watchlist" style="color:#fdd458">View your alerts →</a>
+    </div>`,
+  };
+  await transporter.sendMail(mailOptions);
+}

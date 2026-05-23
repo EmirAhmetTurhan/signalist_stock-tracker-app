@@ -6,6 +6,12 @@ import { headers } from 'next/headers';
 import PriceAlert from '@/database/models/price-alert.model';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
+import { createAlertSchema, updateAlertSchema, validate } from '@/lib/validations/schemas';
+
+function logError(context: string, error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[Alerts] ${context}: ${message}`);
+}
 
 export async function createPriceAlertAction(formData: FormData) {
   try {
@@ -24,8 +30,10 @@ export async function createPriceAlertAction(formData: FormData) {
     const threshold = Number(thresholdStr.replace(/[^0-9.\-]/g, ''));
     const alertType: 'upper' | 'lower' = condition === 'less' ? 'lower' : 'upper';
 
-    if (!symbol || !Number.isFinite(threshold)) {
-      return;
+    const parsed = validate(createAlertSchema, { symbol, company, alertName, alertType, threshold });
+    if (!parsed.success) {
+      logError('Validation failed', parsed.error);
+      redirect('/watchlist');
     }
 
     await PriceAlert.create({
@@ -42,8 +50,61 @@ export async function createPriceAlertAction(formData: FormData) {
 
     redirect('/watchlist');
   } catch (e) {
-    console.error('createPriceAlertAction error', e);
+    logError('createPriceAlertAction error', e);
     redirect('/watchlist');
+  }
+}
+
+// Programmatic alert functions for AI tool use (no FormData, no redirect)
+export async function createAlert(input: {
+  symbol: string;
+  company: string;
+  alertName: string;
+  alertType: 'upper' | 'lower';
+  threshold: number;
+}): Promise<{ success: boolean; id?: string; error?: string }> {
+  try {
+    await connectToDatabase();
+    const session = await auth.api.getSession({ headers: await headers() });
+    const user = session?.user;
+    if (!user?.id || !user?.email) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    const parsed = validate(createAlertSchema, input);
+    if (!parsed.success) return { success: false, error: parsed.error };
+
+    const doc = await PriceAlert.create({
+      userId: user.id,
+      email: user.email,
+      symbol: parsed.data.symbol,
+      company: parsed.data.company,
+      alertName: parsed.data.alertName,
+      alertType: parsed.data.alertType,
+      threshold: parsed.data.threshold,
+      frequency: 'daily',
+      active: true,
+    });
+
+    return { success: true, id: String(doc._id) };
+  } catch (e) {
+    logError('createAlert', e);
+    return { success: false, error: String(e) };
+  }
+}
+
+export async function deleteAlert(symbol: string): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
+  try {
+    await connectToDatabase();
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+    if (!userId) return { success: false, error: 'Not authenticated' };
+
+    const result = await PriceAlert.deleteOne({ userId, symbol: symbol.toUpperCase() });
+    return { success: true, deletedCount: result.deletedCount };
+  } catch (e) {
+    logError('deleteAlert', e);
+    return { success: false, error: String(e) };
   }
 }
 
@@ -65,7 +126,7 @@ export async function getUserAlerts(): Promise<Alert[]> {
       threshold: Number(a.threshold),
     }));
   } catch (e) {
-    console.error('getUserAlerts error', e);
+    logError('getUserAlerts error', e);
     return [] as Alert[];
   }
 }
@@ -80,13 +141,21 @@ export async function updateAlertThresholdAction(formData: FormData) {
     const alertId = String(formData.get('alertId') || '').trim();
     const thresholdStr = String(formData.get('threshold') || '').trim();
     const threshold = Number(thresholdStr.replace(/[^0-9.\-]/g, ''));
-    if (!alertId || !Number.isFinite(threshold)) return;
 
-    await PriceAlert.updateOne({ _id: alertId, userId }, { $set: { threshold }, $unset: { lastNotifiedOn: '' } });
+    const parsed = validate(updateAlertSchema, { alertId, threshold });
+    if (!parsed.success) {
+      logError('Validation failed', parsed.error);
+      redirect('/watchlist');
+    }
+
+    await PriceAlert.updateOne(
+      { _id: alertId, userId },
+      { $set: { threshold: parsed.data.threshold }, $unset: { lastNotifiedOn: '' } }
+    );
     revalidatePath('/watchlist');
     redirect('/watchlist');
   } catch (e) {
-    console.error('updateAlertThresholdAction error', e);
+    logError('updateAlertThresholdAction error', e);
     redirect('/watchlist');
   }
 }
@@ -105,7 +174,7 @@ export async function deleteAlertAction(formData: FormData) {
     revalidatePath('/watchlist');
     redirect('/watchlist');
   } catch (e) {
-    console.error('deleteAlertAction error', e);
+    logError('deleteAlertAction error', e);
     redirect('/watchlist');
   }
 }

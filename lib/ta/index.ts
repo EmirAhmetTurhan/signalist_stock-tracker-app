@@ -1,0 +1,7 @@
+// lib/ta/index.ts — Barrel export
+export { computeIndicators, parseActiveIndicators } from './compute';
+export type { ComputedIndicators } from './compute';
+export { generateAllSignals, computeOverall, addSignal } from './signals';
+export type { SignalMap, OverallResult } from './signals';
+export type { SignalLabel, IndicatorParams } from './types';
+export { SIGNAL_STYLES } from './types';

@@ -1,9 +1,9 @@
 'use client';
 
-import countryList from 'react-select-country-list';
-import { CircleFlag } from 'react-circle-flags';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { Control, Controller, FieldError } from 'react-hook-form';
+import type { CircleFlag as CircleFlagType } from 'react-circle-flags';
 import {
     Popover,
     PopoverContent,
@@ -30,6 +30,11 @@ type CountrySelectProps = {
     required?: boolean;
 };
 
+const CircleFlag = dynamic(() => import('react-circle-flags').then(m => ({ default: m.CircleFlag })), {
+  ssr: false,
+  loading: () => <span className="inline-block h-5 w-5 rounded bg-gray-700" />,
+});
+
 const CountrySelect = ({
                            value,
                            onChange,
@@ -38,9 +43,13 @@ const CountrySelect = ({
     onChange: (value: string) => void;
 }) => {
     const [open, setOpen] = useState(false);
+    const [countries, setCountries] = useState<{ value: string; label: string }[]>([]);
 
-
-    const countries = countryList().getData();
+    useEffect(() => {
+      import('react-select-country-list').then((mod) => {
+        setCountries(mod.default().getData());
+      });
+    }, []);
 
 
     return (

@@ -1,4 +1,4 @@
-import TradingViewWidget from "@/components/TradingViewWidget";
+import TradingViewWidget from "@/components/charts/TradingViewWidget";
 import {
   SYMBOL_INFO_WIDGET_CONFIG,
   CANDLE_CHART_WIDGET_CONFIG,
@@ -7,7 +7,7 @@ import {
   COMPANY_PROFILE_WIDGET_CONFIG,
   COMPANY_FINANCIALS_WIDGET_CONFIG,
 } from "@/lib/constants";
-import WatchlistButton from "@/components/WatchlistButton";
+import WatchlistButton from "@/components/watchlist/WatchlistButton";
 import { getCurrentUserWatchlist } from "@/lib/actions/watchlist.actions";
 
 const StockDetails = async ({ params }: StockDetailsPageProps) => {

@@ -5,7 +5,7 @@ import { POPULAR_STOCK_SYMBOLS } from '@/lib/constants';
 import { cache } from 'react';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
-const NEXT_PUBLIC_FINNHUB_API_KEY = process.env.NEXT_PUBLIC_FINNHUB_API_KEY ?? '';
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY ?? process.env.FINNHUB_API_KEY ?? '';
 
 async function fetchJSON<T>(url: string, revalidateSeconds?: number): Promise<T> {
     const options: RequestInit & { next?: { revalidate?: number } } = revalidateSeconds
@@ -25,7 +25,7 @@ export { fetchJSON };
 export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> {
     try {
         const range = getDateRange(5);
-        const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
+        const token = process.env.FINNHUB_API_KEY ?? FINNHUB_API_KEY;
         if (!token) {
             throw new Error('FINNHUB API key is not configured');
         }
@@ -100,7 +100,7 @@ export async function getNews(symbols?: string[]): Promise<MarketNewsArticle[]> 
 
 export const searchStocks = cache(async (query?: string): Promise<StockWithWatchlistStatus[]> => {
     try {
-        const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
+        const token = process.env.FINNHUB_API_KEY ?? FINNHUB_API_KEY;
         if (!token) {
             // If no token, log and return empty to avoid throwing per requirements
             console.error('Error in stock search:', new Error('FINNHUB API key is not configured'));
@@ -200,7 +200,7 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
 
     // 1) Try Finnhub first (if token exists)
     try {
-        const token = process.env.FINNHUB_API_KEY ?? NEXT_PUBLIC_FINNHUB_API_KEY;
+        const token = process.env.FINNHUB_API_KEY ?? FINNHUB_API_KEY;
         if (token) {
             const url = `${FINNHUB_BASE_URL}/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=D&from=${from}&to=${to}&token=${token}`;
             type CandleResponse = { s: 'ok' | string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[]; v?: number[] };
@@ -248,7 +248,8 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
     // 2) Fallback to Yahoo Finance (no API key needed)
     try {
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${from}&period2=${to}`;
-        const res = await fetch(yahooUrl, { cache: 'force-cache', next: { revalidate: 600 } });
+        const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' };
+        const res = await fetch(yahooUrl, { cache: 'force-cache', next: { revalidate: 600 }, headers });
         if (!res.ok) throw new Error(`Yahoo chart fetch failed: ${res.status}`);
         const json: any = await res.json();
         const result = json?.chart?.result?.[0];
@@ -341,7 +342,8 @@ export async function get4HourCandles(symbol: string, days = 3650): Promise<Cand
     // This perfectly aligns to exchange hours (TradingView splits US equities into two RTH 4H candles per day).
     try {
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1h&period1=${cut}&period2=${to}`;
-        const res = await fetch(yahooUrl, { cache: 'force-cache', next: { revalidate: 600 } });
+        const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' };
+        const res = await fetch(yahooUrl, { cache: 'force-cache', next: { revalidate: 600 }, headers });
         if (!res.ok) throw new Error(`Yahoo chart fetch failed: ${res.status}`);
         const json: any = await res.json();
         const result = json?.chart?.result?.[0];
