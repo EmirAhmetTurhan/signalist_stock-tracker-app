@@ -11,6 +11,9 @@ import { getDailyCandlesForAI, getDailyCandles, get4HourCandles, getNews } from 
 import { getCurrentUserWatchlist, addToWatchlist, removeFromWatchlist } from '@/lib/actions/watchlist.actions';
 import { createAlert, deleteAlert, getUserAlerts } from '@/lib/actions/alerts.actions';
 import { createSmartAlert as createSmartAlertAction, getSmartAlerts as getSmartAlertsAction } from '@/lib/actions/smart-alerts.actions';
+import { createForwardTest, changeForwardTestStatus } from '@/lib/actions/forward-test.actions';
+import { getPortfolioData, getOpenPositions } from '@/lib/actions/trade.actions';
+import { generateTradeToken } from '@/lib/ai/token-security';
 import { computeIndicators } from '@/lib/ta/compute';
 import { generateAllSignals } from '@/lib/ta/signals';
 import { calculateWinRate } from '@/lib/ta/backtest';
@@ -739,6 +742,142 @@ function generateOverallEvaluation(signals: Array<{indicator: string, signal: st
       const result = await getSmartAlertsAction(symbol, userId || undefined);
       if (!result.success) return result;
       return { success: true, alerts: result.alerts, count: result.alerts?.length ?? 0 };
+    },
+  }),
+
+  // --- 17. startForwardTest ---
+  startForwardTest: tool({
+    description: '[RESEARCH_TOOLS] Starts a Forward Test (Shadow Mode or Auto Execution) for a specific strategy on a symbol. Use when user asks to "forward test this", "paper trade this strategy automatically", or "start a shadow test".',
+    inputSchema: z.object({
+      name: z.string().min(1).describe('Name of the strategy/test'),
+      symbol: requiredSymbol,
+      interval: intervalSchema,
+      indicators: indicatorsListSchema.describe('List of indicators required for this strategy'),
+      entryRule: z.any().describe('JSON object representing the entry rule composite (logic AND/OR)'),
+      exitRule: z.any().describe('JSON object representing the exit rule composite (logic AND/OR)'),
+      positionSizingMode: z.enum(['fixed_cash', 'percent_portfolio', 'fixed_shares']).default('fixed_cash'),
+      positionSizingValue: z.number().default(1000).describe('Amount or percentage'),
+      executionMode: z.enum(['shadow', 'auto', 'propose_only']).default('shadow'),
+      capitalAllocated: z.number().default(10000).describe('Theoretical capital for shadow mode'),
+    }),
+    execute: async ({ name, symbol, interval, indicators, entryRule, exitRule, positionSizingMode, positionSizingValue, executionMode, capitalAllocated }) => {
+      try {
+        if (!userId) return { success: false, error: 'Oturum bulunamadı.' };
+
+        const result = await createForwardTest({
+          userId,
+          name,
+          symbol,
+          interval,
+          indicatorConfig: { activeIndicators: indicators, params: DEFAULT_PARAMS },
+          entryRule,
+          exitRule,
+          positionSizing: { mode: positionSizingMode, value: positionSizingValue },
+          executionMode,
+          capitalAllocated,
+        });
+
+        if (!result.success) return result;
+        return { success: true, symbol, name, executionMode, message: `Forward Test "${name}" started for ${symbol} in ${executionMode} mode.` };
+      } catch (e) {
+        return { success: false, error: `Failed to start forward test: ${formatError(e)}` };
+      }
+    },
+  }),
+
+  // --- 18. getPortfolioStatus ---
+  getPortfolioStatus: tool({
+    description: '[PORTFOLIO_TOOLS] Returns the user\'s current portfolio balance, equity, and a list of all open positions. STRICT BOUNDARY: ONLY use when the user asks "what stocks do I own?", "show my portfolio", or "what is my balance?". NEVER hallucinate holdings.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      try {
+        if (!userId) return { success: false, error: 'Unauthorized: You must be logged in to view your portfolio.' };
+        
+        const summaryRes = await getPortfolioData(userId);
+        const positionsRes = await getOpenPositions(userId);
+
+        if (!summaryRes.success || !positionsRes.success) {
+          return { success: false, error: 'Failed to fetch portfolio data.' };
+        }
+
+        return {
+          success: true,
+          summary: summaryRes.data,
+          positions: positionsRes.positions,
+        };
+      } catch (e) {
+        return { success: false, error: `Portfolio fetch failed: ${formatError(e)}` };
+      }
+    },
+  }),
+
+  // --- 19. proposeTrade ---
+  proposeTrade: tool({
+    description: '[PORTFOLIO_TOOLS] Generates a secure trade proposal for the user to confirm. STRICT BOUNDARY: Use ONLY when the user explicitly asks you to buy or sell a stock (e.g. "Buy 10 shares of AAPL"). You CANNOT execute trades directly. This tool will present a confirmation card to the user.',
+    inputSchema: z.object({
+      symbol: requiredSymbol,
+      side: z.enum(['BUY', 'SELL']).describe('Trade direction'),
+      quantity: z.number().int().positive().describe('Number of shares to trade'),
+    }),
+    execute: async ({ symbol, side, quantity }) => {
+      try {
+        if (!userId) return { success: false, error: 'Unauthorized: You must be logged in to trade.' };
+
+        // Get current price for UI display and slippage estimation
+        const { fetchJSON } = await import('@/lib/actions/finnhub.actions');
+        const token = process.env.FINNHUB_API_KEY || '';
+        const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${token}`;
+        
+        let currentPrice = 0;
+        if (token) {
+          const quote = await fetchJSON<{ c?: number }>(url, 120);
+          if (quote && quote.c) currentPrice = quote.c;
+        }
+
+        const messageId = randomUUID(); // Link token to this specific AI response
+        const nonce = randomUUID();
+        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes expiration
+
+        const tradeToken = generateTradeToken({
+          userId,
+          symbol,
+          side,
+          quantity,
+          expiresAt,
+          nonce,
+          messageId,
+        });
+
+        return {
+          success: true,
+          symbol,
+          side,
+          quantity,
+          currentPrice,
+          tradeToken, // Used by the frontend to confirm
+          messageId,
+        };
+      } catch (e) {
+        return { success: false, error: `Failed to generate trade proposal: ${formatError(e)}` };
+      }
+    },
+  }),
+
+  // --- 20. stopForwardTest ---
+  stopForwardTest: tool({
+    description: '[PORTFOLIO_TOOLS] Pauses or stops an active strategy forward test. Use when user says "Stop trading AAPL" or "Pause my MACD strategy".',
+    inputSchema: z.object({
+      strategyId: z.string().describe('The ID of the strategy to stop. If you do not know the ID, you must ask the user or check active strategies.'),
+    }),
+    execute: async ({ strategyId }) => {
+      try {
+        if (!userId) return { success: false, error: 'Unauthorized.' };
+        const result = await changeForwardTestStatus(userId, strategyId, 'paused');
+        if (!result.success) return result;
+        return { success: true, strategyId, message: 'Strategy has been successfully paused.' };
+      } catch (e) {
+        return { success: false, error: `Failed to stop strategy: ${formatError(e)}` };
+      }
     },
   }),
 });

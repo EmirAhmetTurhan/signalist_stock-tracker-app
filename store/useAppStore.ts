@@ -4,6 +4,15 @@ import { persist } from 'zustand/middleware';
 type WatchlistItem = { symbol: string; company: string; addedAt?: string };
 type IndicatorState = { name: string; active: boolean };
 
+// Paper Portfolio state (NOT persisted — server is source of truth)
+interface PaperPortfolioState {
+  walletSnapshot: WalletSnapshot | null;
+  openPositions: PortfolioPosition[];
+  recentTrades: PortfolioTrade[];
+  pendingOptimistic: string[]; // clientRequestIds in-flight
+  isLoading: boolean;
+}
+
 interface AppState {
   // Watchlist
   watchlist: WatchlistItem[];
@@ -23,6 +32,17 @@ interface AppState {
   activeJobs: Record<string, string>;
   addActiveJob: (convId: string, jobId: string) => void;
   removeActiveJob: (convId: string) => void;
+
+  // Paper Portfolio
+  paperPortfolio: PaperPortfolioState;
+  setPortfolioData: (data: {
+    wallet?: WalletSnapshot | null;
+    positions?: PortfolioPosition[];
+    trades?: PortfolioTrade[];
+  }) => void;
+  addOptimisticTrade: (clientRequestId: string, walletDelta: number) => void;
+  removeOptimisticTrade: (clientRequestId: string) => void;
+  setPortfolioLoading: (loading: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -59,6 +79,55 @@ export const useAppStore = create<AppState>()(
           delete next[convId];
           return { activeJobs: next };
         }),
+
+      // Paper Portfolio
+      paperPortfolio: {
+        walletSnapshot: null,
+        openPositions: [],
+        recentTrades: [],
+        pendingOptimistic: [],
+        isLoading: false,
+      },
+
+      setPortfolioData: (data) =>
+        set((state) => ({
+          paperPortfolio: {
+            ...state.paperPortfolio,
+            ...(data.wallet !== undefined ? { walletSnapshot: data.wallet } : {}),
+            ...(data.positions !== undefined ? { openPositions: data.positions } : {}),
+            ...(data.trades !== undefined ? { recentTrades: data.trades } : {}),
+          },
+        })),
+
+      addOptimisticTrade: (clientRequestId, walletDelta) =>
+        set((state) => ({
+          paperPortfolio: {
+            ...state.paperPortfolio,
+            pendingOptimistic: [...state.paperPortfolio.pendingOptimistic, clientRequestId],
+            walletSnapshot: state.paperPortfolio.walletSnapshot
+              ? {
+                  ...state.paperPortfolio.walletSnapshot,
+                  cashBalance: state.paperPortfolio.walletSnapshot.cashBalance + walletDelta,
+                  buyingPower: state.paperPortfolio.walletSnapshot.buyingPower + walletDelta,
+                }
+              : null,
+          },
+        })),
+
+      removeOptimisticTrade: (clientRequestId) =>
+        set((state) => ({
+          paperPortfolio: {
+            ...state.paperPortfolio,
+            pendingOptimistic: state.paperPortfolio.pendingOptimistic.filter(
+              (id) => id !== clientRequestId
+            ),
+          },
+        })),
+
+      setPortfolioLoading: (loading) =>
+        set((state) => ({
+          paperPortfolio: { ...state.paperPortfolio, isLoading: loading },
+        })),
     }),
     {
       name: 'signalist-app-store',

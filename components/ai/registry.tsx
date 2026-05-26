@@ -13,6 +13,8 @@ import WatchlistSummaryCard from './WatchlistSummaryCard';
 import AlertListCard from './AlertListCard';
 import IndicatorRankingCard from './IndicatorRankingCard';
 import ClarificationForm from './ClarificationForm';
+import PortfolioStatusCard from './PortfolioStatusCard';
+import TradeConfirmationCard from './TradeConfirmationCard';
 
 import {
   AnalyzeIndicatorsOutput,
@@ -78,6 +80,9 @@ export const TOOL_COMPONENT_MAP: Record<string, ToolCardConfig> = {
   findBestIndicator:      { component: IndicatorRankingCard, dataKey: 'best' },
   createSmartAlert:     { component: ActionConfirmCard,     dataKey: null },
   getSmartAlerts:       { component: AlertListCard,         outputSchema: AlertListOutput, dataKey: 'alerts' },
+  getPortfolioStatus:   { component: PortfolioStatusCard,   dataKey: null },
+  proposeTrade:         { component: TradeConfirmationCard, dataKey: null },
+  stopForwardTest:      { component: ActionConfirmCard,     dataKey: null },
 };
 
 // Registry'de olmayan bir tool icin fallback: null doner
