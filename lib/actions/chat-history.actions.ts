@@ -84,10 +84,11 @@ export async function getConversationMessages(conversationId: string): Promise<{
 export async function saveMessage(
   conversationId: string,
   role: 'user' | 'assistant' | 'system' | 'tool',
-  parts: Record<string, unknown>[]
+  parts: Record<string, unknown>[],
+  overrideUserId?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const userId = await getSessionUserId();
+    const userId = overrideUserId || await getSessionUserId();
     if (!userId) return { success: false, error: 'Not authenticated' };
 
     await connectToDatabase();

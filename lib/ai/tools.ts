@@ -7,7 +7,7 @@ const yieldToMain = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 import { tool } from 'ai';
 import { z } from 'zod';
-import { getDailyCandles, get4HourCandles, getNews } from '@/lib/actions/finnhub.actions';
+import { getDailyCandlesForAI, getDailyCandles, get4HourCandles, getNews } from '@/lib/actions/finnhub.actions';
 import { getCurrentUserWatchlist, addToWatchlist, removeFromWatchlist } from '@/lib/actions/watchlist.actions';
 import { createAlert, deleteAlert, getUserAlerts } from '@/lib/actions/alerts.actions';
 import { createSmartAlert as createSmartAlertAction, getSmartAlerts as getSmartAlertsAction } from '@/lib/actions/smart-alerts.actions';
@@ -15,8 +15,6 @@ import { computeIndicators } from '@/lib/ta/compute';
 import { generateAllSignals } from '@/lib/ta/signals';
 import { calculateWinRate } from '@/lib/ta/backtest';
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from '@/lib/ta/optimizer';
-import { auth } from '@/lib/better-auth/auth';
-import { headers } from 'next/headers';
 import { randomUUID } from 'crypto';
 import { inngest } from '@/lib/inngest/client';
 import { stockSymbolSchema } from '@/lib/validations/schemas';
@@ -26,8 +24,8 @@ import type { Candle } from '@/lib/ta/backtest';
 // SAVUNMA HATTI 1: Timeout koruması
 // ========================================================================
 
-const HEAVY_TIMEOUT_MS = 25000; // 25 saniye (optimizasyon/backtest/ranking için, browser timeout'undan önce patlasın)
-const LIGHT_TIMEOUT_MS = 15000; // 15 saniye (veri çekme için)
+const HEAVY_TIMEOUT_MS = 45000; // 45 saniye (optimizasyon/backtest/ranking için)
+const LIGHT_TIMEOUT_MS = 30000; // 30 saniye (veri çekme için — Yahoo fallback'e yeterli süre)
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -140,14 +138,9 @@ function safeResult(fnName: string, result: any): ToolResult {
 // Yardımcılar
 // ========================================================================
 
-async function getUserId(): Promise<string | null> {
-  try {
-    const session = await auth.api.getSession({ headers: await headers() });
-    return session?.user?.id ?? null;
-  } catch {
-    return null;
-  }
-}
+// ========================================================================
+// Yardımcılar
+// ========================================================================
 
 export const DEFAULT_PARAMS = {
   macdFast: 12, macdSlow: 26, macdSig: 9,
@@ -203,7 +196,7 @@ export function mapIndicatorData(computed: Record<string, unknown>, key: string)
 // 16 TOOL (her biri try-catch + timeout ile zırhlanmış)
 // ========================================================================
 
-export const tools = {
+export const getTools = (userId?: string | null) => ({
   // --- 0. askClarification ---
   askClarification: tool({
     description: '[SYSTEM] Use this tool when you are missing required arguments to fulfill the user\'s request (like missing stock symbol, indicator name, or timeframe). It halts execution and renders a UI for the user to pick or type the missing information.',
@@ -232,12 +225,13 @@ export const tools = {
       symbol: requiredSymbol,
       interval: intervalSchema.describe('Time interval: 1d (daily) or 4h (4-hour)'),
       indicators: indicatorsListSchema.describe('List of indicators to calculate'),
+      years: z.number().min(1).max(10).default(1).describe('Number of years of historical data (default 1)'),
     }),
-    execute: async ({ symbol, interval, indicators }) => {
+    execute: async ({ symbol, interval, indicators, years }) => {
       try {
-        const days = 3650;
+        const days = years * 365;
         const candles = await withTimeout(
-          interval === '4h' ? get4HourCandles(symbol, days) : getDailyCandles(symbol, days),
+          interval === '4h' ? get4HourCandles(symbol, days) : getDailyCandlesForAI(symbol, days),
           LIGHT_TIMEOUT_MS, `getCandles(${symbol})`
         );
 
@@ -245,21 +239,68 @@ export const tools = {
           return { success: false, error: `Insufficient candle data for ${symbol}. The symbol may be invalid or the data source is unavailable.` };
         }
 
-        const activeSet = new Set(indicators.map((s) => s.trim().toLowerCase()));
+        const mappedIndicators = indicators.map((s) => {
+          const lower = s.trim().toLowerCase();
+          if (lower === 'bollinger' || lower === 'bollinger bands') return 'bb';
+          if (lower === 'stochastic') return 'stochrsi';
+          return lower;
+        });
+        const activeSet = new Set(mappedIndicators);
         const computed = computeIndicators(candles, activeSet, DEFAULT_PARAMS);
         const { signals, overall } = generateAllSignals(computed, candles);
 
-        const summary = indicators.map((ind) => ({
+function getSignalDescription(indicator: string, signal: string): string {
+  const isBuy = signal.includes('BUY');
+  const isStrong = signal.includes('STRONG');
+  const isNeutral = signal === 'NEUTRAL';
+  if (isNeutral) return 'Nötr sinyal; belirgin bir trend gözlemlenmiyor.';
+  
+  switch(indicator.toLowerCase()) {
+    case 'macd': return isBuy ? (isStrong ? 'Güçlü alım sinyali; MACD çizgisi sinyal çizgisini güçlü şekilde yukarı kesti.' : 'Hafif alım sinyali; kısa vadeli momentum toparlanıyor.') : (isStrong ? 'Güçlü satış sinyali; MACD çizgisi sinyal çizgisini sert şekilde aşağı kesti.' : 'Hafif satış sinyali; kısa vadeli momentum zayıflıyor.');
+    case 'rsi': return isBuy ? (isStrong ? 'Aşırı satım bölgesinden dönüş; güçlü alım fırsatı.' : 'Hafif alım sinyali; momentum zayıf ancak yükseliş eğilimi sürüyor.') : (isStrong ? 'Aşırı alım bölgesinden dönüş; güçlü satış baskısı.' : 'Hafif satış sinyali; fiyat zirvelerden geriliyor.');
+    case 'stochrsi': return isBuy ? (isStrong ? 'Güçlü alım sinyali; fiyatın aşırı satım bölgesinden çıkma ihtimali yüksek.' : 'Hafif alım sinyali; fiyatın aşırı satım bölgesine girme ihtimali düşük.') : (isStrong ? 'Güçlü satış sinyali; aşırı alım bölgesinden dönüş başladı.' : 'Hafif satış sinyali; kısa vadeli tepe oluşumu gözlemleniyor.');
+    case 'bb': return isBuy ? 'Fiyat alt banda yaklaştı/değdi; tepki alımı gelebilir.' : 'Fiyat üst banda yaklaştı/değdi; dirençle karşılaşabilir.';
+    default: return isBuy ? (isStrong ? 'Güçlü bir yükseliş trendi teyidi.' : 'Yükseliş yönünde ılımlı bir sinyal.') : (isStrong ? 'Güçlü bir düşüş trendi teyidi.' : 'Düşüş yönünde ılımlı bir sinyal.');
+  }
+}
+
+function generateOverallEvaluation(signals: Array<{indicator: string, signal: string}>, overallSignal: string, overallScore: number): string {
+  const buys = signals.filter(s => s.signal.includes('BUY')).map(s => s.indicator.toUpperCase());
+  const sells = signals.filter(s => s.signal.includes('SELL')).map(s => s.indicator.toUpperCase());
+  
+  if (buys.length > sells.length) {
+    if (overallSignal === 'STRONG BUY') {
+      return `${buys.slice(0,2).join(' ve ')} güçlü bir yükseliş sinyali üretirken, diğer indikatörler bu hareketi destekliyor. Genel trend pozitif yönde.`;
+    }
+    return `${buys.slice(0,2).join(' ve ')} alım yönünde sinyaller üretiyor, ancak piyasada temkinli bir iyimserlik hakim. Trendin gücünü doğrulamak için hacim verilerine dikkat edilmeli.`;
+  }
+  
+  if (sells.length > buys.length) {
+    if (overallSignal === 'STRONG SELL') {
+      return `${sells.slice(0,2).join(' ve ')} güçlü bir düşüş sinyali veriyor. Ayı piyasası baskısı belirginleşmiş durumda.`;
+    }
+    return `${sells.slice(0,2).join(' ve ')} satış yönünde sinyaller üretiyor. Trend zayıflığı gözlemleniyor, olası destek seviyeleri takip edilmeli.`;
+  }
+  
+  return `İndikatörler arasında net bir uzlaşma bulunmuyor. Piyasa yatay veya kararsız bir seyir izliyor. İşlem yapmadan önce ek sinyallerin (hacim, formasyon) onaylanması önerilir.`;
+}
+
+        const summary = mappedIndicators.map((ind) => ({
           indicator: ind,
-          signal: signals[ind.toLowerCase()] ?? 'NO DATA',
+          signal: signals[ind] ?? 'NO DATA',
+          description: signals[ind] ? getSignalDescription(ind, signals[ind]) : 'Yeterli hacim ve fiyat verisi bulunamadığı için hesaplanamadı.',
         }));
+
+        const evaluationText = generateOverallEvaluation(summary, overall.label, overall.score);
 
         return {
           success: true, symbol, interval,
+          indicators, // BUG FIX: Added missing indicators array
           candleCount: candles.length,
           overallSignal: overall.label,
           overallScore: Math.round(overall.score * 100) / 100,
           signals: summary,
+          evaluationText,
         };
       } catch (e) {
         return toToolError(e, symbol);
@@ -309,7 +350,7 @@ export const tools = {
         return {
           success: true, count: results.length,
           results: results.slice(0, 10).map((s) => ({
-            symbol: s.symbol, name: s.name ?? s.symbol, exchange: s.exchange ?? '?',
+            symbol: s.symbol, name: s.name ?? s.symbol, country: s.exchange ?? 'US', // BUG FIX: mapped exchange to country for UI card
           })),
         };
       } catch (e) {
@@ -324,9 +365,8 @@ export const tools = {
     inputSchema: z.object({}),
     execute: async () => {
       try {
-        const userId = await getUserId();
         if (!userId) return { success: false, error: 'Session not found. Please sign in.' };
-        const items = await getCurrentUserWatchlist();
+        const items = await getCurrentUserWatchlist(userId);
         return {
           success: true, count: items.length,
           items: items.map((i) => ({
@@ -349,7 +389,7 @@ export const tools = {
     }),
     execute: async ({ symbol, company }) => {
       try {
-        await addToWatchlist(symbol, company);
+        await addToWatchlist(symbol, company, userId || undefined);
         return { success: true, symbol, message: `${symbol} added to watchlist` };
       } catch (e) {
         return { success: false, error: `Add to watchlist failed: ${formatError(e)}` };
@@ -365,7 +405,7 @@ export const tools = {
     }),
     execute: async ({ symbol }) => {
       try {
-        await removeFromWatchlist(symbol);
+        await removeFromWatchlist(symbol, userId || undefined);
         return { success: true, symbol, message: `${symbol} removed from watchlist` };
       } catch (e) {
         return { success: false, error: `Remove from watchlist failed: ${formatError(e)}` };
@@ -389,7 +429,7 @@ export const tools = {
           success: true, count: articles.length,
           articles: articles.slice(0, 5).map((a) => ({
             headline: a.headline, summary: a.summary?.slice(0, 200) ?? '',
-            source: a.source, url: a.url,
+            source: a.source, url: a.url, datetime: a.datetime, // BUG FIX: Added missing datetime
           })),
         };
       } catch (e) {
@@ -409,7 +449,7 @@ export const tools = {
       threshold: z.number().positive('Threshold must be positive').describe('Target price'),
     }),
     execute: async ({ symbol, company, alertName, alertType, threshold }) => {
-      const result = await createAlert({ symbol, company, alertName, alertType, threshold });
+      const result = await createAlert({ symbol, company, alertName, alertType, threshold, overrideUserId: userId || undefined });
       if (!result.success) return result;
       return { success: true, symbol, alertType, threshold, message: `${symbol} ${alertType === 'upper' ? 'upper' : 'lower'} alert at $${threshold} created` };
     },
@@ -422,7 +462,7 @@ export const tools = {
       symbol: requiredSymbol,
     }),
     execute: async ({ symbol }) => {
-      const result = await deleteAlert(symbol);
+      const result = await deleteAlert(symbol, userId || undefined);
       if (!result.success) return result;
       if (result.deletedCount === 0) {
         return { success: false, error: `No active alert found for ${symbol}` };
@@ -437,12 +477,13 @@ export const tools = {
     inputSchema: z.object({}),
     execute: async () => {
       try {
-        const alerts = await getUserAlerts();
+        const alerts = await getUserAlerts(userId || undefined);
         return {
           success: true, count: alerts.length,
-          alerts: alerts.map((a) => ({
+          alerts: alerts.map((a: any) => ({
             id: a.id, symbol: a.symbol, company: a.company,
             alertName: a.alertName, alertType: a.alertType, threshold: a.threshold,
+            active: a.active ?? true, // BUG FIX: Added missing active status
           })),
         };
       } catch (e) {
@@ -459,11 +500,13 @@ export const tools = {
       indicator: z.string().min(1).describe('Indicator name (e.g. RSI, MACD, MFI). If user did not specify, DO NOT call — ask first.'),
       interval: intervalSchema,
       lookForward: z.number().min(1).max(20).default(5).describe('How many bars to look forward for win/loss check'),
+      years: z.number().min(1).max(10).default(1).describe('Number of years of historical data (default 1)'),
     }),
-    execute: async ({ symbol, indicator, interval, lookForward }) => {
+    execute: async ({ symbol, indicator, interval, lookForward, years }) => {
       try {
+        const days = years * 365;
         const candles: Candle[] = await withTimeout(
-          interval === '4h' ? get4HourCandles(symbol, 3650) : getDailyCandles(symbol, 3650),
+          interval === '4h' ? get4HourCandles(symbol, days) : getDailyCandlesForAI(symbol, days),
           LIGHT_TIMEOUT_MS, `getCandles(${symbol})`
         );
 
@@ -503,20 +546,20 @@ export const tools = {
       symbol: requiredSymbol,
       indicator: z.string().min(1).describe('Indicator name (e.g. RSI, MACD). If user did not specify, DO NOT call — ask first.'),
       interval: intervalSchema,
+      years: z.number().min(1).max(10).default(1).describe('Number of years of historical data (default 1)'),
     }),
-    execute: async ({ symbol, indicator, interval }) => {
+    execute: async ({ symbol, indicator, interval, years }) => {
       try {
         const name = indicator.toUpperCase();
         if (!OPTIMIZABLE_INDICATORS[name]) {
           return { success: false, error: `${indicator} is not an optimizable indicator. Available: ${Object.keys(OPTIMIZABLE_INDICATORS).join(', ')}` };
         }
 
-        const userId = await getUserId();
         const jobId = randomUUID();
 
         await inngest.send({
           name: 'ai/optimize-parameter',
-          data: { jobId, symbol, indicator: name, interval, userId },
+          data: { jobId, symbol, indicator: name, interval, years, userId },
         });
 
         console.log("🛠️ [DEBUG - SUNUCU] Tool çalıştı. Inngest'e atılan jobId:", jobId);
@@ -557,15 +600,15 @@ export const tools = {
       symbols: z.array(requiredSymbol).min(1).max(10).describe('Array of stock symbols to analyze (max 10)'),
       indicator: z.string().min(1).describe('Indicator name (e.g. RSI, MACD).'),
       interval: intervalSchema,
+      years: z.number().min(1).max(10).default(1).describe('Number of years of historical data (default 1)'),
     }),
-    execute: async ({ symbols, indicator, interval }) => {
+    execute: async ({ symbols, indicator, interval, years }) => {
       try {
         const name = indicator.toUpperCase();
         if (!OPTIMIZABLE_INDICATORS[name]) {
           return { success: false, error: `${indicator} is not an optimizable indicator. Available: ${Object.keys(OPTIMIZABLE_INDICATORS).join(', ')}` };
         }
 
-        const userId = await getUserId();
         if (!userId) return { success: false, error: 'Unauthorized: You must be logged in to run background tasks.' };
 
         const batchId = randomUUID();
@@ -576,7 +619,7 @@ export const tools = {
           jobIds.push(jobId);
           return {
             name: 'ai/optimize-parameter' as const,
-            data: { jobId, batchId, symbol: symbol.toUpperCase(), indicator: name, interval, userId },
+            data: { jobId, batchId, symbol: symbol.toUpperCase(), indicator: name, interval, years, userId },
           };
         });
 
@@ -605,12 +648,11 @@ export const tools = {
       symbol: requiredSymbol,
       interval: intervalSchema,
       indicators: indicatorsListSchema.optional().describe('Specific indicators to rank (leave empty for all)'),
-      years: z.number().min(1).max(10).default(5).describe('Number of years of historical data to use'),
+      years: z.number().min(1).max(10).default(1).describe('Number of years of historical data to use'),
       topN: z.number().min(1).max(15).default(5).describe('Number of top results to return'),
     }),
     execute: async ({ symbol, interval, indicators, topN, years }) => {
       try {
-        const userId = await getUserId();
         const jobId = randomUUID();
 
         await inngest.send({
@@ -639,12 +681,11 @@ export const tools = {
     inputSchema: z.object({
       symbol: requiredSymbol,
       interval: intervalSchema,
-      years: z.number().min(1).max(10).default(5).describe('Number of years of historical data to use'),
+      years: z.number().min(1).max(10).default(1).describe('Number of years of historical data to use'),
       topN: z.number().min(1).max(15).default(3).describe('Number of top results to return'),
     }),
     execute: async ({ symbol, interval, topN, years }) => {
       try {
-        const userId = await getUserId();
         const jobId = randomUUID();
 
         await inngest.send({
@@ -682,7 +723,7 @@ export const tools = {
       })).min(1).max(5).describe('List of conditions (all must be met simultaneously)'),
     }),
     execute: async ({ name, symbol, interval, frequency, conditions }) => {
-      const result = await createSmartAlertAction({ name, symbol, interval, frequency, conditions });
+      const result = await createSmartAlertAction({ name, symbol, interval, frequency, conditions, overrideUserId: userId || undefined });
       if (!result.success) return result;
       return { success: true, symbol, name, message: `Smart alert "${name}" created for ${symbol}` };
     },
@@ -695,9 +736,9 @@ export const tools = {
       symbol: stockSymbolSchema.optional().describe('Filter by symbol (optional)'),
     }),
     execute: async ({ symbol }) => {
-      const result = await getSmartAlertsAction(symbol);
+      const result = await getSmartAlertsAction(symbol, userId || undefined);
       if (!result.success) return result;
       return { success: true, alerts: result.alerts, count: result.alerts?.length ?? 0 };
     },
   }),
-};
+});

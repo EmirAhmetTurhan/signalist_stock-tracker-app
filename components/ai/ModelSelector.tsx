@@ -85,37 +85,30 @@ export default function ModelSelector({ selectedModel, onSelect }: Props) {
                 </button>
               ))}
 
-              {/* Custom Ollama model input */}
-              {cat.key === 'ollama' && (
-                <div className="px-3 pl-6 pb-2 pt-1 flex gap-1.5">
-                  <input
-                    value={customModel}
-                    onChange={(e) => setCustomModel(e.target.value)}
-                    placeholder="Kendi modelin (orn: mistral:7b)..."
-                    className="flex-1 bg-gray-900 border border-gray-700 rounded-md px-2 py-1.5 text-[10px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-yellow-500/30"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && customModel.trim()) {
-                        onSelect(`ollama:${customModel.trim()}`);
-                        setCustomModel('');
-                        setOpen(false);
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      if (customModel.trim()) {
-                        onSelect(`ollama:${customModel.trim()}`);
-                        setCustomModel('');
-                        setOpen(false);
-                      }
-                    }}
-                    disabled={!customModel.trim()}
-                    className="px-2 py-1.5 rounded-md bg-gray-700 hover:bg-gray-600 disabled:opacity-30 text-gray-300 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                  </button>
+              {/* API Key Input (Future expansion) */}
+              <div className="px-3 py-2 border-t border-gray-700/50 bg-gray-800/30">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Key className="h-3 w-3 text-gray-500" />
+                  <span className="text-[10px] text-gray-400">API Anahtari (Opsiyonel)</span>
                 </div>
-              )}
+                <div className="flex gap-1.5">
+                  <input
+                    type="password"
+                    placeholder="sk-..."
+                    defaultValue={typeof window !== 'undefined' ? localStorage.getItem('signalist-user-api-key') || '' : ''}
+                    onChange={(e) => {
+                      if (typeof window !== 'undefined') {
+                        if (e.target.value) {
+                          localStorage.setItem('signalist-user-api-key', e.target.value);
+                        } else {
+                          localStorage.removeItem('signalist-user-api-key');
+                        }
+                      }
+                    }}
+                    className="flex-1 bg-gray-900 border border-gray-700 rounded-md px-2 py-1.5 text-[10px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-yellow-500/30"
+                  />
+                </div>
+              </div>
             </div>
           ))}
         </div>

@@ -3,7 +3,7 @@
 > **Amaç:** Üst seviye proje tanımı, hedefler, kullanıcı kitlesi ve teknoloji yapısı.
 > **Kapsam:** İş bağlamı, ürün tanımı, teknoloji yığını özeti, dış bağımlılıklar.
 > **Ayrıca bakınız:** [[architecture]] (sistem tasarımı), [[deployment-env]] (konfigürasyon).
-> **Son güncelleme:** 2026-05-22 (4-faz refactoring + 6 resilience katmanı + test altyapısı: vitest, 41 test)
+> **Son güncelleme:** 2026-05-25 (tam asenkron AI mimarisi, multi-provider model seçimi, 7 Inngest fonksiyonu)
 
 ---
 
@@ -16,18 +16,21 @@
 - TradingView grafik widget'ları ile canlı hisse senedi verisi takibi
 - Canlı fiyat güncellemeli kişisel izleme listesi yönetimi
 - Yapılandırılabilir fiyat alarmları (üst/alt eşik, günlük değerlendirme)
+- Akıllı strateji alarmları (indikatör koşullarıyla tetiklenen)
 - 17 teknik indikatör + 3 formasyon aracı (toplam 20 analiz aracı)
 - Özelleştirilebilir indikatör parametreleri
 - Çoklu indikatör strateji birleştirme ve backtesting
 - Tarihsel fraktal desen eşleştirme ile öngörü analizi
 - Mum formasyonu tanıma (doji, hammer, engulfing, vb.)
 - Destek & direnç seviyesi tespiti
-- AI Agent (Qwen 3 14B) ile gerçek zamanlı finansal analiz — 18 tool, streaming yanıt
-- Generative UI: Component Registry tabanlı dinamik arayüz (11 kart tipi, tüm tool'lar Structured UI)
-- Inngest arka plan işlemleri ile brute-force parametre optimizasyonu + canlı ReasoningChain takibi
-- Smart Title: AI tarafından otomatik sohbet başlığı üretimi
+- AI Agent (Qwen 3 14B) ile asenkron finansal analiz — 18 tool, tam asenkron polling
+- Multi-provider model seçimi: Ollama (lokal), Groq, OpenRouter, kullanıcı kendi API key'i
+- Generative UI: Component Registry tabanlı dinamik arayüz (12 kart tipi)
+- Inngest arka plan işlemleri ile brute-force parametre optimizasyonu + canlı adım takibi
+- Smart Title: AI tarafından otomatik 3 kelimelik sohbet başlığı üretimi
 - Zustand tabanlı optimistic UI (watchlist anında güncelleme, global job tracking)
 - 6 katmanlı resilience (polling loop, onError toast, network detection, double submit lock, server error classification, stable roomKey)
+- CanonicalMessage formatı ile 4 AI SDK versiyonunun tek tipe normalize edilmesi
 - Otomatik test altyapısı (vitest, 41 test, `npm test`)
 - Google Gemini AI ile günlük piyasa haber özeti e-postaları
 - Kayıt sonrası kişiselleştirilmiş hoşgeldin e-postaları
@@ -60,9 +63,10 @@ full-stack bir SPA. Client Components yalnızca etkileşim gerektiren yerlerde k
 | Formlar | react-hook-form | 7.66.1 | Client-side form yönetimi |
 | Grafikler (özel) | lightweight-charts | 4.2.0 | TradingView'ün açık kaynak grafik kütüphanesi |
 | Grafikler (gömülü) | TradingView Widget'ları | — | Standart görünümler için iframe widget'lar |
-| Arkaplan İşleri | Inngest | 4.3.0 | Cron zamanlama + event-driven iş akışları |
+| Arkaplan İşleri | Inngest | 4.3.0 | Cron zamanlama + event-driven iş akışları, 7 fonksiyon |
 | E-posta | Nodemailer | 7.0.10 | Gmail SMTP transport |
-| AI (Agent) | Qwen 3 14B + Vercel AI SDK v6 | ^6.0.185 | Ollama + @ai-sdk/openai-compatible. 18 tool, 5 savunma hattı |
+| AI Agent (Asenkron) | Qwen 3 14B + Vercel AI SDK v6 | ^6.0.185 | Ollama + @ai-sdk/openai-compatible, 18 tool, 5 savunma hattı |
+| AI Provider'lar | Ollama + Groq + OpenRouter | — | Prefix bazlı routing (`ollama:`, `groq:`, `openrouter:`), kullanıcı kendi key'i |
 | AI (E-posta) | Google Gemini | gemini-2.5-flash-lite | Inngest AI plugin üzerinden |
 | Global State | Zustand | — | activeJobs, watchlist, activeIndicators |
 | Test Runner | Vitest | v4 | 41 test, 4 test dosyası, `npm test` |
@@ -84,6 +88,9 @@ full-stack bir SPA. Client Components yalnızca etkileşim gerektiren yerlerde k
 | **Finnhub** | Hisse arama, OHLC mumları, canlı fiyat, şirket profilleri, piyasa haberleri | API anahtarı `token` query parametresi olarak |
 | **Yahoo Finance** (gayriresmi) | Mum verisi fallback'i (`/v8/finance/chart`). 1H aralığı 4H mumlarını oluşturmak için kullanılır | Yok |
 | **TradingView Widget'ları** | Dashboard ve hisse detay sayfaları için gömülü iframe grafikler | Yok (ücretsiz embed script'leri) |
+| **Ollama** | Lokal AI model inference (Qwen 3 14B) | Yok (localhost) |
+| **Groq** | Cloud AI inference (opsiyonel, env key ile) | API anahtarı |
+| **OpenRouter** | Cloud AI inference (opsiyonel, env key veya kullanıcı key'i ile) | API anahtarı |
 | **Google Gemini** | AI ile hoşgeldin e-postaları ve günlük haber özetleri oluşturma | Inngest AI plugin üzerinden API anahtarı |
 | **Gmail SMTP** | Giden e-posta teslimatı (Nodemailer transport) | E-posta + Uygulama Şifresi |
 | **Inngest** | Arkaplan iş yürütme ve cron zamanlama (dev mode: local, production: Inngest Cloud) | İsteğe bağlı Cloud API anahtarı |
@@ -98,6 +105,7 @@ Bu fonksiyon, Next.js built-in fetch cache mekanizmasını yapılandırılabilir
 ```
 Hisse mumları:   Finnhub /stock/candle  →  Yahoo Finance /v8/finance/chart
 Hisse haberleri: Şirkete özel haberler  →  Genel piyasa haberleri
+AI Provider:     Ollama (lokal)         ←  Groq/OpenRouter fallback (env key yoksa)
 ```
 
 ### Önbellek Stratejisi

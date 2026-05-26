@@ -198,54 +198,7 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
     const to = Math.floor(Date.now() / 1000);
     const from = to - days * 24 * 60 * 60;
 
-    // 1) Try Finnhub first (if token exists)
-    try {
-        const token = process.env.FINNHUB_API_KEY ?? FINNHUB_API_KEY;
-        if (token) {
-            const url = `${FINNHUB_BASE_URL}/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=D&from=${from}&to=${to}&token=${token}`;
-            type CandleResponse = { s: 'ok' | string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[]; v?: number[] };
-            const data = await fetchJSON<CandleResponse>(url, 600);
-            if (data && data.s === 'ok' && Array.isArray(data.t) && data.t.length > 0) {
-                const out: CandleDataPoint[] = [];
-                for (let i = 0; i < data.t.length; i++) {
-                    const oRaw = data.o?.[i];
-                    const hRaw = data.h?.[i];
-                    const lRaw = data.l?.[i];
-                    const cRaw = data.c?.[i];
-                    const vRaw = data.v?.[i];
-
-                    // Finnhub may return nulls; Number(null) => 0 which corrupts indicators.
-                    // Treat only strictly positive finite numbers as valid OHLC values.
-                    const valid = [oRaw, hRaw, lRaw, cRaw].every(
-                        (x) => typeof x === 'number' && Number.isFinite(x) && x > 0
-                    );
-                    if (!valid) continue;
-
-                    const o = oRaw as number;
-                    const h = hRaw as number;
-                    const l = lRaw as number;
-                    const c = cRaw as number;
-                    if (!(l <= h)) continue; // basic sanity check
-
-                    const item: CandleDataPoint = {
-                        time: data.t[i] as UTCTimestamp,
-                        open: o,
-                        high: h,
-                        low: l,
-                        close: c,
-                    };
-                    if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
-                    out.push(item);
-                }
-                if (out.length > 0) return out;
-            }
-        }
-    } catch (e) {
-        console.error('getDailyCandles Finnhub error', e);
-        // fall through to Yahoo
-    }
-
-    // 2) Fallback to Yahoo Finance (no API key needed)
+    // 1) Try Yahoo Finance first — no API key, no rate limits, 10+ years of data
     try {
         const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${from}&period2=${to}`;
         const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' };
@@ -287,7 +240,105 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
             if (out.length > 0) return out;
         }
     } catch (e) {
-        console.error('getDailyCandles Yahoo fallback error', e);
+        console.error('getDailyCandles Yahoo error', e);
+        // fall through to Finnhub
+    }
+
+    // 2) Fallback to Finnhub (requires API key)
+    try {
+        const token = process.env.FINNHUB_API_KEY ?? FINNHUB_API_KEY;
+        if (token) {
+            const url = `${FINNHUB_BASE_URL}/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=D&from=${from}&to=${to}&token=${token}`;
+            type CandleResponse = { s: 'ok' | string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[]; v?: number[] };
+            const data = await fetchJSON<CandleResponse>(url, 600);
+            if (data && data.s === 'ok' && Array.isArray(data.t) && data.t.length > 0) {
+                const out: CandleDataPoint[] = [];
+                for (let i = 0; i < data.t.length; i++) {
+                    const oRaw = data.o?.[i];
+                    const hRaw = data.h?.[i];
+                    const lRaw = data.l?.[i];
+                    const cRaw = data.c?.[i];
+                    const vRaw = data.v?.[i];
+
+                    const valid = [oRaw, hRaw, lRaw, cRaw].every(
+                        (x) => typeof x === 'number' && Number.isFinite(x) && x > 0
+                    );
+                    if (!valid) continue;
+
+                    const o = oRaw as number;
+                    const h = hRaw as number;
+                    const l = lRaw as number;
+                    const c = cRaw as number;
+                    if (!(l <= h)) continue;
+
+                    const item: CandleDataPoint = {
+                        time: data.t[i] as UTCTimestamp,
+                        open: o,
+                        high: h,
+                        low: l,
+                        close: c,
+                    };
+                    if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
+                    out.push(item);
+                }
+                if (out.length > 0) return out;
+            }
+        }
+    } catch (e) {
+        console.error('getDailyCandles Finnhub fallback error', e);
+    }
+
+    return [];
+}
+
+// AI tool'ları için direkt Yahoo Finance üzerinden veri çeken fonksiyon.
+// Finnhub'ı atlar — API key, rate limit (60 istek/dk) ve timeout sorunlarını ortadan kaldırır.
+export async function getDailyCandlesForAI(symbol: string, days = 365): Promise<CandleDataPoint[]> {
+    const to = Math.floor(Date.now() / 1000);
+    const from = to - days * 24 * 60 * 60;
+
+    try {
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&period1=${from}&period2=${to}`;
+        const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' };
+        const res = await fetch(yahooUrl, { cache: 'force-cache', next: { revalidate: 600 }, headers });
+        if (!res.ok) throw new Error(`Yahoo chart fetch failed: ${res.status}`);
+        const json: any = await res.json();
+        const result = json?.chart?.result?.[0];
+        const ts: number[] | undefined = result?.timestamp;
+        const quote = result?.indicators?.quote?.[0] || {};
+        const opens: Array<number | null> | undefined = quote.open;
+        const highs: Array<number | null> | undefined = quote.high;
+        const lows: Array<number | null> | undefined = quote.low;
+        const closes: Array<number | null> | undefined = quote.close;
+        const volumes: Array<number | null> | undefined = quote.volume;
+        if (Array.isArray(ts) && ts.length) {
+            const out: CandleDataPoint[] = [];
+            for (let i = 0; i < ts.length; i++) {
+                const oRaw = opens?.[i];
+                const hRaw = highs?.[i];
+                const lRaw = lows?.[i];
+                const cRaw = closes?.[i];
+                const vRaw = volumes?.[i];
+
+                const valid = [oRaw, hRaw, lRaw, cRaw].every(
+                    (x) => typeof x === 'number' && Number.isFinite(x) && (x as number) > 0
+                );
+                if (!valid) continue;
+
+                const o = oRaw as number;
+                const h = hRaw as number;
+                const l = lRaw as number;
+                const c = cRaw as number;
+                if (!(l <= h)) continue;
+
+                const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
+                if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
+                out.push(item);
+            }
+            if (out.length > 0) return out;
+        }
+    } catch (e) {
+        console.error('getDailyCandlesForAI error', e);
     }
 
     return [];

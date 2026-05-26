@@ -4,13 +4,16 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { MessageCircle, X, Bot, User, Send, Sparkles, History, Plus, MessageSquare } from 'lucide-react';
 import MarkdownRenderer from '@/components/ai/MarkdownRenderer';
+import ErrorCard from '@/components/ai/ErrorCard';
 import GenerativeUI from '@/components/ai/GenerativeUI';
 import ToolProgress from '@/components/ai/ToolProgress';
 import ModelSelector from '@/components/ai/ModelSelector';
+import { ThinkingSkeleton } from '@/components/ai/ThinkingSkeleton';
 import { useChatManager } from '@/hooks/useChatManager';
 
 const SIZE_KEY = 'signalist-chat-size';
 const MSG_KEY = 'signalist-chat-messages';
+const CONV_KEY = 'signalist-active-conv';
 
 const DEFAULT_W = 420;
 const DEFAULT_H = 520;
@@ -91,8 +94,25 @@ export default function FloatingChatButton() {
   // ---- Conversation history ----
   const [conversations, setConversations] = useState<{ id: string; title: string }[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [conversationId, setConversationId] = useState('');
+  const [conversationId, setConversationIdState] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+
+  // Sadece client-side calisir (Hydration mismatch onlemek icin useEffect icinde yuklenir)
+  useEffect(() => {
+    try {
+      const savedConv = localStorage.getItem(CONV_KEY);
+      if (savedConv) setConversationIdState(savedConv);
+    } catch { /* ignore */ }
+  }, []);
+
+  const setConversationId = useCallback((id: string) => {
+    setConversationIdState(id);
+    if (id) {
+      localStorage.setItem(CONV_KEY, id);
+    } else {
+      localStorage.removeItem(CONV_KEY);
+    }
+  }, []);
 
   const loadConversations = useCallback(async () => {
     try {
@@ -107,7 +127,7 @@ export default function FloatingChatButton() {
   // ---- Shared chat manager (stable roomKey = stream survives conversation switch) ----
   const {
     messages, sendMessage, setMessages, isLoading, isHydrating,
-    error, isOffline,
+    status, error, isOffline, activeJobSteps,
     hasContent, handleSubmit: submit, addToolOutput,
     scrollContainerRef, messagesEndRef,
   } = useChatManager({
@@ -267,26 +287,20 @@ export default function FloatingChatButton() {
                 </div>
               );
             })}
-            {isLoading && (() => {
-              const hasActiveTool = messages.some((m) =>
-                m.parts?.some((p: any) =>
-                  (p.type === 'tool-invocation' && p.toolInvocation?.state === 'call') || (p.type === 'tool-call')
-                )
-              );
-              if (hasActiveTool) return null;
-              return (
-                <div className="flex gap-2">
-                  <div className="h-6 w-6 rounded-md bg-yellow-500/20 flex items-center justify-center shrink-0"><Bot className="h-3.5 w-3.5 text-yellow-500" /></div>
-                  <div className="bg-gray-800 rounded-xl rounded-bl-sm px-3 py-2">
-                    <div className="flex gap-1">
-                      <span className="h-1.5 w-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="h-1.5 w-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="h-1.5 w-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </div>
-                  </div>
+            {isLoading && (
+              <div className="flex gap-2">
+                <div className="h-6 w-6 rounded-md bg-yellow-500/20 flex items-center justify-center shrink-0"><Bot className="h-3.5 w-3.5 text-yellow-500" /></div>
+                <ThinkingSkeleton steps={activeJobSteps} />
+              </div>
+            )}
+            {status === 'error' && error && (
+              <div className="flex gap-2">
+                <div className="h-6 w-6 rounded-md bg-red-500/20 flex items-center justify-center shrink-0"><Bot className="h-3.5 w-3.5 text-red-500" /></div>
+                <div className="max-w-[85%]">
+                  <ErrorCard userMessage={error} recoverable={true} />
                 </div>
-              );
-            })()}
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
 

@@ -29,11 +29,14 @@ export async function getWatchlistSymbolsByEmail(email: string): Promise<string[
   }
 }
 
-export async function getCurrentUserWatchlist(): Promise<StockWithData[]> {
+export async function getCurrentUserWatchlist(overrideUserId?: string): Promise<StockWithData[]> {
   try {
     await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const userId = session?.user?.id;
+    let userId = overrideUserId;
+    if (!userId) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      userId = session?.user?.id;
+    }
     if (!userId) return [];
 
     const items = await Watchlist.find({ userId }, { _id: 0, userId: 1, symbol: 1, company: 1, addedAt: 1 })
@@ -53,13 +56,16 @@ export async function getCurrentUserWatchlist(): Promise<StockWithData[]> {
   }
 }
 
-export async function addToWatchlist(symbol: string, company: string): Promise<{ ok: boolean; added?: boolean; error?: string }> {
+export async function addToWatchlist(symbol: string, company: string, overrideUserId?: string): Promise<{ ok: boolean; added?: boolean; error?: string }> {
   try {
     if (!symbol || !company) return { ok: false, error: 'Missing symbol or company' };
 
     await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const userId = session?.user?.id;
+    let userId = overrideUserId;
+    if (!userId) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      userId = session?.user?.id;
+    }
     if (!userId) return { ok: false, error: 'Not authenticated' };
 
     const upper = symbol.toUpperCase();
@@ -81,13 +87,16 @@ export async function addToWatchlist(symbol: string, company: string): Promise<{
   }
 }
 
-export async function removeFromWatchlist(symbol: string): Promise<{ ok: boolean; removed?: boolean; error?: string }> {
+export async function removeFromWatchlist(symbol: string, overrideUserId?: string): Promise<{ ok: boolean; removed?: boolean; error?: string }> {
   try {
     if (!symbol) return { ok: false, error: 'Missing symbol' };
 
     await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const userId = session?.user?.id;
+    let userId = overrideUserId;
+    if (!userId) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      userId = session?.user?.id;
+    }
     if (!userId) return { ok: false, error: 'Not authenticated' };
 
     const upper = symbol.toUpperCase();

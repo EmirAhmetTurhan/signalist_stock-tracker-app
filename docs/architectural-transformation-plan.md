@@ -1,15 +1,15 @@
 # Mimari Dönüşüm Planı: Agentic UI & Real-Time Senkronizasyon
 
-**Tarih:** 2026-05-21 (Orijinal) / 2026-05-22 (4-Faz Refactoring ile genişletildi)
-**Durum:** ✅ **TAMAMLANDI + GENİŞLETİLDİ** — 3 Faz (orijinal) + 4 Faz (refactoring), 35+ dosya, `tsc --noEmit` sıfır hata, `npm run build` başarılı
+**Tarih:** 2026-05-21 (Orijinal) / 2026-05-25 (6-Faz Kararlılık Revizyonu ile Tamamlandı)
+**Durum:** ✅ **TAMAMLANDI** — 3 Faz (orijinal) + 4 Faz (refactoring) + 6 Faz (kararlılık revizyonu), 50+ dosya, `tsc --noEmit` sıfır hata, `npm run build` başarılı
 
-> **2026-05-22 Ek Fazlar:** Faz 0 (bileşen reorganizasyonu + ölü kod), Faz 1 (DB timestamp standardizasyonu), Faz 2 (katman ihlali düzeltmeleri), Faz 3 (INDICATOR_REGISTRY), Faz 4 (useChatManager paylaşımlı hook).
-> 
-> **2026-05-22 6 Resilience Katmanı:** (1) Polling loop (3sn/60sn), (2) onError toast + banner, (3) Network offline/online detection, (4) Double submit lock (pendingRef), (5) Server error classification, (6) Stable roomKey.
-> 
-> **2026-05-22 Test Altyapısı:** Vitest v4 kuruldu, 41 test (schemas, RSI, backtest, error-codes), `npm test` ile çalışır.
-> 
-> Detaylar için [[report_changes]]
+> **2026-05-25 6-Faz Kararlılık Revizyonu (FINAL):**
+> 1. **Message Pipeline:** CanonicalMessage formatı + tool-contracts.ts (Zod çıktı şemaları)
+> 2. **Component Registry:** TOOL_COMPONENT_MAP + 12 kart bileşeni
+> 3. **Background Job Loop:** useChatManager addToolOutput entegrasyonu
+> 4. **ToolProgress Fix:** Arka plan işleri "(Aborted)" göstermiyor
+> 5. **State Hydration:** localStorage + DB ikili sistem
+> 6. **Error Visibility:** detectErrorCode + actionable ErrorCard
 
 ---
 

@@ -10,7 +10,7 @@ export interface IStep {
 export interface IAIJob extends Document {
   jobId: string;
   userId: string;
-  type: 'optimize_parameter' | 'rank_indicators' | 'find_best_indicator' | 'batch_watchlist_scan' | 'scheduled_scan';
+  type: 'optimize_parameter' | 'rank_indicators' | 'find_best_indicator' | 'batch_watchlist_scan' | 'scheduled_scan' | 'process_chat_message';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   title: string;
   source: 'chat' | 'notebook' | 'scheduled' | 'watchlist';
@@ -39,7 +39,7 @@ const StepSchema = new Schema<IStep>({
 const AIJobSchema = new Schema<IAIJob>({
   jobId: { type: String, required: true, unique: true, index: true },
   userId: { type: String, required: true, index: true },
-  type: { type: String, enum: ['optimize_parameter', 'rank_indicators', 'find_best_indicator', 'batch_watchlist_scan', 'scheduled_scan'], required: true },
+  type: { type: String, enum: ['optimize_parameter', 'rank_indicators', 'find_best_indicator', 'batch_watchlist_scan', 'scheduled_scan', 'process_chat_message'], required: true },
   status: { type: String, enum: ['queued', 'running', 'completed', 'failed', 'cancelled'], default: 'queued', index: true },
   title: { type: String, required: true },
   source: { type: String, enum: ['chat', 'notebook', 'scheduled', 'watchlist'], default: 'chat' },

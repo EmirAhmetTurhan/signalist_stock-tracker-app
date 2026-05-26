@@ -7,6 +7,7 @@ import { getAllToolResults, getFailedToolResults, isOptimizeParamCall, hasOptimi
 import { getToolCard } from '@/components/ai/registry';
 import ErrorCard from '@/components/ai/ErrorCard';
 import type { ToolCardProps } from '@/components/ai/registry';
+import { detectErrorCode } from '@/lib/ai/error-codes';
 
 type Message = {
   id: string;
@@ -14,27 +15,23 @@ type Message = {
   parts?: any[];
 };
 
-// Multi-path veri cekme: result -> output.value -> output -> toolInvocation.result
+import { normalizeMessage } from '@/lib/ai/message-format';
+
+// Single-path veri cekme: normalizeMessage() handles the formats
 function getCompletedOptimizationData(message: Message): { symbol: string; indicator: string; bestValue: number; winRate: number; fullData?: Record<string, unknown> } | null {
-  if (!message.parts) return null;
+  const canonical = normalizeMessage(message);
 
-  for (const part of message.parts) {
-    const data =
-      part.result ||
-      part.output?.value ||
-      part.output ||
-      part.toolInvocation?.result ||
-      part.toolInvocation?.output?.value ||
-      part.toolInvocation?.output ||
-      null;
-
+  for (const part of canonical.parts) {
+    if (part.type !== 'tool-result') continue;
+    
+    const data = part.output as Record<string, unknown> | null;
     if (data && typeof data.bestValue === 'number' && typeof data.winRate === 'number') {
       return {
-        symbol: data.symbol || '',
-        indicator: data.indicator || '',
+        symbol: (data.symbol as string) || '',
+        indicator: (data.indicator as string) || '',
         bestValue: data.bestValue,
         winRate: data.winRate,
-        fullData: data.fullData,
+        fullData: data.fullData as Record<string, unknown> | undefined,
       };
     }
   }
@@ -42,36 +39,32 @@ function getCompletedOptimizationData(message: Message): { symbol: string; indic
   return null;
 }
 
-function getBackgroundJobInfo(message: Message): { jobIds: string[]; symbol: string; indicator: string; toolCallId: string; isBatch: boolean } | null {
-  if (!message.parts) return null;
+function getBackgroundJobInfo(message: Message): { jobIds: string[]; symbol: string; indicator: string; toolCallId: string; toolName: string; isBatch: boolean } | null {
+  const canonical = normalizeMessage(message);
 
-  for (const part of message.parts) {
-    const data =
-      part.result ||
-      part.output?.value ||
-      part.output ||
-      part.toolInvocation?.result ||
-      part.toolInvocation?.output?.value ||
-      part.toolInvocation?.output ||
-      null;
+  for (const part of canonical.parts) {
+    if (part.type !== 'tool-result') continue;
 
+    const data = part.output as Record<string, unknown> | null;
     if (data && data.isBackgroundJob === true) {
-      const toolCallId = part.toolCallId || part.toolInvocation?.toolCallId || '';
+      const toolCallId = part.toolCallId || '';
       
       if (data.isBatchJob && Array.isArray(data.jobIds)) {
         return {
-          jobIds: data.jobIds,
-          symbol: data.symbols ? data.symbols.join(', ') : '',
-          indicator: data.indicator || '',
+          jobIds: data.jobIds as string[],
+          symbol: data.symbols ? (data.symbols as string[]).join(', ') : '',
+          indicator: (data.indicator as string) || '',
           toolCallId,
+          toolName: part.toolName || 'batchOptimizeParameter',
           isBatch: true,
         };
       } else if (typeof data.jobId === 'string') {
         return {
           jobIds: [data.jobId],
-          symbol: data.symbol || '',
-          indicator: data.indicator || '',
+          symbol: (data.symbol as string) || '',
+          indicator: (data.indicator as string) || '',
           toolCallId,
+          toolName: part.toolName || 'optimizeParameter',
           isBatch: false,
         };
       }
@@ -132,7 +125,7 @@ export default function GenerativeUI({ message, convId, isLast, onRunBacktest, o
   // bu yüzden tool sonuçları gelince kartlar render edilmezdi (refresh'te düzeliyordu).
   const toolResults = getAllToolResults(message);
   const toolCards = toolResults
-    .filter((tr) => tr.toolName !== 'optimizeParameter')
+    .filter((tr) => !['optimizeParameter', 'batchOptimizeParameter'].includes(tr.toolName))
     .filter((tr) => !tr.isError)
     .filter((tr) => {
       // Eğer araç hatasız dönse bile içerisinde başarı=false mesajı varsa normal kart çizme
@@ -143,7 +136,7 @@ export default function GenerativeUI({ message, convId, isLast, onRunBacktest, o
     })
     .map((tr) => {
       const config = getToolCard(tr.toolName);
-      if (!config) return null;
+      if (!config || !config.component) return null;
       const CardComponent = config.component;
       const symbol = (tr.data.symbol as string) || undefined;
       return (
@@ -166,21 +159,30 @@ export default function GenerativeUI({ message, convId, isLast, onRunBacktest, o
   const gracefulFailedResults = toolResults.filter(tr => tr.data && tr.data.success === false);
 
   const errorCards = [
-    ...failedResults.map((tr) => (
-      <ErrorCard
-        key={`error-${message.id}-${tr.toolName}`}
-        errorCode={(tr.data.errorCode as string) || undefined}
-        userMessage={(tr.data.userMessage as string) || (tr.data.error as string) || undefined}
-        recoverable={tr.data.recoverable !== false}
-      />
-    )),
-    ...gracefulFailedResults.map((tr) => (
-      <ErrorCard
-        key={`graceful-${message.id}-${tr.toolName}`}
-        userMessage={(tr.data.userMessage as string) || (tr.data.error as string) || "Bilinmeyen bir hata oluştu."}
-        recoverable={tr.data.recoverable !== false}
-      />
-    ))
+    ...failedResults.map((tr) => {
+      const errStr = (tr.data.userMessage as string) || (tr.data.error as string) || "Bilinmeyen bir hata oluştu.";
+      const code = (tr.data.errorCode as string) || detectErrorCode(errStr);
+      return (
+        <ErrorCard
+          key={`error-${message.id}-${tr.toolName}`}
+          errorCode={code}
+          userMessage={errStr}
+          recoverable={tr.data.recoverable !== false}
+        />
+      );
+    }),
+    ...gracefulFailedResults.map((tr) => {
+      const errStr = (tr.data.userMessage as string) || (tr.data.error as string) || "Bilinmeyen bir hata oluştu.";
+      const code = (tr.data.errorCode as string) || detectErrorCode(errStr);
+      return (
+        <ErrorCard
+          key={`graceful-${message.id}-${tr.toolName}`}
+          errorCode={code}
+          userMessage={errStr}
+          recoverable={tr.data.recoverable !== false}
+        />
+      );
+    })
   ];
 
   const hasContent = !!bgJob || !!completedOpt || toolCards.length > 0 || errorCards.length > 0;
@@ -205,6 +207,7 @@ export default function GenerativeUI({ message, convId, isLast, onRunBacktest, o
           symbol={bgJob.symbol}
           indicator={bgJob.indicator}
           toolCallId={bgJob.toolCallId}
+          toolName={bgJob.toolName}
           convId={convId}
           onToolOutput={onToolOutput}
         />

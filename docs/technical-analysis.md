@@ -3,7 +3,7 @@
 > **Amaç:** Tüm teknik indikatörler, sinyal üretim mantığı, backtesting motoru, parametre optimizasyonu, strateji sistemi, mum formasyonları, fraktallar ve destek/direnç tespiti için eksiksiz referans.
 > **Kapsam:** `lib/indicators/`, `lib/ta/` (compute, signals, backtest, optimizer, types), `app/(root)/ta/page.tsx`, `lib/constants/indicators.ts`
 > **Ayrıca bakınız:** [[architecture#TA Sayfası Veri Akışı]], [[frontend]], [[backend]]
-> **Son güncelleme:** 2026-05-22 (INDICATOR_REGISTRY merkezi sabit + lib/ta/ dosya yolu güncellemesi)
+> **Son güncelleme:** 2026-05-25 (dosya yolları güncellendi, TA servis katmanı AI Agent ile paylaşımlı)
 
 ---
 
@@ -43,9 +43,9 @@ Veritabanı erişimi, API çağrısı veya mutasyon yapılmaz.
 
 ---
 
-## Sinyal Mantığı (indikatör başına)
+## Sinyal Mantığı
 
-Sinyaller `lib/ta/signals.ts` içinde `addSignal()` yardımcısı ile üretilir. TA sayfası ve AI Agent aynı sinyal motorunu paylaşır.
+Sinyaller `lib/ta/signals.ts` içinde `addSignal()` yardımcısı ile üretilir. **TA sayfası ve AI Agent aynı sinyal motorunu paylaşır** — `lib/ta/compute.ts` ve `lib/ta/signals.ts` her iki sistem tarafından da kullanılır.
 
 ### Sinyal Seviyeleri
 - **STRONG BUY** = +2
@@ -65,11 +65,11 @@ Sinyaller `lib/ta/signals.ts` içinde `addSignal()` yardımcısı ile üretilir.
 | 5 | **DMI** | +DI > -DI (ADX > 20 → STRONG) | -DI > +DI (ADX > 20 → STRONG) |
 | 6 | **MFI** | MFI < 20 (STRONG) veya yükseliyor (WEAK) | MFI > 80 (STRONG) veya düşüyor (WEAK) |
 | 7 | **SMI** | SMI > Signal (histogram yükseliyor → STRONG BUY) | SMI < Signal (histogram düşüyor → STRONG SELL) |
-| 8 | **AO** | Değer > 0 ve yükseliyor → STRONG BUY; Değer < 0 ve yükseliyor → WEAK BUY | Değer < 0 ve düşüyor → STRONG SELL; Değer > 0 ve düşüyor → WEAK SELL |
+| 8 | **AO** | Değer > 0 ve yükseliyor → STRONG BUY | Değer < 0 ve düşüyor → STRONG SELL |
 | 9 | **CCI** | CCI > MA (CCI < -100 → STRONG) | CCI < MA (CCI > 100 → STRONG) |
-| 10 | **WPR** | < -80 (STRONG BUY) | > -20 (STRONG SELL), aksi halde yön karşılaştırması |
-| 11 | **DI** | Değer > 0 ve yükseliyor → STRONG BUY; Değer > 0 ve düşüyor → WEAK BUY | Değer < 0 ve düşüyor → STRONG SELL; Değer < 0 ve yükseliyor → WEAK SELL |
-| 12 | **CMF** | > 0.05 → STRONG BUY; 0 ile 0.05 arası → WEAK BUY | < -0.05 → STRONG SELL; -0.05 ile 0 arası → WEAK SELL |
+| 10 | **WPR** | < -80 (STRONG BUY) | > -20 (STRONG SELL) |
+| 11 | **DI** | Değer > 0 ve yükseliyor → STRONG BUY | Değer < 0 ve düşüyor → STRONG SELL |
+| 12 | **CMF** | > 0.05 → STRONG BUY | < -0.05 → STRONG SELL |
 | 13 | **A/D** | Fiyat, SMA(AD, 21)'in üstüne çıkar | Fiyat, SMA(AD, 21)'in altına düşer |
 | 14 | **Net Volume** | > 0 ve yükseliyor | < 0 ve düşüyor |
 | 15 | **MADR** | Negatiften pozitife geçer (STRONG) | Pozitiften negatife geçer (STRONG) |
@@ -82,11 +82,11 @@ Sinyaller `lib/ta/signals.ts` içinde `addSignal()` yardımcısı ile üretilir.
 totalScore = tüm sinyal skorlarının toplamı
 avg = totalScore / signalCount
 
-avg >= 1.5  → STRONG BUY   (yeşil glow)
-avg >= 0.5  → WEAK BUY     (yeşil)
-avg <= -1.5 → STRONG SELL  (kırmızı glow)
-avg <= -0.5 → WEAK SELL    (kırmızı)
-diğer       → NEUTRAL       (gri)
+avg >= 1.5  → STRONG BUY
+avg >= 0.5  → WEAK BUY
+avg <= -1.5 → STRONG SELL
+avg <= -0.5 → WEAK SELL
+diğer       → NEUTRAL
 ```
 
 ---
@@ -107,18 +107,7 @@ Her mum i için (bar 50'den length - lookForward'a):
 
 Dönüş: `{ winRate, totalSignals, wins, history: BacktestHistoryItem[] }`
 
-> **Düzeltme 2026-05-21:** AD backtest'inde 21 günlük SMA hesaplanırken mevcut günün değeri yanlışlıkla SMA'ya dahil ediliyordu (veri sızıntısı). `for (let s = 0; s < 21; s++)` → `for (let s = 1; s <= 21; s++)` olarak düzeltildi. SMA artık yalnızca geçmiş veriden oluşur.
-
-### Backtest'teki İndikatör Sinyal Mantığı
-
-Backtest, TA sayfasındaki STRONG/WEAK ayrımı olmadan ikili (BUY/SELL) sınıflandırma kullanır.
-Bazı indikatörler için backtest sinyal mantığı, sinyal üretim mantığından basitleştirilmiş farklara sahiptir:
-
-| İndikatör | Backtest Sinyali | TA Sayfası Sinyali |
-|-----------|-----------------|-------------------|
-| DI | `cur > 0 → BUY, else → SELL` | 4 durumlu (işaret × yön) |
-| AO | `curr > 0: rising → BUY, !rising → SELL; curr < 0: !rising → SELL, rising → BUY` | Aynı mantık + STRONG/WEAK |
-| CMF | `val > 0 → BUY, else → SELL` | 3 eşikli (0.05/-0.05) |
+> **Düzeltme 2026-05-21:** AD backtest'inde veri sızıntısı düzeltildi. SMA artık yalnızca geçmiş veriden oluşur.
 
 **Desteklenen indikatörler (15):** MACD, RSI, STOCHRSI, WAVETREND, DMI, MFI, SMI, AO, CCI, WPR, DI, CMF, AD, NETVOL, MADR.
 
@@ -134,11 +123,21 @@ Brute-force optimizasyon: bir parametre aralığını tarar, her değer için in
 
 **Optimize edilebilir indikatörler (12):** RSI, MACD, STOCHRSI, WAVETREND, DMI, MFI, SMI, CCI, WPR, DI, CMF, MADR.
 
-Her biri için:
-- `param` — Query string parametre adı
-- `range` — Test edilecek [min, max] aralığı
-- `compute` — Deneme değeri ile çalıştırılacak fonksiyon
-- `formatData` — Backtest tüketimi için çıktıyı normalize eder
+**Kullanım:** AI Agent `optimizeParameter` tool'u → Inngest `aiOptimizeParameter` fonksiyonu → `findBestParameter()`. UI'da LiveAnalysisCard ile canlı takip.
+
+---
+
+## Servis Katmanı — AI Agent ile Paylaşımlı (`lib/ta/`)
+
+`lib/ta/` dizini, hem TA sayfası hem de AI Agent tarafından kullanılan paylaşımlı hesaplama çekirdeğidir:
+
+| Dosya | Görev | Kullanan |
+|-------|-------|----------|
+| `compute.ts` | `computeIndicators(candles, activeSet, params)` — lazy hesaplama | TA sayfası + AI `analyzeIndicators` tool'u |
+| `signals.ts` | `generateAllSignals(computed, candles)` — sinyal üretimi | TA sayfası + AI `analyzeIndicators` tool'u |
+| `backtest.ts` | `calculateWinRate(indicator, candles, data, opts)` | TA sayfası + AI `runBacktest` tool'u + Inngest rank |
+| `optimizer.ts` | `findBestParameter(indicator, candles)` | AI `optimizeParameter` tool'u → Inngest |
+| `types.ts` | Paylaşımlı tip tanımlamaları | Tüm sistem |
 
 ---
 
@@ -146,43 +145,27 @@ Her biri için:
 
 ### Hazır Strateji: RSI + CCI + WaveTrend
 
-URL parametrelerinde `strategy=rsi_cci_wt` ayarlandığında:
-- RSI, CCI ve WaveTrend indikatörlerini otomatik aktive eder
-- Bireysel sinyalleri hesaplar
-- Strateji kararı: ÜÇÜ de aynı fikirde olmalıdır (hepsi BUY veya hepsi SELL)
-- Bireysel sinyal dökümünü içeren birleşik strateji paneli görüntüler
-- `StrategyBacktestMonitor` birleşik win rate'i hesaplar
+URL parametrelerinde `strategy=rsi_cci_wt` ayarlandığında üç indikatör aktive edilir, strateji kararı oybirliği ile verilir.
 
 ### Özel Strateji (`CustomStrategyPanel` / `CustomStrategyModal`)
 
 Kullanıcıların AND/OR mantığı ile herhangi bir indikatör kombinasyonunu seçerek özel stratejiler oluşturmasını sağlar.
-Hesaplanan tüm indikatörlerden gelen veriler panele iletilir.
 
 ---
 
 ## Mum Formasyonu Tespiti (`lib/indicators/candlePatterns.ts`)
 
-OHLC verilerinden klasik Japon mum formasyonlarını tespit eder (14KB).
-Tespit edilen formasyonlar: doji, hammer, shooting star, engulfing (bullish/bearish),
-morning star, evening star, harami, piercing line, dark cloud cover, ve diğerleri.
+OHLC verilerinden klasik Japon mum formasyonlarını tespit eder: doji, hammer, shooting star, engulfing (bullish/bearish), morning star, evening star, harami, piercing line, dark cloud cover, ve diğerleri.
 
-`ind` query parametresine `patterns` eklenerek aktive edilir.
-
-Sonuçlar `CandlePatternPanel` bileşeninde görüntülenir.
+`ind` query parametresine `patterns` eklenerek aktive edilir. Sonuçlar `CandlePatternPanel` bileşeninde görüntülenir.
 
 ---
 
 ## Tarihsel Fraktallar (`lib/indicators/historicalFractals.ts`)
 
-Son N mumdaki fiyat desenine benzer tarihsel desenleri arar.
-Yapılandırılabilir lookback ve benzerlik eşiği kullanır.
-Benzer tarihsel desenlerden sonra ne olduğuna dayanarak ileriye yönelik bir "fraktal çizgisi" projekte eder.
+Son N mumdaki fiyat desenine benzer tarihsel desenleri arar. Benzer tarihsel desenlerden sonra ne olduğuna dayanarak ileriye yönelik bir "fraktal çizgisi" projekte eder.
 
-Parametreler: `{ lookback: 30, similarityThreshold: 15, minPattern: 5 }`
-
-`ind` query parametresine `fractals` eklenerek aktive edilir.
-
-Sonuçlar `HistoricalFractalsPanel` bileşeninde görüntülenir.
+`ind` query parametresine `fractals` eklenerek aktive edilir. Sonuçlar `HistoricalFractalsPanel` bileşeninde görüntülenir.
 
 ---
 
@@ -190,6 +173,4 @@ Sonuçlar `HistoricalFractalsPanel` bileşeninde görüntülenir.
 
 Swing high/low tespiti ve seviye kümeleme kullanarak anahtar destek ve direnç seviyelerini tespit eder.
 
-`ind` query parametresine `sr` eklenerek aktive edilir.
-
-Sonuçlar `SRPanel` bileşeninde görüntülenir.
+`ind` query parametresine `sr` eklenerek aktive edilir. Sonuçlar `SRPanel` bileşeninde görüntülenir.

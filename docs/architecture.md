@@ -3,7 +3,7 @@
 > **Amaç:** Sistem mimarisi, tasarım desenleri, veri akışları ve kritik mimari kararlar.
 > **Kapsam:** Tarayıcıdan veritabanına tüm katmanlar — auth, arkaplan işleri ve dış API'ler dahil.
 > **Ayrıca bakınız:** [[frontend]], [[backend]], [[database]], [[technical-analysis]]
-> **Son güncelleme:** 2026-05-22 (4-faz refactoring: bileşen reorganizasyonu, DB timestamps, katman ihlali, INDICATOR_REGISTRY, useChatManager)
+> **Son güncelleme:** 2026-05-25 (tam asenkron polling mimarisi, CanonicalMessage formatı, multi-provider model seçimi, Component Registry)
 
 ---
 
@@ -18,20 +18,19 @@
                      │  │ (sayfalar)  │  │  Actions │  │  (Inngest +   │  │
                      │  │ + AI Agent) │  │          │  │   AI Chat)    │  │
                      │  └─────────────┘  └──────────┘  └───────────────┘  │
-                     │         │               │               │           │
                      └─────────┼───────────────┼───────────────┼───────────┘
                                │               │               │
           ┌────────────────────┼───────────────┼───────────────┼──────────┐
           │                    ▼               ▼               ▼          │
           │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
-          │  │ MongoDB  │  │ Finnhub  │  │  Gemini  │  │  Gmail   │     │
-          │  │ (veri)   │  │ (hisse)  │  │   (AI)   │  │  SMTP    │     │
+          │  │ MongoDB  │  │ Finnhub  │  │  Ollama  │  │  Gmail   │     │
+          │  │ (veri)   │  │ (hisse)  │  │  (AI)    │  │  SMTP    │     │
           │  └──────────┘  └──────────┘  └──────────┘  └──────────┘     │
           │                                                              │
-          │  ┌──────────┐  ┌──────────┐                                 │
-          │  │ Inngest  │  │  Yahoo   │                                 │
-          │  │  Cloud   │  │ Finance  │  (fallback)                     │
-          │  └──────────┘  └──────────┘                                 │
+          │  ┌──────────┐  ┌──────────┐  ┌──────────┐                  │
+          │  │ Inngest  │  │  Yahoo   │  │  Groq /  │                  │
+          │  │  Cloud   │  │ Finance  │  │ OpenRouter│                  │
+          │  └──────────┘  └──────────┘  └──────────┘                  │
           └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -53,16 +52,20 @@
 | **Service Layer** | `lib/ta/` | İndikatör hesaplama (`compute.ts`), sinyal üretimi (`signals.ts`), backtest (`backtest.ts`), optimizasyon (`optimizer.ts`) — hem TA sayfası hem de AI Agent tarafından kullanılan paylaşımlı çekirdek |
 | **Lazy Computation** | `lib/ta/compute.ts` | `computeIndicators()` yalnızca `activeIndicators` Set'inde olan indikatörleri hesaplar |
 | **Component Registry** | `components/ai/registry.tsx` | Her tool ismi → React bileşeni eşlemesi. Yeni tool eklemek 1 satır. `getAllToolResults()` ile normalize edilmiş veri → `TOOL_COMPONENT_MAP` lookup → dinamik kart render |
-| **Reasoning Pipeline** | `lib/inngest/functions.ts` | Inngest her step'te `steps[]` dizisine ilerleme yazar. Client 1.5sn polling ile `ReasoningChain` bileşeninde canlı adımları gösterir |
-| **Graceful Error Handling** | `lib/ai/error-codes.ts` + `components/ai/ErrorCard.tsx` | 8 standart hata kodu (`EXTERNAL_API_DENIED`, `RATE_LIMIT`, `TIMEOUT`, vb.). `toToolError()` → `userMessage` + `errorCode` + `recoverable`. Client'ta `ErrorCard` — actionable (Retry, Check API Status, Search Stocks) |
+| **Tool Contracts (Zod)** | `lib/ai/tool-contracts.ts` | Her tool çıktısı katı Zod şeması ile tanımlı. UI bileşenleri bu kontratlara bağlı — tip güvenliği garantisi |
+| **Canonical Message Format** | `lib/ai/message-format.ts` | 4 farklı AI SDK formatını (v4/v5/v6) tek `CanonicalMessage` tipine normalize eder. `normalizeMessage()` + `toModelMessages()` ile dönüşüm |
+| **Reasoning Pipeline** | `lib/inngest/functions.ts` | Inngest her step'te AIJob `steps[]` dizisine ilerleme yazar. Client 1.5sn polling ile canlı adımları gösterir |
+| **Graceful Error Handling** | `lib/ai/error-codes.ts` + `components/ai/ErrorCard.tsx` | 8 standart hata kodu (`EXTERNAL_API_DENIED`, `RATE_LIMIT`, `TIMEOUT`, vb.). `toToolError()` → `userMessage` + `errorCode` + `recoverable`. Client'ta `ErrorCard` — actionable (Retry, Check API, Search Stocks) |
 | **Smart Title Generation** | `app/api/chat/route.ts` | İlk mesajda `generateText()` ile paralel LLM çağrısı → 3 kelimelik borsa başlığı → `updateConversationTitle()` |
-| **Optimistic UI** | `store/useAppStore.ts` | Zustand global state: `watchlist` (anında ekleme/çıkarma), `activeJobs` (sidebar spinner), `activeIndicators` (AI→TA geçiş) |
-| **Sliding Window Context** | `app/api/chat/route.ts` | `messages.slice(-10)` — AI başına 10 mesajla sınırlanır, token şişmesi engellenir |
-| **Tool Calling** | `app/api/chat/route.ts` | `stopWhen: stepCountIs(5)` — `maxSteps` AI SDK v6'da YOKTUR. `// @ts-ignore` ile gizlenen bu hata tool islemlerinin basarisiz olmasinin kok nedeniydi.
-| **DB Persistence Decoupling** | `app/api/chat/route.ts` | `result.response` promise'i ile DB kaydi HTTP stream'den bagimsiz — client disconnect olsa bile mesajlar kaydedilir |
-| **Shared Chat Hook** | `hooks/useChatManager.ts` | AI sayfası ve FloatingChatButton için paylaşımlı `useChat` mantığı — transport, hydration, stale timer, lazy creation, auto-scroll |
+| **Optimistic UI** | `store/useAppStore.ts` | Zustand global state: `watchlist` (anında ekleme/çıkarma), `activeJobs` (convId→jobId, sidebar spinner), `activeIndicators` (AI→TA geçiş) |
+| **Sliding Window Context** | `app/api/chat/route.ts` | `messages.slice(-6)` — AI bağlamı son 6 mesajla sınırlanır, token şişmesi engellenir |
+| **Async Polling (Streaming YOK)** | `app/api/chat/route.ts` + `lib/inngest/chat-async.ts` | `/api/chat` sadece Inngest event'i ateşler ve `{ jobId }` döner. Asıl AI işlemi `chat-async.ts` worker'ında `generateText()` ile çalışır. Client 1.5sn polling ile jobId takip eder |
+| **Multi-Provider Model** | `app/api/chat/route.ts → resolveModel()` | `ollama:qwen3:14b` / `groq:llama-3.3-70b` / `openrouter:meta-llama/...` / kullanıcı kendi API key'i. Prefix bazlı routing. Env key yoksa Ollama'ya fallback |
+| **DB Persistence Decoupling** | `lib/inngest/chat-async.ts` | `result.response` promise'i ile DB kaydı Inngest asenkron işleminden bağımsızdır — client disconnect olsa bile mesajlar kaydedilir |
+| **Shared Chat Hook** | `hooks/useChatManager.ts` | AI sayfası ve FloatingChatButton için paylaşımlı chat mantığı — polling, hydration, stale timer, lazy creation, auto-scroll, addToolOutput |
 | **Indicator Registry** | `lib/constants/indicators.ts` | Tüm 17 indikatörün tek kaynak sabiti — prompt, optimizer ve tools buradan beslenir |
-| **Resilience Layer (6 katman)** | `hooks/useChatManager.ts` + `app/api/chat/route.ts` | (1) Polling loop (3sn'de bir, 60sn timeout), (2) onError toast bildirimi, (3) Network offline/online detection, (4) Double submit lock (pendingRef), (5) Server error classification (ECONNREFUSED, timeout, rate limit), (6) Stable roomKey (stream survives conversation switch) |
+| **Resilience Layer (6 katman)** | `hooks/useChatManager.ts` + `app/api/chat/route.ts` | (1) Polling loop (1.5sn), (2) onError toast bildirimi, (3) Network offline/online detection, (4) Double submit lock (pendingRef), (5) Server error classification (ECONNREFUSED, timeout, rate limit), (6) Stable roomKey (polling survives conversation switch) |
+| **Multi-Room Isolation** | `app/(root)/ai/page.tsx` | roomKey (React key) sabit kalır, convId (DB ID) değişir. Oda değişiminde unmount YOK — display flex/none ile geçiş. Stream arka planda devam eder |
 | **Test Infrastructure** | `vitest.config.ts` + `*.test.ts` | Vitest v4 — 41 test (Zod validasyon, RSI hesaplama, backtest motoru, hata kodları), `npm test` ile çalışır |
 
 ---
@@ -94,7 +97,7 @@
 
 ## TA Sayfası Veri Akışı
 
-Teknik Analiz sayfası (`app/(root)/ta/page.tsx`) en karmaşık sistemdir — 914 satır, server component:
+Teknik Analiz sayfası (`app/(root)/ta/page.tsx`) en karmaşık sistemdir — 484 satır, server component:
 
 ```
 1. URL Query Parametreleri → symbol, interval (1d/4h), ind (virgülle ayrılmış indikatörler),
@@ -125,9 +128,27 @@ Teknik Analiz sayfası (`app/(root)/ta/page.tsx`) en karmaşık sistemdir — 91
 
 ---
 
+## AI Agent Veri Akışı (Asenkron Polling Mimarisi)
+
+```
+1. Kullanıcı mesaj gönderir → POST /api/chat
+2. Route: Auth kontrolü → kullanıcı mesajını DB'ye yaz → AIJob.create({ status: 'queued' })
+3. Route: inngest.send('ai/process-chat-message', { jobId, messages.slice(-6), selectedModel })
+4. Route: HEMEN { success: true, jobId } döner (AI cevabı beklenmez!)
+5. Inngest Worker (chat-async.ts): resolveModel() → generateText({ system, messages, tools, stopWhen: stepCountIs(5) })
+6. Worker: onStepFinish → AIJob'a step push (UI polling için)
+7. Worker: Sonuç mesajlarını MongoDB'ye kaydet → AIJob'u completed/failed yap
+8. Client (useChatManager): 1.5sn polling → jobId durumunu sorgula
+9. Client: completed alınca → fetchMessages(convId) → DB'den tüm mesajları çek → UI güncelle
+```
+
+**Neden streaming değil de polling?** OpenRouter/Ollama gateway timeout (524) sorunları nedeniyle `streamText` terk edildi. Tam asenkron Inngest polling mimarisine geçildi. Client disconnect olsa bile AI işlemi devam eder ve sonuçlar DB'ye kaydedilir.
+
+---
+
 ## Inngest İş Akışları
 
-`lib/inngest/functions.ts` içinde tanımlıdır. Dört fonksiyon:
+`lib/inngest/functions.ts` ve `lib/inngest/chat-async.ts` içinde tanımlıdır. Toplam 7 fonksiyon:
 
 ### 1. sendSignUpEmail (event-driven)
 - **Tetikleyici:** `app/user.created` event'i (`signUpWithEmail` içinden ateşlenir)
@@ -152,19 +173,34 @@ Teknik Analiz sayfası (`app/(root)/ta/page.tsx`) en karmaşık sistemdir — 91
   4. Koşul sağlanıyorsa ve bugün henüz bildirilmediyse alarm e-postası gönder
   5. `lastNotifiedOn` alanını güncelle (günde bir kere sınırı)
 
-### 4. aiOptimizeParameter (event-driven) — 2026-05-21
-- **Tetikleyici:** `ai/optimize-parameter` event'i (AI `optimizeParameter` tool'u içinden ateşlenir)
-- **Adımlar (Reasoning Pipeline — 4 adım canlı izleme):**
-  1. `create-report` → Report oluştur (`status: 'processing'`, `steps[0]: completed`)
-  2. `run-optimization` → Mum verisi çekme + `findBestParameter()` brute-force optimizasyon
-     - Step 1: `fetch-candles` (`status: 'running'` → `completed`: "Fetched N candles")
-     - Step 2: `run-optimization` (`status: 'running'` → `completed`: "Computing RSI for 38 parameters...")
-     - Step 3: `finalize` (`status: 'running'` → `completed`: "Best 14: 65.5% win rate")
-  3. `update-report` → Report'u `status: 'completed'` + `bestValue` + `winRate` + `fullData` ile güncelle
-  4. Hata durumunda: `mark-failed` → `status: 'failed'` + `errorMessage` (kullanıcı dostu) + `steps[]` hata adımı
-- **Client:** LiveAnalysisCard 1.5 saniye polling ile `steps[]` dizisini canlı `ReasoningChain` olarak render eder
+### 4. evaluateSmartAlerts (event-driven)
+- **Tetikleyici:** Smart alert değerlendirme event'i
+- Smart strateji alarmlarını indikatör koşullarına göre değerlendirir
 
-> **Not:** `evaluateDailyPriceAlerts` içinde quote API çağrısı `revalidate: 60` ile yapılır (1 dakikalık önbellek), diğer Finnhub çağrılarından farklı olarak.
+### 5. aiProcessChatMessage (event-driven) — ANA AI FONKSİYONU
+- **Tetikleyici:** `ai/process-chat-message` event'i (`POST /api/chat` içinden ateşlenir)
+- **Konum:** `lib/inngest/chat-async.ts`
+- **Adımlar:**
+  1. `resolveModel()` ile provider çözümle (ollama/groq/openrouter/user-key)
+  2. `generateText({ system, messages, tools, stopWhen: stepCountIs(5) })`
+  3. `onStepFinish` → AIJob step güncellemeleri
+  4. Sonuç mesajlarını DB'ye kaydet
+  5. AIJob'u completed/failed yap
+
+### 6. aiOptimizeParameter (event-driven)
+- **Tetikleyici:** `ai/optimize-parameter` event'i (AI `optimizeParameter` / `batchOptimizeParameter` tool'u)
+- **Adımlar (Reasoning Pipeline — 3 adım canlı izleme):**
+  1. `create-ai-job` → AIJob oluştur (`status: 'running'`, `steps[]`)
+  2. `run-optimization` → Mum verisi çekme + `findBestParameter()` brute-force optimizasyon
+  3. `update-report` → Report.create + AIJob.completed + Notification.create
+- **Hata:** `mark-failed` → `status: 'failed'` + kullanıcı dostu `errorMessage` + Notification
+
+### 7. aiRankIndicatorsJob (event-driven)
+- **Tetikleyici:** `ai/rank-indicators` event'i (AI `rankIndicators` / `findBestIndicator` tool'u)
+- **Adımlar:**
+  1. `create-ai-job` → AIJob oluştur
+  2. `run-ranking` → Mum verisi + `computeIndicators()` + tüm indikatörler için `calculateWinRate()` + sırala
+  3. `update-report` → Report.create + topN sonuç + Notification
 
 ---
 
@@ -183,4 +219,7 @@ Teknik Analiz sayfası (`app/(root)/ta/page.tsx`) en karmaşık sistemdir — 91
 | **API Route yerine Server Actions** | Daha az boilerplate, tip güvenliği, client'tan doğrudan çağrılabilir |
 | **Error Boundary ile graceful degradation** | TA sayfasındaki chart alanı `ErrorBoundary` ile sarılı — tek bir chart çökmesi tüm sayfayı etkilemez |
 | **Zod input validasyonu** | Tüm kullanıcı girdileri Zod şemalarıyla doğrulanır; aynı şemalar AI Agent tool tanımlarında kullanılır |
-| **AI Agent (Vercel AI SDK v6 + Ollama)** | Qwen 3 14B modeli ile 14 tool üzerinden gerçek zamanlı finansal analiz. `lib/ai/` modülü, `/api/chat` endpoint'i, `/ai` tam sayfa ve floating overlay UI |
+| **Async Polling (streaming değil)** | OpenRouter 524 timeout sorunları nedeniyle terk edildi. `/api/chat` sadece jobId döner, asıl iş Inngest worker'da |
+| **CanonicalMessage formatı** | AI SDK v4/v5/v6'nın farklı part formatlarını (`tool-call`, `tool-result`, `tool-invocation`) tek tipe normalize eder |
+| **Multi-Provider Model** | Prefix bazlı routing (`ollama:`, `groq:`, `openrouter:`, `*-key:`). Kullanıcı kendi API key'ini girebilir. Fallback: Ollama |
+| **AI Agent (Vercel AI SDK v6 + Ollama/Çoklu)** | Qwen 3 14B modeli ile 18 tool üzerinden gerçek zamanlı finansal analiz. Multi-provider destekli |

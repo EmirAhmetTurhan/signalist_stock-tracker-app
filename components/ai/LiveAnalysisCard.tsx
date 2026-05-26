@@ -101,11 +101,12 @@ type LiveAnalysisCardProps = {
   symbol: string;
   indicator: string;
   toolCallId: string;
+  toolName?: string;
   convId?: string;
   onToolOutput?: (opts: { toolCallId: string; toolName: string; output: any }) => void;
 };
 
-export default function LiveAnalysisCard({ jobId, symbol, indicator, toolCallId, convId, onToolOutput }: LiveAnalysisCardProps) {
+export default function LiveAnalysisCard({ jobId, symbol, indicator, toolCallId, toolName = 'optimizeParameter', convId, onToolOutput }: LiveAnalysisCardProps) {
   const router = useRouter();
   // Baslangic durumu null — ilk poll tamamlanana kadar processing gosterme (hydration sirasinda
   // zaten tamamlanmis isler icin anlik "Processing..." flasini engeller)
@@ -144,7 +145,7 @@ export default function LiveAnalysisCard({ jobId, symbol, indicator, toolCallId,
               injectedRef.current = true;
               onToolOutput({
                 toolCallId,
-                toolName: 'optimizeParameter',
+                toolName,
                 output: {
                   success: true,
                   symbol,
@@ -177,10 +178,10 @@ export default function LiveAnalysisCard({ jobId, symbol, indicator, toolCallId,
   // ---- Render ----
 
   if (status === 'completed') {
-    if (indicator === 'FIND_BEST' || indicator === 'RANK') return null;
     // addToolOutput basarili olduysa GenerativeUI completedOpt uzerinden
-    // AnalysisResultCard render eder. Burada render etme — cift kart olusmasin.
+    // AnalysisResultCard veya RankingCard render eder. Burada render etme — cift kart olusmasin.
     if (injectedRef.current) return null;
+    if (indicator === 'FIND_BEST' || indicator === 'RANK') return null;
     // Fallback: onToolOutput saglanmadiysa veya toolCallId yoksa
     // (hydration sirasinda, addToolOutput henuz cagrilamadiysa)
     if (winRate !== null && bestValue !== null) {

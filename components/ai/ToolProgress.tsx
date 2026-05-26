@@ -43,44 +43,31 @@ function getSymbolInfo(toolName: string, args?: Record<string, unknown>): string
   return '';
 }
 
+import { normalizePart, type CanonicalPart } from '@/lib/ai/message-format';
+
 type Props = {
   parts?: any[];
   isLoading?: boolean;
 };
 
-// AI SDK v6 tool-invocation → v4/v5 ToolPart formatina normalize et
-function normalizePart(p: any): ToolPart | null {
-  // v6: tool-invocation
-  if (p.type === 'tool-invocation' && p.toolInvocation) {
-    const inv = p.toolInvocation;
-    if (inv.toolName === 'askClarification') return null;
-    return {
-      type: inv.state === 'result' ? 'tool-result' : 'tool-call',
-      toolName: inv.toolName,
-      toolCallId: inv.toolCallId,
-      args: inv.input || inv.args,
-      result: inv.result || inv.output?.value || inv.output,
-    };
-  }
-  // v4/v5: tool-call / tool-result
-  if ((p.type === 'tool-call' || p.type === 'tool-result') && p.toolName !== 'askClarification') {
-    return p as ToolPart;
-  }
-  return null;
-}
-
 export default memo(function ToolProgress({ parts, isLoading = true }: Props) {
   if (!parts || parts.length === 0) return null;
 
-  const toolParts = parts.map(normalizePart).filter((p): p is ToolPart => p !== null);
+  const toolParts = parts
+    .map(normalizePart)
+    .filter((p): p is CanonicalPart => p !== null && (p.type === 'tool-call' || p.type === 'tool-result'));
 
   if (toolParts.length === 0) return null;
 
   // Group by toolCallId
-  const groups = new Map<string, { call: ToolPart; result?: ToolPart }>();
+  const groups = new Map<string, { call: any; result?: any }>();
   for (const p of toolParts) {
-    const id = p.toolCallId || '';
-    const entry = groups.get(id) || { call: p.type === 'tool-call' ? p : ({} as ToolPart), result: undefined };
+    if (p.type !== 'tool-call' && p.type !== 'tool-result') continue;
+    // Skip askClarification from showing a progress bar
+    if ((p as any).toolName === 'askClarification') continue;
+
+    const id = (p as any).toolCallId || '';
+    const entry = groups.get(id) || { call: p.type === 'tool-call' ? p : ({} as any), result: undefined };
     if (p.type === 'tool-call') entry.call = p;
     if (p.type === 'tool-result') entry.result = p;
     groups.set(id, entry);
@@ -89,10 +76,18 @@ export default memo(function ToolProgress({ parts, isLoading = true }: Props) {
   return (
     <div className="mt-2 space-y-1">
       {[...groups.entries()].map(([groupId, { call, result }]) => {
-        const label = TOOL_LABELS[call.toolName || ''] || call.toolName || 'Processing';
-        const info = getSymbolInfo(call.toolName || '', call.args);
+        const toolName = call.toolName as string || '';
+        const args = call.input || call.args;
+        const label = TOOL_LABELS[toolName] || toolName || 'Processing';
+        const info = getSymbolInfo(toolName, args);
         
-        // Eger stream bittiyse (!isLoading) ve sonuc hala gelmediyse (!result), islem yari yolda kopmustur!
+        // Arka plan işleri için LiveAnalysisCard veya BatchCard devreye girer,
+        // ToolProgress'in minik hap barına (ve sahte Aborted hatasına) gerek yoktur.
+        const isBackgroundTool = ['optimizeParameter', 'batchOptimizeParameter', 'rankIndicators', 'findBestIndicator'].includes(toolName);
+        if (isBackgroundTool) return null;
+
+        // Normal (senkron) araçlar için:
+        // Eğer stream bittiyse (!isLoading) ve sonuc hala gelmediyse (!result), islem yari yolda kopmustur!
         const isDone = !!result;
         const isAborted = !isDone && !isLoading;
         const isError = result?.result?.error != null || isAborted;
@@ -115,7 +110,7 @@ export default memo(function ToolProgress({ parts, isLoading = true }: Props) {
             ) : (
               <CheckCircle2 className="h-3 w-3 shrink-0" />
             )}
-            <span>{isAborted ? `${label} (Aborted)` : label}</span>
+            <span>{isAborted ? `${label} (İptal Edildi/Zaman Aşımı)` : label}</span>
             {info && <span className="text-[10px] opacity-60 ml-auto">{info}</span>}
           </div>
         );

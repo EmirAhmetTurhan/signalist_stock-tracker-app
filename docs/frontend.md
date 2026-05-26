@@ -2,8 +2,8 @@
 
 > **Amaç:** App Router yapısı, route grupları, UI bileşen kataloğu ve client-side desenler.
 > **Kapsam:** `app/`, `components/`, `hooks/`, `types/` altındaki tüm dosyalar.
-> **Ayrıca bakınız:** [[architecture]], [[backend]], [[technical-analysis]]
-> **Son güncelleme:** 2026-05-22 (4-faz refactoring + resilience banner'ları: offline, error, polling göstergesi)
+> **Ayrıca bakınız:** [[architecture]], [[backend]], [[technical-analysis]], [[ai-agent-architecture]]
+> **Son güncelleme:** 2026-05-25 (6 Fazlı AI Kararlılık Revizyonu: Message Pipeline, Component Registry, Background Loop, ToolProgress, Hydration, Error Visibility. CanonicalMessage + tool-contracts + useChatManager entegrasyonu)
 
 ---
 
@@ -31,7 +31,7 @@ app/
 │   └── alerts/create/page.tsx     # Alternatif alarm oluşturma sayfası
 ├── api/
 │   ├── inngest/route.ts           # Inngest endpoint'i (GET, POST, PUT)
-│   └── chat/route.ts              # AI Agent API endpoint (POST, streaming)
+│   └── chat/route.ts              # AI Agent API endpoint (POST, Inngest Trigger + JSON)
 ```
 
 ### Route Group Mantığı
@@ -103,17 +103,17 @@ Bu dosyalar elle düzenlenmemelidir — yeni bileşen eklemek için `npx shadcn@
 
 | Bileşen | Amaç |
 |---------|------|
-| `FloatingChatButton` | Sağ-alt overlay sohbet paneli. **`next/dynamic` ile lazy-load** (`app/(root)/layout.tsx`). `useChatManager` hook'u + DB hafıza + konuşma geçmişi dropdown + GenerativeUI + ToolProgress. Panel içeriği mounted kalır (stream korunur). localStorage sadece stream bitince yazılır |
-| `/ai` sayfası | Tam sayfa sohbet. **Sidebar:** konuşma listesi, yeni sohbet (lazy creation), pin/rename/delete, **activeJobs spinner (Loader2)**. URL routing (`?id=xxx`). **Multi-room:** `roomKey`/`convId` ayrımı → oda değişince useChat sıfırlanmaz |
+| `FloatingChatButton` | Sağ-alt overlay sohbet paneli. **`next/dynamic` ile lazy-load**. `useChatManager` hook'u + DB hafıza. F5 yenilemelerinde chat'in kaybolmaması için aktif sohbet ID'sini `localStorage` (`signalist-active-conv`) içinde tutar. |
+| `/ai` sayfası | Tam sayfa sohbet. **Sidebar:** konuşma listesi, yeni sohbet, pin/rename/delete, **activeJobs spinner (Loader2)**. URL routing (`?id=xxx`). **Multi-room:** `roomKey`/`convId` ayrımı → oda değişince useChat sıfırlanmaz |
 | `ChatArea` (`React.memo`'lu) | `useChatManager` hook'u ile sadeleştirildi (~25 satır chat mantığı). `roomKey` ile mount, `convId` ile DB senkronizasyonu. DB hydration, lazy creation, auto-scroll (hook'tan gelir) |
-| `GenerativeUI` (`React.memo`'lu) | Component Registry tabanlı. 3 katmanlı: completedOpt → AnalysisResultCard, bgJob (batch destekli) → LiveAnalysisCard veya batch notice, tool-call → gizle. `isLast` + `onFollowUp` prop'ları. Zustand `addActiveJob` batch desteği |
-| `LiveAnalysisCard` | **1.5 saniye polling.** `getReportByJobId(jobId)` ile DB sorgusu. ReasoningChain — canlı adım takibi. Tamamlanınca `AnalysisResultCard` (F5 GEREKMEZ) |
+| `GenerativeUI` (`React.memo`'lu) | Component Registry tabanlı (`TOOL_COMPONENT_MAP`). Hatalar için `detectErrorCode` ile şık `ErrorCard`'lar çizer. `isLast` + `onFollowUp` prop'ları. |
+| `LiveAnalysisCard` | **1.5 saniye polling.** Inngest işlemlerini takip eder. Bittiğinde `useChatManager` üzerinden `addToolOutput` tetikleyerek UI'a ve DB'ye sonucu basar. |
 | `AnalysisResultCard` | Statik yeşil sonuç kartı. Win Rate + Best Parameter grid + "View in Notebook" / "Apply to Chart" butonları |
-| `ToolProgress` (`React.memo`'lu) | Tool invocation'ları canlı gösterir (spinner → checkmark/error). 18 tool için friendly label'lar, AI SDK v6 + v4/v5 format desteği |
+| `ToolProgress` (`React.memo`'lu) | Tool invocation'ları canlı gösterir (spinner → checkmark/error). Uzun süren arka plan işlerinin hatalı "(Aborted)" uyarısı vermemesi için arka plan işleri bu barda gösterilmez. |
 | `MarkdownRenderer` (`React.memo`'lu) | `react-markdown` + `remark-gfm` ile zengin Markdown render |
 | `/notebook` sayfası | Research Notebook: arama, sembol filtresi, not kartları grid, detay modal |
 | **Zustand Store** | `useAppStore` — `watchlist` (optimistic), `activeIndicators` (AI→TA), `lastToolAction` (log), `activeJobs: Record<convId, jobId>` (sidebar spinner) |
-| **useChatManager** (`hooks/useChatManager.ts`) | Paylaşımlı chat hook'u — AI sayfası ve FloatingChatButton aynı hook'u kullanır. Transport, hydration, stale timer, lazy creation, auto-scroll, onToolCall hepsi burada |
+| **useChatManager** | `hooks/useChatManager.ts` | Paylaşımlı chat hook'u — Mesaj gönderme, 1.5s aralıklarla `jobId` durumunu (polling) takip etme ve sonuçlanınca MongoDB'den hidratasyon sağlama işlerini yürütür. Asenkron yapının merkezidir. |
 
 ### Component Registry Kartları (`components/ai/`) — yeni (2026-05-21)
 
@@ -138,10 +138,10 @@ Bu dosyalar elle düzenlenmemelidir — yeni bileşen eklemek için `npx shadcn@
 - **Multi-room izolasyon (roomKey/convId ayrımı):** `useChat({ id: roomKey })` — roomKey sabit, useChat sıfırlanmaz. convId DB ID'si olup `convIdRef` üzerinden transport header'ına dinamik eklenir. Oda değişince unmount OLMAZ
 - **Transport pattern (type-safe):** `DefaultChatTransport({ headers: (): Record<string, string> => ({...}) })` — `Resolvable<T>` tipi sayesinde `headers` fonksiyon olarak verilebilir. Her istekte `convIdRef.current` okunur. Custom `fetch` override'a gerek YOK
 - **Lazy creation:** "New Chat" DB'ye kaydetmez, sadece UI açar. İlk mesajda `createConversation` çağrılır, `roomKey` korunur, `convId` güncellenir → ChatArea UNMOUNT OLMAZ
-- **Cooling grace period:** Stream biten oda hemen DOM'dan kaldırılmaz, 5 saniye `coolingIds`'te tutulur → `onFinish` DB'ye yazmayı tamamlar
+- **Cooling grace period:** İşlemi biten oda hemen DOM'dan kaldırılmaz, 5 saniye `coolingIds`'te tutulur → Veritabanına yazmayı tamamlar
 - **Hydration:** Sadece `convId` değişince tetiklenir. DB boş dönse mevcut mesajlar korunur (`messages.length > 0` kontrolü). Loading skeleton gösterilir
-- **Scroll:** `ResizeObserver` + `isAtBottomRef` — sadece kullanıcı en alttayken otomatik kayar. Yukarı çıkınca rahatsız etmez. Odaya dönünce stream devam ediyorsa animasyon görünür
-- **Performans:** `ChatArea` + tüm alt bileşenler `React.memo`'lu. `streamingMap` değişmeyen değer için re-render tetiklemez. localStorage sadece stream bitince yazılır. `FloatingChatButton` `next/dynamic` ile lazy-load
+- **Scroll:** `ResizeObserver` + `isAtBottomRef` — sadece kullanıcı en alttayken otomatik kayar. Yukarı çıkınca rahatsız etmez. Odaya dönünce işlem devam ediyorsa animasyon görünür
+- **Performans:** `ChatArea` + tüm alt bileşenler `React.memo`'lu. localStorage sadece işlem bitince yazılır. `FloatingChatButton` `next/dynamic` ile lazy-load
 
 ### Hata Yönetimi (Resilience)
 
@@ -151,7 +151,7 @@ Bu dosyalar elle düzenlenmemelidir — yeni bileşen eklemek için `npx shadcn@
 | Offline Banner | Sarı uyarı: "Internet baglantisi kesildi" — `isOffline` state'i ile otomatik algılama |
 | Error Banner | Kırmızı hata kartı: hata mesajı + "Sayfayi Yenile" butonu — `onError` toast ile birlikte |
 | Loading Guard | Tool çağrısı aktifken bouncing dots gizlenir (çift animasyon önleme) |
-| Double Submit Lock | `pendingRef` stream bitene kadar ikinci gönderimi engeller |
+| Double Submit Lock | `pendingRef` işlem bitene kadar ikinci gönderimi engeller |
 
 ### Lightweight Charts (`components/charts/`)
 

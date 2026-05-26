@@ -1,10 +1,19 @@
 // hooks/useChatManager.ts — Shared chat logic used by both AI page and FloatingChatButton
 'use client';
 
-import { useChat } from '@ai-sdk/react';
-import { DefaultChatTransport, type UIMessage } from 'ai';
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { RefObject } from 'react';
+import { useAppStore } from '@/store/useAppStore';
+import { getConversationMessages, createConversation } from '@/lib/actions/chat-history.actions';
+import { getJobByJobId } from '@/lib/actions/ai-job.actions';
+import { normalizeMessage } from '@/lib/ai/message-format';
+
+export type UIMessage = {
+  id: string;
+  role: 'user' | 'assistant' | 'system' | 'data' | 'tool';
+  content?: string;
+  parts?: Array<{ type: string; text?: string; toolCallId?: string; toolName?: string; args?: any; result?: any; toolInvocation?: any }>;
+};
 
 const CLIENT_LOG = (step: string, status: 'OK' | 'ERROR' | 'INFO', detail?: string) => {
   const ts = new Date().toISOString().slice(11, 23);
@@ -25,18 +34,19 @@ export type ChatManagerReturn = {
   messages: UIMessage[];
   setMessages: (msgs: UIMessage[]) => void;
   sendMessage: (opts: { text: string }) => void;
-  status: 'idle' | 'streaming' | 'submitted' | 'error' | 'ready';
+  status: 'idle' | 'streaming' | 'running' | 'submitted' | 'error' | 'ready';
   isLoading: boolean;
   isHydrating: boolean;
   conversationId: string;
   error: string | null;
   isOffline: boolean;
-  hasContent: (m: { role: string; parts?: { type: string; text?: string }[] }) => boolean;
+  hasContent: (m: any) => boolean;
   handleSubmit: (input: string) => Promise<void>;
   addToolOutput: (...args: any[]) => void;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   messagesEndRef: RefObject<HTMLDivElement | null>;
   isAtBottomRef: RefObject<boolean>;
+  activeJobSteps: any[];
 };
 
 export function useChatManager({
@@ -46,18 +56,31 @@ export function useChatManager({
   onConversationCreated,
   onStreamingChange,
 }: ChatManagerOptions): ChatManagerReturn {
+  const [messages, setMessages] = useState<UIMessage[]>([]);
   const [isHydrating, setIsHydrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [activeJobSteps, setActiveJobSteps] = useState<any[]>([]);
+  const [status, setStatus] = useState<'idle' | 'running' | 'submitted' | 'error' | 'ready' | 'streaming'>('idle');
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
-  const hasFetchedRef = useRef(false);
   const creatingRef = useRef(false);
-  const pendingRef = useRef(false);
-  const staleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Network status detection
+  const activeJobs = useAppStore(state => state.activeJobs);
+  const addActiveJob = useAppStore(state => state.addActiveJob);
+  const removeActiveJob = useAppStore(state => state.removeActiveJob);
+
+  const convIdRef = useRef(initialConversationId);
+  convIdRef.current = initialConversationId;
+
+  const [conversationId, setConversationId] = useState(initialConversationId);
+  useEffect(() => { setConversationId(initialConversationId); }, [initialConversationId]);
+
+  const jobId = conversationId ? activeJobs[conversationId] : undefined;
+  const isLoading = status === 'running' || status === 'submitted' || !!jobId;
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     setIsOffline(!navigator.onLine);
@@ -68,169 +91,70 @@ export function useChatManager({
     return () => { window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline); };
   }, []);
 
-  const convIdRef = useRef(initialConversationId);
-  convIdRef.current = initialConversationId;
+  const mapMessages = useCallback((msgs: any[]) => {
+    // 1. Map raw DB messages into our Canonical UI format
+    // DB messages already contain the merged tool results because they were saved completely by chat-async.ts
+    const mapped = msgs.map((m) => normalizeMessage(m)) as any[];
 
-  const selectedModelRef = useRef(selectedModel);
-  selectedModelRef.current = selectedModel;
+    // Remove any extra redundant tool messages if they exist (they shouldn't normally anymore)
+    return mapped.filter(msg => msg.role !== 'tool');
+  }, []);
 
-  // Keep a state copy for the return value (updated after lazy creation)
-  const [conversationId, setConversationId] = useState(initialConversationId);
-  useEffect(() => { setConversationId(initialConversationId); }, [initialConversationId]);
-
-  const transport = useMemo(() => new DefaultChatTransport({
-    api: '/api/chat',
-    headers: (): Record<string, string> => {
-      const id = convIdRef.current;
-      const h: Record<string, string> = {};
-      if (id) h['X-Conversation-Id'] = id;
-      return h;
-    },
-    // Pass selected model and optional user API key to the server
-    body: () => {
-      const b: Record<string, unknown> = {};
-      const m = selectedModelRef.current;
-      if (m) b.selectedModel = m;
-      // User-provided API key (for groq-key:, openai-key: etc.) from localStorage
-      if (typeof window !== 'undefined') {
-        try {
-          const key = localStorage.getItem('signalist-user-api-key');
-          if (key) b.apiKey = key;
-        } catch { /* ignore */ }
+  const fetchMessages = useCallback(async (cid: string) => {
+    try {
+      const res = await getConversationMessages(cid);
+      if (res.success && res.messages) {
+        setMessages(mapMessages(res.messages));
       }
-      return b;
-    },
-  }), []);
-
-  const { messages, setMessages, sendMessage, status, addToolOutput } = useChat({
-    id: roomKey,
-    transport,
-    // onToolCall KALDIRILDI — AI SDK v3'te bu callback client-side tool execution
-    // modunu aktive eder ve addToolOutput bekler. Tool'lar SERVER'da calistigi icin
-    // bu modda "Tool result is missing" hatasi aliyorduk.
-    // Optimistic UI guncellemeleri artik useEffect ile messages uzerinden yapiliyor.
-    onError: (err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      CLIENT_LOG('Stream hatasi alindi', 'ERROR', msg);
-      setError(msg);
-      import('sonner').then(({ toast }) => toast.error('AI yanit veremedi', {
-        description: msg.includes('timeout') || msg.includes('TIMEOUT')
-          ? 'Sunucu zaman asimina ugradi, lutfen tekrar deneyin.'
-          : 'Bir hata olustu. Lutfen internet baglantinizi kontrol edip tekrar deneyin.',
-      }));
-    },
-  });
-
-  const isLoading = status === 'streaming' || status === 'submitted';
-
-  // Optimistic UI: watch for tool results in messages and update Zustand
-  useEffect(() => {
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg || lastMsg.role !== 'assistant') return;
-
-    for (const part of (lastMsg.parts || [])) {
-      const inv = (part as any).toolInvocation;
-      if (!inv || inv.state !== 'result') continue;
-
-      const input = inv.input || inv.args;
-      if (inv.toolName === 'addToWatchlist' && input) {
-        import('@/store/useAppStore').then(({ useAppStore }) => {
-          useAppStore.getState().addToWatchlistOptimistic(input.symbol, input.company);
-        });
-      } else if (inv.toolName === 'removeFromWatchlist' && input) {
-        import('@/store/useAppStore').then(({ useAppStore }) => {
-          useAppStore.getState().removeFromWatchlistOptimistic(input.symbol);
-        });
-      } else if (inv.toolName === 'analyzeIndicators' && input) {
-        import('@/store/useAppStore').then(({ useAppStore }) => {
-          useAppStore.getState().setActiveIndicators(input.indicators || []);
-        });
-      }
+    } catch (e) {
+      console.error('fetchMessages err:', e);
     }
-  }, [messages]);
+  }, [mapMessages]);
 
-  // Notify parent of streaming changes
+  useEffect(() => {
+    if (initialConversationId && messages.length === 0) {
+      setIsHydrating(true);
+      fetchMessages(initialConversationId).finally(() => setIsHydrating(false));
+    }
+  }, [initialConversationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!jobId || !conversationId) {
+      if (status === 'running') setStatus('ready');
+      setActiveJobSteps([]);
+      return;
+    }
+
+    setStatus('running');
+    const interval = setInterval(async () => {
+      try {
+        const res = await getJobByJobId(jobId);
+        if (res.success && res.job) {
+          setActiveJobSteps(res.job.steps || []);
+          if (res.job.status === 'completed' || res.job.status === 'failed') {
+            removeActiveJob(conversationId);
+            setStatus(res.job.status === 'failed' ? 'error' : 'ready');
+            if (res.job.status === 'failed') setError(res.job.errorMessage || 'Unknown error');
+            await fetchMessages(conversationId);
+          }
+        }
+      } catch (err) {
+        console.error('Polling error', err);
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [jobId, conversationId, removeActiveJob, fetchMessages]);
+
   useEffect(() => {
     onStreamingChange?.(conversationId || roomKey, isLoading);
   }, [isLoading, conversationId, roomKey, onStreamingChange]);
 
-  // ---- Hydration ----
-  const mapMessages = useCallback((msgs: { role: string; parts: unknown; content?: unknown }[]) =>
-    msgs.map((m) => ({
-      id: crypto.randomUUID(),
-      role: m.role as 'user' | 'assistant',
-      parts: Array.isArray(m.parts) ? m.parts
-        : m.content ? [{ type: 'text', text: String(m.content) }]
-        : [],
-    })) as unknown as UIMessage[], []);
-
-  useEffect(() => {
-    const cid = initialConversationId;
-    if (!cid || messages.length > 0 || hasFetchedRef.current) return;
-    hasFetchedRef.current = true;
-    setIsHydrating(true);
-
-    import('@/lib/actions/chat-history.actions')
-      .then(({ getConversationMessages }) => getConversationMessages(cid))
-      .then((res) => {
-        if (res.success && res.messages && res.messages.length > 0) {
-          CLIENT_LOG('Hydration: mesajlar DB den yuklendi', 'OK', `sayi=${res.messages.length}`);
-          setMessages(mapMessages(res.messages));
-
-          const lastRole = res.messages[res.messages.length - 1]?.role;
-          if (lastRole === 'user') {
-            let attempts = 0;
-            const maxAttempts = 20; // 20 * 3s = 60s timeout
-            const initialCount = res.messages.length;
-            staleTimerRef.current = setInterval(() => {
-              attempts++;
-              import('@/lib/actions/chat-history.actions')
-                .then(({ getConversationMessages: gcm }) => gcm(cid))
-                .then((retry) => {
-                  if (retry.success && retry.messages && retry.messages.length > initialCount) {
-                    CLIENT_LOG('Polling: AI yaniti DB de bulundu', 'OK', `${retry.messages.length} mesaj`);
-                    setMessages(mapMessages(retry.messages));
-                    if (staleTimerRef.current) { clearInterval(staleTimerRef.current); staleTimerRef.current = null; }
-                  } else if (attempts >= maxAttempts) {
-                    if (staleTimerRef.current) { clearInterval(staleTimerRef.current); staleTimerRef.current = null; }
-                  }
-                }).catch(() => {
-                  if (attempts >= maxAttempts && staleTimerRef.current) {
-                    clearInterval(staleTimerRef.current);
-                    staleTimerRef.current = null;
-                  }
-                });
-            }, 3000);
-          }
-        }
-      })
-      .catch((e) => { console.error('Hydration error:', e); })
-      .finally(() => { setIsHydrating(false); });
-  }, [initialConversationId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Cleanup
-  useEffect(() => {
-    return () => {
-      if (staleTimerRef.current) { clearTimeout(staleTimerRef.current); staleTimerRef.current = null; }
-    };
-  }, [initialConversationId]);
-
-  // Clear messages + reset fetch flag when conversation changes.
-  // GUARD: don't clear if stream is active or messages already exist —
-  // otherwise lazy creation races with the optimistic user message and wipes it.
-  useEffect(() => {
-    hasFetchedRef.current = false;
-    if (initialConversationId && !isLoading && messages.length === 0) {
-      setMessages([]);
-    }
-  }, [initialConversationId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---- Auto-scroll ----
   useEffect(() => {
     if (isAtBottomRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'instant' });
     }
-  }, [messages, isHydrating]);
+  }, [messages, isHydrating, activeJobSteps]);
 
   useEffect(() => {
     const el = scrollContainerRef.current;
@@ -250,71 +174,101 @@ export function useChatManager({
     };
   }, []);
 
-  // Release pending lock when stream ends
-  useEffect(() => {
-    if (status === 'ready') {
-      CLIENT_LOG('Stream tamamlandi (ready)', 'OK');
-      pendingRef.current = false;
-    } else if (status === 'error') {
-      CLIENT_LOG('Stream hataya dustu (error)', 'ERROR');
-      pendingRef.current = false;
-    } else if (status === 'streaming') {
-      CLIENT_LOG('Stream basladi (streaming)', 'OK');
-    } else if (status === 'submitted') {
-      CLIENT_LOG('Istek gonderildi (submitted)', 'INFO');
-    }
-  }, [status]);
-
-  // ---- Lazy creation + submit ----
-  const handleSubmit = useCallback(async (input: string) => {
-    if (!input.trim() || isLoading || pendingRef.current || isOffline) {
-      if (pendingRef.current) CLIENT_LOG('Gonderim engellendi (pendingRef)', 'INFO');
-      if (isOffline) CLIENT_LOG('Gonderim engellendi (offline)', 'INFO');
-      return;
-    }
-
-    CLIENT_LOG('Kullanici mesaji gonderiliyor', 'INFO', `convId=${convIdRef.current || 'yok'}`);
-    pendingRef.current = true;
+  const sendMessage = useCallback(async ({ text }: { text: string }) => {
     let cid = convIdRef.current;
+    
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(),
+      role: 'user',
+      parts: [{ type: 'text', text }]
+    }]);
 
+    setStatus('submitted');
+    setError(null);
+
+    try {
+      const apiKey = localStorage.getItem('signalist-user-api-key') || undefined;
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: text }],
+          conversationId: cid,
+          selectedModel,
+          apiKey
+        })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send message');
+      
+      if (data.jobId && data.conversationId) {
+        addActiveJob(data.conversationId, data.jobId);
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setStatus('error');
+    }
+  }, [messages, selectedModel, addActiveJob]);
+
+  const handleSubmit = useCallback(async (input: string) => {
+    if (!input.trim() || isLoading || isOffline) return;
+
+    let cid = convIdRef.current;
     if (!cid && !creatingRef.current) {
-      CLIENT_LOG('Yeni konusma olusturuluyor (lazy)', 'INFO');
       creatingRef.current = true;
       try {
-        const { createConversation } = await import('@/lib/actions/chat-history.actions');
         const res = await createConversation(input.slice(0, 80));
         if (res.success && res.conversationId) {
           cid = res.conversationId;
           convIdRef.current = cid;
           setConversationId(cid);
           onConversationCreated?.(roomKey, cid);
-          CLIENT_LOG('Yeni konusma olusturuldu', 'OK', `convId=${cid}`);
         }
-      } catch (e) { CLIENT_LOG('Konusma olusturma hatasi', 'ERROR', String(e)); }
+      } catch (e) { console.error(e); }
       creatingRef.current = false;
     }
 
     isAtBottomRef.current = true;
-    sendMessage({ text: input });
-    CLIENT_LOG('APIye gonderildi', 'OK');
+    await sendMessage({ text: input });
   }, [isLoading, isOffline, roomKey, onConversationCreated, sendMessage]);
 
-  // ---- hasContent ----
   const hasContent = useCallback((m: any) => {
     if (m.role === 'user') return true;
-    
-    // AI SDK v3 streams tools via toolInvocations directly on the message object
-    if (m.toolInvocations && m.toolInvocations.length > 0) return true;
-    
     if (!m.parts) return false;
     const hasText = m.parts.some((p: any) => p.type === 'text' && p.text?.trim());
-    const hasTool = m.parts.some((p: any) =>
-      p.type === 'tool-call' ||
-      p.type === 'tool-result' ||
-      p.type === 'tool-invocation'
-    );
+    const hasTool = m.parts.some((p: any) => p.type === 'tool-call' || p.type === 'tool-result');
     return hasText || hasTool;
   }, []);
+
+  const addToolOutput = useCallback(async ({ toolCallId, toolName, output }: { toolCallId: string; toolName: string; output: any }) => {
+    // 1. Update the local UI state dynamically without a refresh
+    setMessages(prev => {
+      return prev.map(msg => {
+        if (msg.role !== 'assistant' || !msg.parts) return msg;
+        
+        const hasCall = msg.parts.some((p: any) => p.type === 'tool-call' && p.toolCallId === toolCallId);
+        if (!hasCall) return msg;
+
+        const hasResult = msg.parts.some((p: any) => p.type === 'tool-result' && p.toolCallId === toolCallId);
+        if (hasResult) return msg;
+
+        // Add the result directly into the assistant's parts array for immediate rendering
+        return {
+          ...msg,
+          parts: [
+            ...msg.parts,
+            { type: 'tool-result', toolCallId, toolName, output }
+          ]
+        };
+      });
+    });
+
+    // 2. We no longer write to the database here!
+    // Background tasks (like ai/optimize-parameter) update the AIJob report and that is it, 
+    // or if they want to update chat, they should do it server-side.
+    // This prevents dual DB writes causing duplicates.
+  }, [conversationId]);
 
   return {
     messages,
@@ -332,5 +286,6 @@ export function useChatManager({
     scrollContainerRef,
     messagesEndRef,
     isAtBottomRef,
+    activeJobSteps
   };
 }

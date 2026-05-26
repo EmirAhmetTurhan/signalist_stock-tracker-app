@@ -1,59 +1,115 @@
 'use client';
 
-import { ArrowRight, Play } from 'lucide-react';
+import { ArrowRight, CheckCircle2, AlertTriangle, Play, Lightbulb } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
+type SignalData = {
+  indicator: string;
+  signal: string;
+  description: string;
+};
+
 type Props = {
-  toolName: string;
+  toolName?: string;
   data: Record<string, unknown>;
   symbol?: string;
   onRunBacktest?: (symbol: string, indicator: string) => void;
 };
 
 const SIGNAL_COLORS: Record<string, string> = {
-  BUY: 'bg-emerald-500/20 text-emerald-400',
-  SELL: 'bg-red-500/20 text-red-400',
-  CONFLICT: 'bg-yellow-500/20 text-yellow-400',
+  'STRONG BUY': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  'WEAK BUY': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  'NEUTRAL': 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  'WEAK SELL': 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  'STRONG SELL': 'bg-red-500/20 text-red-400 border-red-500/30',
+  'NO DATA': 'bg-gray-800 text-gray-500 border-gray-700',
 };
 
 export default function IndicatorSignalsCard({ data, onRunBacktest }: Props) {
   const router = useRouter();
   const symbol = (data.symbol as string) || '';
   const indicators = (data.indicators as string[]) || [];
-  const signals = (data.signals as Array<{ indicator: string; signal: string }>) || [];
+  const signals = (data.signals as SignalData[]) || [];
+  const overallSignal = (data.overallSignal as string) || 'NEUTRAL';
+  const overallScore = typeof data.overallScore === 'number' ? data.overallScore : 0;
+  const evaluationText = (data.evaluationText as string) || 'İndikatörler kararsız bir seyir izliyor.';
 
   if (signals.length === 0 && indicators.length === 0) return null;
 
-  return (
-    <div className="rounded-xl border border-gray-700/30 bg-gray-800/40 p-3 space-y-2.5">
-      {signals.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {signals.map((s) => (
-            <span
-              key={s.indicator}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium ${SIGNAL_COLORS[s.signal] || 'bg-gray-700 text-gray-300'}`}
-            >
-              {s.indicator.toUpperCase()}: {s.signal}
-            </span>
-          ))}
-        </div>
-      )}
+  const headerIndicators = indicators.map(i => i.toUpperCase()).join(', ');
 
-      <div className="flex gap-1.5">
-        <button
-          onClick={() => router.push(`/ta?symbol=${encodeURIComponent(symbol)}&ind=${indicators.join(',')}`)}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-gray-700/70 hover:bg-gray-600 text-gray-200 border border-gray-600 transition-colors"
-        >
-          <ArrowRight className="h-3 w-3" /> Apply to TA Page
-        </button>
-        {indicators.length === 1 && onRunBacktest && (
-          <button
-            onClick={() => onRunBacktest(symbol, indicators[0]!)}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-gray-700/70 hover:bg-gray-600 text-gray-200 border border-gray-600 transition-colors"
-          >
-            <Play className="h-3 w-3" /> Run Backtest
-          </button>
-        )}
+  return (
+    <div className="rounded-xl border border-gray-700/50 bg-[#141414] shadow-xl overflow-hidden mt-2 max-w-3xl">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-900/40 border-b border-gray-800">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          <span className="text-sm font-medium text-gray-200">Teknik Göstergeler Hesaplandı</span>
+        </div>
+        <div className="text-xs font-mono text-gray-500">
+          {symbol.toUpperCase()} &bull; {headerIndicators}
+        </div>
+      </div>
+
+      <div className="p-4 md:p-5 space-y-5">
+        <p className="text-sm text-gray-300">
+          <strong className="text-gray-100">{symbol.toUpperCase()}</strong> hissesi için yapılan güncel teknik analiz sonuçları aşağıda detaylandırılmıştır:
+        </p>
+
+        {/* Table */}
+        <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#1a1a1a]">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-gray-800/50 text-gray-400 text-xs uppercase font-semibold">
+              <tr>
+                <th className="px-4 py-3 border-b border-gray-800 w-1/4">İndikatör</th>
+                <th className="px-4 py-3 border-b border-gray-800 w-1/4">Sinyal</th>
+                <th className="px-4 py-3 border-b border-gray-800 w-1/2">Detay ve Açıklama</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800/50 text-gray-300">
+              {signals.map((s) => (
+                <tr key={s.indicator} className="hover:bg-white/[0.02] transition-colors">
+                  <td className="px-4 py-3 font-semibold text-gray-200">{s.indicator.toUpperCase()}</td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide border ${SIGNAL_COLORS[s.signal] || SIGNAL_COLORS['NO DATA']}`}>
+                      {s.signal}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-[13px] text-gray-400 whitespace-normal leading-relaxed">
+                    {s.description}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* General Evaluation Box */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl border border-yellow-500/20 bg-yellow-500/5 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1 h-full bg-yellow-500/50" />
+          
+          <div className="flex-1 space-y-2 relative z-10 pl-2">
+            <div className="flex items-center gap-3">
+              <h4 className="text-xs font-bold text-yellow-500 uppercase tracking-wider">Genel Değerlendirme</h4>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border ${SIGNAL_COLORS[overallSignal] || SIGNAL_COLORS['NEUTRAL']}`}>
+                {overallSignal} ({overallScore} Puan)
+              </span>
+            </div>
+            <p className="text-[13px] text-gray-300 leading-relaxed max-w-xl">
+              {evaluationText}
+            </p>
+          </div>
+
+          <div className="shrink-0 relative z-10">
+            <button
+              onClick={() => router.push(`/ta?symbol=${encodeURIComponent(symbol)}&ind=${indicators.join(',')}`)}
+              className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-yellow-500 hover:bg-yellow-400 text-black transition-all shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40 hover:-translate-y-0.5"
+            >
+              Sinyalleri Grafiğe Uygula <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
   );

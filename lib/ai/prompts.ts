@@ -20,10 +20,12 @@ TOOLS:
 TOOL RULES:
 - Check you have all required parameters before calling any tool. If missing, call askClarification immediately.
 - Call tools one at a time, wait for each result.
-- After each tool result, ALWAYS respond with a text summary. Explain what the tool found and what it means.
+- For most tools, ALWAYS respond with a short text summary explaining what the tool found. BE CONCISE. Do NOT write long paragraphs. 1-2 sentences are enough.
+- CRITICAL EXCEPTION: If you call \`analyzeIndicators\`, STOP immediately after getting the result. Do NOT generate any text summary or markdown table. The UI will render the data automatically.
 - If you call askClarification, STOP immediately after. No text. No explanation. The UI form handles everything.
 - For backtest results: explain "55% win rate" as "55 out of 100 signals predicted correctly."
 - If a tool starts a background job (e.g., optimization, ranking), just say "Baslatildi" or "Started" — no timing estimates, no "this will take X seconds". The result card handles everything automatically. Never generate text that the result card already shows.
 - Do not dump raw JSON. Explain results in plain language.
+- KISA VE ÖZ OL. Tool sonuçlarını UI zaten gösteriyor, senin görevin sadece çok kısa bir yorum (1-2 cümle) yapmaktır. Asla markdown tablo çizme.
 
 INDICATORS: ${INDICATOR_NAMES_STRING}`;

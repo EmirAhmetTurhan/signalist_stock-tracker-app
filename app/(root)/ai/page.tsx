@@ -5,9 +5,11 @@ import { Send, Bot, User, Sparkles, Menu, Plus, Trash2, MessageSquare, Pin, Penc
 import { useState, useEffect, useCallback, memo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import MarkdownRenderer from '@/components/ai/MarkdownRenderer';
+import ErrorCard from '@/components/ai/ErrorCard';
 import GenerativeUI from '@/components/ai/GenerativeUI';
 import ToolProgress from '@/components/ai/ToolProgress';
 import ModelSelector from '@/components/ai/ModelSelector';
+import { ThinkingSkeleton } from '@/components/ai/ThinkingSkeleton';
 import { useAppStore } from '@/store/useAppStore';
 import { useChatManager } from '@/hooks/useChatManager';
 import {
@@ -37,7 +39,7 @@ const ChatAreaInner = ({
 
   const {
     messages, sendMessage, isLoading, isHydrating, hasContent,
-    error, isOffline,
+    error, isOffline, activeJobSteps,
     handleSubmit: submit, addToolOutput,
     scrollContainerRef, messagesEndRef, isAtBottomRef,
   } = useChatManager({
@@ -134,28 +136,24 @@ const ChatAreaInner = ({
               </div>
             );
           })}
-          {isLoading && (() => {
-            // Tool aktifse bouncing dots gosterme — ToolProgress zaten spinner gosteriyor
-            const hasActiveTool = messages.some((m) =>
-              m.parts?.some((p: any) =>
-                (p.type === 'tool-invocation' && p.toolInvocation?.state === 'call') ||
-                (p.type === 'tool-call')
-              )
-            );
-            if (hasActiveTool) return null;
-            return (
+          {isLoading && (
             <div className="flex gap-3">
               <div className="h-7 w-7 rounded-lg bg-yellow-500/20 flex items-center justify-center shrink-0">
                 <Bot className="h-4 w-4 text-yellow-500" />
               </div>
-              <div className="bg-gray-800 rounded-2xl rounded-tl-md px-4 py-3 flex gap-1">
-                <span className="h-2 w-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="h-2 w-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="h-2 w-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              <ThinkingSkeleton steps={activeJobSteps} />
+            </div>
+          )}
+          {status === 'error' && error && (
+            <div className="flex gap-3">
+              <div className="h-7 w-7 rounded-lg bg-red-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                <Bot className="h-4 w-4 text-red-500" />
+              </div>
+              <div className="max-w-[80%]">
+                <ErrorCard userMessage={error} recoverable={true} />
               </div>
             </div>
-            );
-          })()}
+          )}
         </div>
         <div ref={messagesEndRef} />
       </div>

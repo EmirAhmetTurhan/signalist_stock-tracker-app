@@ -3,7 +3,7 @@
 > **Amaç:** MongoDB bağlantı yönetimi, Mongoose modelleri, koleksiyon şemaları, indexler ve veri kalıcılık desenleri.
 > **Kapsam:** `database/` dizini.
 > **Ayrıca bakınız:** [[architecture]], [[backend]]
-> **Son güncelleme:** 2026-05-22 (4-faz refactoring: timestamps standardizasyonu — tüm modeller `timestamps: true`)
+> **Son güncelleme:** 2026-05-25 (AIJob type güncellemesi: process_chat_message eklendi, 10 koleksiyon)
 
 ---
 
@@ -27,14 +27,14 @@ declare global {
 - Tek bir bağlantı promise'i oluşturur (paralel bağlantı girişimlerini önler)
 - `MONGODB_URI` env değişkeni yoksa `'MONGODB_URI must be set within .env'` hatası fırlatır
 - `bufferCommands: false` kullanır — bağlantı koptuğunda işlemler kuyruğa alınmak yerine hemen hata verir
-- **Güncelleme 2026-05-21:** Bağlantı başarılı log'u `[DB] Connected successfully (env: production)` formatındadır — artık `MONGODB_URI`'yi (şifre dahil) konsola yazmaz
+- Bağlantı başarılı log'u `[DB] Connected successfully (env: production)` formatındadır — `MONGODB_URI`'yi konsola yazmaz
 
 **Kritik:** Bu, asla yeniden yapılandırılmaması gereken üç singleton deseninden biridir.
 Global önbellek mekanizması, Next.js hot module replacement sırasında bağlantı havuzu tükenmesini önler.
 
 ---
 
-## Koleksiyonlar
+## Koleksiyonlar (10 adet)
 
 ### 1. `user` (Better Auth tarafından yönetilir)
 
@@ -73,8 +73,6 @@ Mongoose modeli olarak tanımlanmamıştır — Better Auth bu koleksiyonu dahil
 - `{ userId: 1 }` — Kullanıcıya göre arama
 - `{ userId: 1, symbol: 1 }` — Unique compound index (mükerrer izleme listesi girişlerini önler)
 
-**Duplicate yönetimi:** `addToWatchlist()` MongoDB E11000/duplicate hatalarını yakalar ve `{ ok: true, added: true }` döner — mükerrer girişleri sessizce başarı sayar.
-
 ### 3. `pricealerts` (`database/models/price-alert.model.ts`)
 
 ```typescript
@@ -85,59 +83,20 @@ Mongoose modeli olarak tanımlanmamıştır — Better Auth bu koleksiyonu dahil
   symbol: string,          // Büyük harf hisse sembolü
   company: string,         // Şirket adı
   alertName: string,       // Kullanıcı tanımlı alarm adı
-  alertType: 'upper' | 'lower',  // upper = fiyat > eşik ise bildir, lower = fiyat < eşik ise bildir
+  alertType: 'upper' | 'lower',
   threshold: number,       // Hedef fiyat
   frequency: 'daily',      // Şu anda sadece 'daily' destekleniyor
   active: boolean,         // Varsayılan: true
   lastNotifiedOn: Date | null,  // Günde bir kere sınırlaması için
-  createdAt: Date,         // Mongoose timestamps
-  updatedAt: Date          // Mongoose timestamps
+  createdAt: Date,
+  updatedAt: Date
 }
 ```
 
 **Indexler:**
-- `{ userId: 1 }` — Kullanıcıya göre arama
-- `{ email: 1 }` — Email'e göre arama
-- `{ active: 1, frequency: 1, symbol: 1 }` — Cron job sorgusu için compound index (sembole göre aktif günlük alarmları bul)
-- `{ userId: 1, symbol: 1 }` — Kullanıcıya özel sembol sorguları için compound index
-
-**Günde bir kere mantığı:** `evaluateDailyPriceAlerts` Inngest fonksiyonu `lastNotifiedOn` tarihini kontrol eder — bugün zaten bildirildiyse atlar. Gönderdikten sonra `lastNotifiedOn`'u günceller.
-
----
-
-## Veri Kalıcılık Desenleri
-
-### Model Kaydı
-
-Next.js + Mongoose için standart guard deseni kullanılır (model yeniden derlemesini önler):
-```typescript
-export const Watchlist: Model<WatchlistItem> =
-  (models?.Watchlist as Model<WatchlistItem>) ||
-  mongoose.model<WatchlistItem>('Watchlist', WatchlistSchema);
-```
-
-### Sorgu Deseni
-
-Tüm veritabanı erişimi Server Actions (`lib/actions/`) üzerinden akar, asla doğrudan client bileşenlerden değil:
-```
-Client Component → Server Action → connectToDatabase() → Mongoose Model → Yanıt
-```
-
-### Zaman Damgaları
-
-Tüm modeller `timestamps: true` kullanır — Mongoose `createdAt` ve `updatedAt` alanlarını otomatik yönetir.
-Bu, 2026-05-22 refactoring'inde standartlaştırılmıştır (önceden bazı modeller `timestamps: false` idi).
-Better Auth'ün `user` koleksiyonu kendi zaman damgası yönetimini kullanır.
-
-### userId Referanslama
-
-Watchlist ve PriceAlert modelleri `userId` olarak düz string kullanır (MongoDB ObjectId referansı değil).
-Bu değer Better Auth'ün `user.id` alanına karşılık gelir. Foreign key constraint yoktur —
-referans bütünlüğü uygulama seviyesinde yönetilir.
-
----
-
-## AI Agent Modelleri (2026-05-22)
+- `{ userId: 1 }`, `{ email: 1 }`
+- `{ active: 1, frequency: 1, symbol: 1 }` — Cron job sorgusu için compound index
+- `{ userId: 1, symbol: 1 }` — Kullanıcıya özel sembol sorguları
 
 ### 4. `conversations` (`database/models/conversation.model.ts`)
 
@@ -145,7 +104,8 @@ referans bütünlüğü uygulama seviyesinde yönetilir.
 {
   _id: ObjectId,
   userId: string,          // Better Auth UUID
-  title: string,           // max 100 char, ilk mesajdan üretilir
+  title: string,           // max 100 char, Smart Title ile AI tarafından üretilir
+  isPinned: boolean,       // Sabitlenmiş konuşma
   createdAt: Date,
   updatedAt: Date
 }
@@ -159,8 +119,8 @@ Index: `{ userId: 1, updatedAt: -1 }`
   _id: ObjectId,
   conversationId: ObjectId,  // ref: Conversation
   userId: string,
-  role: 'user' | 'assistant' | 'system',
-  parts: Mixed,              // useChat v3 parts formatı (JSON)
+  role: 'user' | 'assistant' | 'system' | 'tool',
+  parts: Mixed,              // AI SDK parts formatı (CanonicalMessage ile normalize edilir)
   createdAt: Date
 }
 ```
@@ -202,31 +162,30 @@ Indexes: `{ userId: 1, symbol: 1 }`, `{ userId: 1, createdAt: -1 }`
 ```
 Index: `{ active: 1, frequency: 1, symbol: 1 }`
 
-### 8. `reports` (`database/models/report.model.ts`) — yeni (2026-05-21)
+### 8. `reports` (`database/models/report.model.ts`)
 
-Inngest arka plan AI işlemleri için rapor koleksiyonu. `aiOptimizeParameter` fonksiyonu tarafından yazılır, `LiveAnalysisCard` tarafından polling ile okunur.
+Inngest arka plan AI işlemleri için rapor koleksiyonu. `aiOptimizeParameter` ve `aiRankIndicatorsJob` tarafından yazılır, `LiveAnalysisCard` tarafından polling ile okunur.
 
 ```typescript
 {
   _id: ObjectId,
   jobId: string,            // unique, index — randomUUID()
-  userId: string,           // 'inngest-system' (arka plan işlemi)
+  userId: string,
   symbol: string,           // uppercase
-  indicator: string,        // 'RSI', 'MACD', vb.
+  indicator: string,        // 'RSI', 'MACD', 'FIND_BEST', 'RANK', vb.
   status: 'processing' | 'completed' | 'failed',
-  bestValue: number | null, // optimize edilmiş parametre değeri
-  winRate: number | null,   // başarı oranı (%)
-  errorMessage: string | null, // kullanıcı dostu hata mesajı (2026-05-21 eklendi)
-  steps: Mixed[],           // Reasoning Pipeline adımları (2026-05-21 eklendi)
-                            // [{ name, status: 'pending'|'running'|'completed'|'failed', detail?, completedAt? }]
-  fullData: Mixed | null,   // tam optimizasyon sonucu
+  bestValue: number | null,
+  winRate: number | null,
+  errorMessage: string | null,
+  steps: Mixed[],           // [{ name, status, detail?, completedAt? }]
+  fullData: Mixed | null,   // Tam optimizasyon/sıralama sonucu (JSON)
   createdAt: Date,
   updatedAt: Date
 }
 ```
 Index: `{ jobId: 1 }` (unique)
 
-### 9. `aijobs` (`database/models/ai-job.model.ts`) — yeni (2026-05-22)
+### 9. `aijobs` (`database/models/ai-job.model.ts`) — İş Takip Merkezi
 
 Birleşik AI iş takip sistemi. İş yaşam döngüsünü yönetir, Report'a referans verir.
 
@@ -235,7 +194,8 @@ Birleşik AI iş takip sistemi. İş yaşam döngüsünü yönetir, Report'a ref
   _id: ObjectId,
   jobId: string,            // unique, index
   userId: string,           // index
-  type: 'optimize_parameter' | 'rank_indicators' | 'find_best_indicator' | 'batch_watchlist_scan' | 'scheduled_scan',
+  type: 'optimize_parameter' | 'rank_indicators' | 'find_best_indicator' 
+      | 'batch_watchlist_scan' | 'scheduled_scan' | 'process_chat_message',
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled',  // index
   title: string,            // "AAPL için RSI optimizasyonu"
   source: 'chat' | 'notebook' | 'scheduled' | 'watchlist',
@@ -245,7 +205,7 @@ Birleşik AI iş takip sistemi. İş yaşam döngüsünü yönetir, Report'a ref
   batchId: string,          // Toplu iş grup kimliği
   input: Mixed,             // İş parametreleri { symbol, indicator, interval, ... }
   progress: number,         // 0-100
-  steps: IStep[],           // [{ name, status, detail, completedAt }] — Reasoning Pipeline
+  steps: IStep[],           // [{ name, status, detail, completedAt }] — UI polling için
   errorMessage: string,
   cancellationRequested: boolean,
   startedAt: Date,
@@ -256,7 +216,15 @@ Birleşik AI iş takip sistemi. İş yaşam döngüsünü yönetir, Report'a ref
 ```
 Index: `{ jobId: 1 }` (unique), `{ userId: 1 }`, `{ status: 1 }`
 
-### 10. `notifications` (`database/models/notification.model.ts`) — yeni (2026-05-22)
+**Type açıklamaları:**
+- `optimize_parameter` — Tek hisse/indikatör optimizasyonu
+- `rank_indicators` — Çoklu indikatör sıralaması
+- `find_best_indicator` — En iyi indikatörü bulma
+- `process_chat_message` — **Ana AI sohbet işlemi** (Inngest chat-async worker'ı)
+- `batch_watchlist_scan` — Toplu izleme listesi taraması
+- `scheduled_scan` — Zamanlanmış tarama
+
+### 10. `notifications` (`database/models/notification.model.ts`)
 
 ```typescript
 {
@@ -275,3 +243,43 @@ Index: `{ jobId: 1 }` (unique), `{ userId: 1 }`, `{ status: 1 }`
 }
 ```
 Index: `{ userId: 1, status: 1 }`
+
+---
+
+## Veri Kalıcılık Desenleri
+
+### Model Kaydı
+
+Next.js + Mongoose için standart guard deseni:
+```typescript
+const Model = models.ModelName || model<IModel>('ModelName', Schema);
+```
+
+### Sorgu Deseni
+
+Tüm veritabanı erişimi Server Actions (`lib/actions/`) üzerinden akar:
+```
+Client Component → Server Action → connectToDatabase() → Mongoose Model → Yanıt
+```
+
+### Zaman Damgaları
+
+Tüm modeller `timestamps: true` kullanır — Mongoose `createdAt` ve `updatedAt` alanlarını otomatik yönetir.
+Better Auth'ün `user` koleksiyonu kendi zaman damgası yönetimini kullanır.
+
+### userId Referanslama
+
+Tüm modeller `userId` olarak düz string kullanır (MongoDB ObjectId referansı değil).
+Bu değer Better Auth'ün `user.id` alanına karşılık gelir. Foreign key constraint yoktur —
+referans bütünlüğü uygulama seviyesinde yönetilir.
+
+### AI İş Takip Yaşam Döngüsü
+
+```
+1. POST /api/chat → AIJob.create({ status: 'queued', type: 'process_chat_message' })
+2. Inngest worker başlar → AIJob.updateOne({ status: 'running' })
+3. onStepFinish → AIJob.updateOne({ $push: { steps: {...} } })
+4. İşlem biter → AIJob.updateOne({ status: 'completed', reportId, completedAt })
+5. Hata olursa → AIJob.updateOne({ status: 'failed', errorMessage })
+6. Client polling → getJobByJobId(jobId) → { status, steps[], errorMessage }
+```

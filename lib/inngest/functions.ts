@@ -7,7 +7,7 @@ import { getNews } from "@/lib/actions/finnhub.actions";
 import { getFormattedTodayDate } from "@/lib/utils";
 import { connectToDatabase } from "@/database/mongoose";
 import PriceAlert from "@/database/models/price-alert.model";
-import { fetchJSON, getDailyCandles, get4HourCandles } from "@/lib/actions/finnhub.actions";
+import { fetchJSON, getDailyCandlesForAI, getDailyCandles, get4HourCandles } from "@/lib/actions/finnhub.actions";
 import { Report } from "@/database/models/report.model";
 import AIJob from "@/database/models/ai-job.model";
 import Notification from "@/database/models/notification.model";
@@ -212,12 +212,13 @@ export const evaluateDailyPriceAlerts = inngest.createFunction(
 export const aiOptimizeParameter = inngest.createFunction(
     { id: 'ai-optimize-parameter', retries: 0, triggers: [{ event: 'ai/optimize-parameter' }] },
     async ({ event, step }) => {
-        const data = event.data as { jobId?: string; batchId?: string; symbol?: string; indicator?: string; interval?: string; userId?: string };
+        const data = event.data as { jobId?: string; batchId?: string; symbol?: string; indicator?: string; interval?: string; years?: number; userId?: string };
         const jobId = data.jobId || 'unknown';
         const batchId = data.batchId || null;
         const symbol = data.symbol || 'UNKNOWN';
         const indicator = data.indicator || 'UNKNOWN';
         const interval = data.interval || '1d';
+        const years = data.years || 1;
 
         const userId = data.userId || 'inngest-system';
 
@@ -252,12 +253,13 @@ export const aiOptimizeParameter = inngest.createFunction(
                 const config = OPTIMIZABLE_INDICATORS[name];
                 if (!config) throw new Error(`${indicator} is not optimizable`);
 
+                const days = years * 365;
                 const candles: Candle[] = interval === '4h'
-                    ? await get4HourCandles(symbol, 3650)
-                    : await getDailyCandles(symbol, 3650);
+                    ? await get4HourCandles(symbol, days)
+                    : await getDailyCandlesForAI(symbol, days);
 
                 if (!candles || candles.length === 0) {
-                    throw new Error(`Insufficient candle data for ${symbol}`);
+                    return { error: `Insufficient candle data for ${symbol}` };
                 }
 
                 // Step guncelle: veri cekildi, optimizasyon basliyor
@@ -287,9 +289,13 @@ export const aiOptimizeParameter = inngest.createFunction(
                 return optResult;
             });
 
-            if (result && result.bestVal !== -1) {
-                bestValue = result.bestVal;
-                winRate = Math.round(result.bestWinRate * 100) / 100;
+            if (result && typeof result === 'object' && 'error' in result) {
+                throw new Error(result.error as string);
+            }
+
+            if (result && typeof result === 'object' && 'bestVal' in result && result.bestVal !== -1) {
+                bestValue = result.bestVal as number;
+                winRate = Math.round((result.bestWinRate as number) * 100) / 100;
                 paramName = OPTIMIZABLE_INDICATORS[indicator.toUpperCase()]?.param ?? '?';
             }
         } catch (e) {
@@ -389,7 +395,7 @@ export const aiRankIndicatorsJob = inngest.createFunction(
         const jobId = data.jobId || 'unknown';
         const symbol = data.symbol || 'UNKNOWN';
         const interval = data.interval || '1d';
-        const years = data.years || 5;
+        const years = data.years || 1;
         const topN = data.topN || 5;
         const isSingle = data.isSingle || false;
         const requestedIndicators = data.indicators;
@@ -419,13 +425,13 @@ export const aiRankIndicatorsJob = inngest.createFunction(
         let results: { name: string; winRate: number; signals: number }[] = [];
 
         try {
-            results = await step.run('run-ranking', async () => {
+            const stepResult = await step.run('run-ranking', async () => {
                 const candles: Candle[] = interval === '4h'
-                    ? await get4HourCandles(symbol, days)
-                    : await getDailyCandles(symbol, days);
+                    ? await get4HourCandles(symbol, Math.min(days, 730)) // Max 2 years for 4H
+                    : await getDailyCandlesForAI(symbol, Math.min(days, 365));
 
                 if (!candles || candles.length === 0) {
-                    throw new Error(`Insufficient candle data for ${symbol}`);
+                    return { error: `Insufficient candle data for ${symbol}` };
                 }
 
                 await connectToDatabase();
@@ -463,9 +469,12 @@ export const aiRankIndicatorsJob = inngest.createFunction(
                 }
                 
                 testResults.sort((a, b) => b.winRate - a.winRate);
-                return testResults;
+                return { data: testResults };
             });
-            
+            if (stepResult && typeof stepResult === 'object' && 'error' in stepResult) {
+                throw new Error(stepResult.error as string);
+            }
+            results = (stepResult && typeof stepResult === 'object' && 'data' in stepResult ? stepResult.data : []) as { name: string; winRate: number; signals: number }[];
         } catch (e) {
             const errMsg = String(e);
             await step.run('mark-failed', async () => {

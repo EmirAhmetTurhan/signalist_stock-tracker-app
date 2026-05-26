@@ -55,19 +55,25 @@ export async function createPriceAlertAction(formData: FormData) {
   }
 }
 
-// Programmatic alert functions for AI tool use (no FormData, no redirect)
 export async function createAlert(input: {
   symbol: string;
   company: string;
   alertName: string;
   alertType: 'upper' | 'lower';
   threshold: number;
+  overrideUserId?: string;
 }): Promise<{ success: boolean; id?: string; error?: string }> {
   try {
     await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const user = session?.user;
-    if (!user?.id || !user?.email) {
+    let userId = input.overrideUserId;
+    let userEmail = 'unknown@example.com';
+    if (!userId) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      const user = session?.user;
+      userId = user?.id;
+      userEmail = user?.email || userEmail;
+    }
+    if (!userId) {
       return { success: false, error: 'Not authenticated' };
     }
 
@@ -75,8 +81,8 @@ export async function createAlert(input: {
     if (!parsed.success) return { success: false, error: parsed.error };
 
     const doc = await PriceAlert.create({
-      userId: user.id,
-      email: user.email,
+      userId: userId,
+      email: userEmail,
       symbol: parsed.data.symbol,
       company: parsed.data.company,
       alertName: parsed.data.alertName,
@@ -93,11 +99,14 @@ export async function createAlert(input: {
   }
 }
 
-export async function deleteAlert(symbol: string): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
+export async function deleteAlert(symbol: string, overrideUserId?: string): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
   try {
     await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const userId = session?.user?.id;
+    let userId = overrideUserId;
+    if (!userId) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      userId = session?.user?.id;
+    }
     if (!userId) return { success: false, error: 'Not authenticated' };
 
     const result = await PriceAlert.deleteOne({ userId, symbol: symbol.toUpperCase() });
@@ -108,11 +117,14 @@ export async function deleteAlert(symbol: string): Promise<{ success: boolean; d
   }
 }
 
-export async function getUserAlerts(): Promise<Alert[]> {
+export async function getUserAlerts(overrideUserId?: string): Promise<Alert[]> {
   try {
     await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const userId = session?.user?.id;
+    let userId = overrideUserId;
+    if (!userId) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      userId = session?.user?.id;
+    }
     if (!userId) return [] as Alert[];
 
     const items = await PriceAlert.find({ userId, active: true }).sort({ createdAt: -1 }).lean();

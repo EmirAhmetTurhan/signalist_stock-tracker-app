@@ -2,6 +2,7 @@
 // Her toolName -> React Component eslemesi. Yeni tool eklemek 1 satir.
 
 import type { ComponentType } from 'react';
+import type { z } from 'zod';
 import ActionConfirmCard from './ActionConfirmCard';
 import PriceSnapshotCard from './PriceSnapshotCard';
 import IndicatorSignalsCard from './IndicatorSignalsCard';
@@ -13,12 +14,19 @@ import AlertListCard from './AlertListCard';
 import IndicatorRankingCard from './IndicatorRankingCard';
 import ClarificationForm from './ClarificationForm';
 
+import {
+  AnalyzeIndicatorsOutput,
+  SearchStockOutput,
+  MarketNewsOutput,
+  AlertListOutput,
+  BackgroundJobOutput
+} from '@/lib/ai/tool-contracts';
+
 // --- Wrapper for ClarificationForm ---
 function ClarificationCard({ data, onFollowUp, isLast }: ToolCardProps) {
   const question = (data.question as string) || "Lütfen eksik bilgiyi belirtin:";
   const options = (data.options as string[]) || [];
 
-  // If the conversation has progressed beyond this clarification, hide the form
   if (!isLast) {
     return null;
   }
@@ -43,33 +51,36 @@ export interface ToolCardProps {
 }
 
 interface ToolCardConfig {
-  component: ComponentType<ToolCardProps>;
+  component: ComponentType<ToolCardProps> | null;
+  outputSchema?: z.ZodTypeAny;
   dataKey?: string | null;
   emptyMessage?: string;
 }
 
-// Tek noktadan yonetim: toolName -> Kart Bileseni
+// Tek noktadan yonetim: toolName -> Kart Bileseni + Output Schema (Type Contract)
 export const TOOL_COMPONENT_MAP: Record<string, ToolCardConfig> = {
   askClarification:     { component: ClarificationCard,     dataKey: null },
-  analyzeIndicators:    { component: IndicatorSignalsCard,  dataKey: 'signals' },
+  analyzeIndicators:    { component: IndicatorSignalsCard,  outputSchema: AnalyzeIndicatorsOutput, dataKey: 'signals' },
   getCurrentPrice:      { component: PriceSnapshotCard,     dataKey: null },
-  searchStock:          { component: SearchResultsCard,     dataKey: 'results' },
+  searchStock:          { component: SearchResultsCard,     outputSchema: SearchStockOutput, dataKey: 'results' },
   getWatchlist:         { component: WatchlistSummaryCard,  dataKey: 'items', emptyMessage: 'Your watchlist is empty.' },
   addToWatchlist:       { component: ActionConfirmCard,     dataKey: null },
   removeFromWatchlist:  { component: ActionConfirmCard,     dataKey: null },
-  getMarketNews:        { component: NewsListCard,          dataKey: 'articles' },
+  getMarketNews:        { component: NewsListCard,          outputSchema: MarketNewsOutput, dataKey: 'articles' },
   createPriceAlert:     { component: ActionConfirmCard,     dataKey: null },
   deletePriceAlert:     { component: ActionConfirmCard,     dataKey: null },
-  getUserAlerts:        { component: AlertListCard,         dataKey: 'alerts', emptyMessage: 'No active alerts.' },
+  getUserAlerts:        { component: AlertListCard,         outputSchema: AlertListOutput, dataKey: 'alerts', emptyMessage: 'No active alerts.' },
   runBacktest:          { component: BacktestResultCard,    dataKey: null },
-  // optimizeParameter: OZEL AKIS — GenerativeUI icinde ayri islenir
-  rankIndicators:       { component: IndicatorRankingCard,  dataKey: 'results' },
-  findBestIndicator:    { component: IndicatorRankingCard,  dataKey: 'best' },
+  // optimizeParameter ve türevleri özel arka plan isleridir
+  optimizeParameter:      { component: null, outputSchema: BackgroundJobOutput },
+  batchOptimizeParameter: { component: null, outputSchema: BackgroundJobOutput },
+  rankIndicators:         { component: IndicatorRankingCard, dataKey: 'ranked' },
+  findBestIndicator:      { component: IndicatorRankingCard, dataKey: 'best' },
   createSmartAlert:     { component: ActionConfirmCard,     dataKey: null },
-  getSmartAlerts:       { component: AlertListCard,         dataKey: 'alerts' },
+  getSmartAlerts:       { component: AlertListCard,         outputSchema: AlertListOutput, dataKey: 'alerts' },
 };
 
-// Registry'de olmayan bir tool icin fallback: null doner, GenerativeUI metin olarak birakir
+// Registry'de olmayan bir tool icin fallback: null doner
 export function getToolCard(toolName: string): ToolCardConfig | null {
   return TOOL_COMPONENT_MAP[toolName] || null;
 }

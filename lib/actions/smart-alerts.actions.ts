@@ -11,18 +11,25 @@ export async function createSmartAlert(input: {
   interval: '1d' | '4h';
   frequency: 'daily' | '4h' | '1h';
   conditions: Array<{ indicator: string; operator: '<' | '>' | 'cross_above' | 'cross_below'; value: number }>;
+  overrideUserId?: string;
 }): Promise<{ success: boolean; id?: string; error?: string }> {
   try {
     await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const user = session?.user;
-    if (!user?.id || !user?.email) {
+    let userId = input.overrideUserId;
+    let userEmail = 'unknown@example.com';
+    if (!userId) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      const user = session?.user;
+      userId = user?.id;
+      userEmail = user?.email || userEmail;
+    }
+    if (!userId) {
       return { success: false, error: 'Not authenticated' };
     }
 
     const doc = await SmartAlert.create({
-      userId: user.id,
-      email: user.email,
+      userId: userId,
+      email: userEmail,
       name: input.name,
       symbol: input.symbol,
       interval: input.interval,
@@ -36,11 +43,14 @@ export async function createSmartAlert(input: {
   }
 }
 
-export async function getSmartAlerts(symbol?: string): Promise<{ success: boolean; alerts?: Array<Record<string, unknown>>; error?: string }> {
+export async function getSmartAlerts(symbol?: string, overrideUserId?: string): Promise<{ success: boolean; alerts?: Array<Record<string, unknown>>; error?: string }> {
   try {
     await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const userId = session?.user?.id;
+    let userId = overrideUserId;
+    if (!userId) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      userId = session?.user?.id;
+    }
     if (!userId) return { success: false, error: 'Not authenticated' };
 
     const filter: Record<string, unknown> = { userId, active: true };

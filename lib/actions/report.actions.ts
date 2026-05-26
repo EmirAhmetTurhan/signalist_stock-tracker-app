@@ -58,6 +58,16 @@ export async function getReportByJobId(jobId: string): Promise<{
     let winRate = null;
     let fullData = null;
 
+    // Auto-fail jobs stuck for > 5 mins
+    if ((job.status === 'running' || job.status === 'queued') && job.createdAt) {
+      const ageMs = Date.now() - new Date(job.createdAt).getTime();
+      if (ageMs > 5 * 60 * 1000) {
+        await AIJob.updateOne({ _id: job._id }, { $set: { status: 'failed', errorMessage: 'Job timed out due to server restart.' } });
+        job.status = 'failed';
+        job.errorMessage = 'Job timed out due to server restart.';
+      }
+    }
+
     if (job.status === 'completed' && job.reportId) {
       const report = await Report.findById(job.reportId).lean();
       if (report) {
