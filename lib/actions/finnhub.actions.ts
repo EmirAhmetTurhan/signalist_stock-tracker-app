@@ -491,3 +491,53 @@ export async function get4HourCandles(symbol: string, days = 3650): Promise<Cand
     return combined;
 }
 
+// Fetch intraday (15m) candles for pending order trigger evaluation
+export async function getYahooIntradayCandles(symbol: string, days = 2): Promise<CandleDataPoint[]> {
+    const to = Math.floor(Date.now() / 1000);
+    const from = to - days * 24 * 60 * 60;
+
+    try {
+        const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=15m&period1=${from}&period2=${to}`;
+        const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' };
+        const res = await fetch(yahooUrl, { cache: 'no-store', headers });
+        if (!res.ok) throw new Error(`Yahoo chart fetch failed: ${res.status}`);
+        
+        const json: any = await res.json();
+        const result = json?.chart?.result?.[0];
+        const ts: number[] | undefined = result?.timestamp;
+        const quote = result?.indicators?.quote?.[0] || {};
+        
+        const opens: Array<number | null> | undefined = quote.open;
+        const highs: Array<number | null> | undefined = quote.high;
+        const lows: Array<number | null> | undefined = quote.low;
+        const closes: Array<number | null> | undefined = quote.close;
+        const volumes: Array<number | null> | undefined = quote.volume;
+
+        if (Array.isArray(ts) && ts.length) {
+            const out: CandleDataPoint[] = [];
+            for (let i = 0; i < ts.length; i++) {
+                const o = opens?.[i];
+                const h = highs?.[i];
+                const l = lows?.[i];
+                const c = closes?.[i];
+                const v = volumes?.[i];
+
+                if (o != null && h != null && l != null && c != null && l <= h) {
+                    out.push({
+                        time: ts[i] as UTCTimestamp,
+                        open: o,
+                        high: h,
+                        low: l,
+                        close: c,
+                        volume: v || 0
+                    });
+                }
+            }
+            return out;
+        }
+    } catch (e) {
+        console.error('getYahooIntradayCandles error', e);
+    }
+    return [];
+}
+

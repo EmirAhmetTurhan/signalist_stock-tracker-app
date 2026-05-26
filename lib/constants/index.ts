@@ -6,6 +6,7 @@ export const NAV_ITEMS = [
     { href: '/watchlist', label: 'Watchlist' },
     { href: '/ta', label: 'T/A' },
     { href: '/ai', label: 'AI' },
+    { href: '/portfolio', label: 'Portfolio' },
     { href: '/archive', label: 'Archive' },
 ];
 

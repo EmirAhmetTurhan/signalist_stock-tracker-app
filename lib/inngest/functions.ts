@@ -16,6 +16,10 @@ import type { Candle } from "@/lib/ta/backtest";
 import { INDICATOR_NAMES, mapIndicatorData, DEFAULT_PARAMS } from "@/lib/ai/tools";
 import { calculateWinRate } from "@/lib/ta/backtest";
 import { computeIndicators } from "@/lib/ta/compute";
+import { evaluateForwardTests } from "@/lib/paper-trading/forward-test-evaluator";
+
+export { evaluatePendingOrdersJob } from './pending-order-processor';
+export { processCorporateActionsJob } from './corporate-actions';
 
 // Local typing to satisfy TS without altering public contracts
 type UserForNewsEmail = { id: string; email: string; name: string };
@@ -542,5 +546,27 @@ export const aiRankIndicatorsJob = inngest.createFunction(
         });
 
         return { success: true, jobId };
+    }
+);
+
+// ---- Forward Tests ----
+
+export const evaluateForwardTestsDailyJob = inngest.createFunction(
+    { id: 'evaluate-forward-tests-daily', triggers: [{ cron: '0 18 * * 1-5' }] }, // 6 PM ET on weekdays (after market close)
+    async ({ step }) => {
+        const result = await step.run('run-daily-evaluation', async () => {
+            return await evaluateForwardTests('1d');
+        });
+        return { success: true, executed: result.executed };
+    }
+);
+
+export const evaluateForwardTests4HJob = inngest.createFunction(
+    { id: 'evaluate-forward-tests-4h', triggers: [{ cron: '30 9,13 * * 1-5' }] }, // 9:30 AM and 1:30 PM
+    async ({ step }) => {
+        const result = await step.run('run-4h-evaluation', async () => {
+            return await evaluateForwardTests('4h');
+        });
+        return { success: true, executed: result.executed };
     }
 );

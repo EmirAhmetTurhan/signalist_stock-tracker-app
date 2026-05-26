@@ -227,6 +227,68 @@ declare global {
         close: number;
         volume?: number;
     };
+
+    // ---- Paper Trading Types ----
+    type PaperTradeSide = 'BUY' | 'SELL';
+    type TriggerSource = 'manual' | 'ai_proposal' | 'strategy' | 'limit_order' | 'stop_loss' | 'take_profit' | 'corporate_action';
+    type PositionStatus = 'open' | 'closed' | 'delisted';
+    type TradeStatus = 'executed' | 'failed' | 'reversed';
+
+    type WalletSnapshot = {
+        cashBalance: number;
+        reservedBalance: number;
+        initialBalance: number;
+        buyingPower: number;
+        resetCount: number;
+    };
+
+    type PortfolioPosition = {
+        id: string;
+        symbol: string;
+        quantity: number;
+        avgEntryPrice: number;
+        totalCostBasis: number;
+        realizedPnlToDate: number;
+        currentPrice: number;
+        marketValue: number;
+        unrealizedPnl: number;
+        unrealizedPnlPercent: number;
+        openedAt: string;
+        lastTradeAt: string;
+    };
+
+    type PortfolioTrade = {
+        id: string;
+        symbol: string;
+        side: PaperTradeSide;
+        quantity: number;
+        fillPrice: number;
+        notional: number;
+        fees: number;
+        realizedPnl: number | null;
+        triggerSource: TriggerSource;
+        status: TradeStatus;
+        executedAt: string;
+        createdAt: string;
+    };
+
+    type PortfolioSummaryData = {
+        wallet: WalletSnapshot;
+        positions: PortfolioPosition[];
+        totalEquity: number;
+        totalUnrealizedPnl: number;
+        totalUnrealizedPnlPercent: number;
+        totalRealizedPnl: number;
+        totalReturn: number;
+        totalReturnPercent: number;
+        dayPnl: number;
+    };
+
+    type ManualTradeInput = {
+        symbol: string;
+        side: PaperTradeSide;
+        quantity: number;
+    };
 }
 
 export { };

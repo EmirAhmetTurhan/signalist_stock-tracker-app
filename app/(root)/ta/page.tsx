@@ -3,6 +3,9 @@ import TASearch from "@/components/ta/TASearch";
 import TAIndicatorsButton from "@/components/ta/TAIndicatorsButton";
 import TAIntervalButton from "@/components/ta/TAIntervalButton";
 import TAIndicatorSettings from "@/components/ta/TAIndicatorSettings";
+import { auth } from "@/lib/better-auth/auth";
+import { headers } from "next/headers";
+import ForwardTestCreator from "@/components/portfolio/ForwardTestCreator";
 
 // Canvas tabanlı chart bileşenleri SSR'da çalışamaz — next/dynamic ile lazy-load
 const LightweightCandleChart = dynamicImport(() => import("@/components/charts/LightweightCandleChart"));
@@ -43,6 +46,9 @@ type TAProps = {
 };
 
 const TAPage = async (props: TAProps) => {
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+
     const initialStocks = await searchStocks();
     const search = (await props.searchParams) || {};
     const symbol = (search.symbol || "").toUpperCase();
@@ -291,6 +297,15 @@ const TAPage = async (props: TAProps) => {
                                     })() : <span className="text-gray-600">—</span>}
                                 </div>
                             </div>
+                            {symbol && (
+                                <ForwardTestCreator 
+                                    symbol={symbol} 
+                                    interval={intervalParam} 
+                                    strategyName="RSI_CCI_WT" 
+                                    indicators={['rsi', 'cci', 'wavetrend']} 
+                                    userId={userId} 
+                                />
+                            )}
                         </div>
                     )}
 

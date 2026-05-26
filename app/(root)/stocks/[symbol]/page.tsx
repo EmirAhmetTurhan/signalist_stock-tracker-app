@@ -8,7 +8,10 @@ import {
   COMPANY_FINANCIALS_WIDGET_CONFIG,
 } from "@/lib/constants";
 import WatchlistButton from "@/components/watchlist/WatchlistButton";
+import PaperTradeButton from "@/components/portfolio/PaperTradeButton";
 import { getCurrentUserWatchlist } from "@/lib/actions/watchlist.actions";
+import { headers } from 'next/headers';
+import { auth } from '@/lib/better-auth/auth';
 
 const StockDetails = async ({ params }: StockDetailsPageProps) => {
   const { symbol } = await params;
@@ -17,6 +20,8 @@ const StockDetails = async ({ params }: StockDetailsPageProps) => {
   const upper = symbol?.toUpperCase?.() || symbol;
   const watchlist = await getCurrentUserWatchlist();
   const isInWatchlist = Array.isArray(watchlist) && watchlist.some((i) => i.symbol === upper);
+  const session = await auth.api.getSession({ headers: await headers() });
+  const userId = session?.user?.id || '';
 
   return (
     <div className="flex min-h-screen w-full">
@@ -48,6 +53,7 @@ const StockDetails = async ({ params }: StockDetailsPageProps) => {
         <div className="flex flex-col gap-8">
           <div className="flex items-center gap-3">
             <WatchlistButton symbol={upper} company={upper} isInWatchlist={isInWatchlist} />
+            {userId && <PaperTradeButton symbol={upper} userId={userId} />}
           </div>
 
           <TradingViewWidget

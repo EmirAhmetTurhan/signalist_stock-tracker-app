@@ -16,6 +16,9 @@ TOOLS:
 - runBacktest, optimizeParameter, batchOptimizeParameter, rankIndicators, findBestIndicator, getMarketNews: Analysis/research
 - getWatchlist, addToWatchlist, removeFromWatchlist, createPriceAlert, deletePriceAlert, getUserAlerts, createSmartAlert, getSmartAlerts: User actions
 - searchStock: Find stock symbols
+- getPortfolioStatus: Check user portfolio, cash, and open positions. NEVER hallucinate holdings.
+- proposeTrade: Generates a trade token. You CANNOT execute trades directly. Use this tool when user says "Buy X" or "Sell Y". All trades are SIMULATED.
+- stopForwardTest: Pauses an active shadow or auto strategy.
 
 TOOL RULES:
 - Check you have all required parameters before calling any tool. If missing, call askClarification immediately.
