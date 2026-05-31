@@ -145,11 +145,12 @@ Brute-force optimizasyon: bir parametre aralığını tarar, her değer için in
 
 ### Hazır Strateji: RSI + CCI + WaveTrend
 
-URL parametrelerinde `strategy=rsi_cci_wt` ayarlandığında üç indikatör aktive edilir, strateji kararı oybirliği ile verilir.
+URL parametrelerinde `strategy=rsi_cci_wt` ayarlandığında üç indikatör aktive edilir, strateji kararı oybirliği ile verilir. Strateji paneli üzerinden "Start Shadow Test" veya "Start Auto Execution" butonları ile **Paper Trading** motoruna bağlanarak ileriye dönük test edilebilir.
 
 ### Özel Strateji (`CustomStrategyPanel` / `CustomStrategyModal`)
 
-Kullanıcıların AND/OR mantığı ile herhangi bir indikatör kombinasyonunu seçerek özel stratejiler oluşturmasını sağlar.
+Kullanıcıların AND/OR mantığı ile herhangi bir indikatör kombinasyonunu seçerek özel stratejiler oluşturmasını sağlar. 
+> **Güncelleme (Faz 6 / Paper Trading):** Özel oluşturulan stratejiler de `ForwardTestCreator` entegrasyonu sayesinde Paper Trading (Sanal Para) ve Auto-Execution sistemine tamamen uyumludur. Kullanıcılar kendi oluşturdukları indikatör kombinasyonlarını anında "Shadow Mode" veya "Auto Execution" modunda ileriye dönük (forward) test edebilirler.
 
 ---
 

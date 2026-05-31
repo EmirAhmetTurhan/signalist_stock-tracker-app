@@ -30,6 +30,9 @@ Sisteme sıradan bir "Soru-Cevap" botu eklemek yerine, projenin veritabanına ve
 | **Global State** | Zustand | `activeJobs` (convId → jobId), optimistic watchlist, activeIndicators |
 | **İş Takip** | AIJob modeli | `type`, `status`, `steps[]`, `batchId`, `reportId`, `progress` |
 | **UI Rendering** | Component Registry | `TOOL_COMPONENT_MAP` ile if/else olmadan dinamik kart renderlama sistemi |
+| **Araştırma / Backtest** | Tool Set | `runBacktest`, `optimizeParameter`, `batchOptimizeParameter`, `rankIndicators`, `findBestIndicator`, `getMarketNews`, `startForwardTest` |
+| **Kullanıcı / Aksiyon** | Tool Set | `getWatchlist`, `addToWatchlist`, `removeFromWatchlist`, `createPriceAlert`, `deletePriceAlert`, `getUserAlerts`, `createSmartAlert`, `getSmartAlerts` |
+| **Portföy / İşlem** | Tool Set | `getPortfolioStatus`, `proposeTrade`, `stopForwardTest` |
 
 > [!NOTE]
 > **Canlı Ortam (Production) Stratejisi:** Geliştirme ortamında Ollama + Qwen 3 14B kullanılır. Proje canlıya alındığında tek bir satır kod değiştirilerek Groq veya Google Gemini API'ye geçiş yapılabilir. Vercel AI SDK provider değişikliği modelden bağımsızdır.
@@ -59,6 +62,13 @@ Sohbet oturumlarının yönetimi `localStorage` ve veritabanı ile çift katmanl
 
 ### 3.4 AI UI Bileşenleri ve Component Registry
 En büyük mimari atılımlardan biri olan **6-Faz Kararlılık Revizyonu** ile frontend if/else bloklarından kurtarılmıştır.
+
+## Token Güvenliği (HMAC Trade Proposals)
+Yapay zeka asistanı işlem önerme yetkisine (`proposeTrade`) sahiptir, ancak **asla doğrudan işlem gerçekleştiremez.**
+- Sistem, kullanıcının işlem onayını almak için AI tarafından üretilen bir **HMAC-SHA256 imzalı JWT benzeri Token** kullanır.
+- Token içerisinde hisse sembolü, yön, miktar, anlık fiyat ve 5 dakikalık son kullanım tarihi (`expiresAt`) bulunur.
+- Frontend, onay esnasında bu token'ı backend server action'ına iletir (`executeTradeWithToken`).
+- İmza doğrulaması sayesinde tarayıcı üzerinden manipülasyon (örn: 10 adet yerine 10000 adet gönderme) engellenmiş olur.
 
 | Bileşen / Sistem | Dosya | Amaç |
 |---------|-------|------|

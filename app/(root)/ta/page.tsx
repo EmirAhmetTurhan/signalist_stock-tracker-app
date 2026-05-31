@@ -309,7 +309,13 @@ const TAPage = async (props: TAProps) => {
                         </div>
                     )}
 
-                    <CustomStrategyPanel candles={candles} allData={{ rsiData, cciData, waveTrendData, macdData, stochRsiData, dmiData, smiData, aoData: aoData ? (aoData as { time: string | number; value: number }[]) : undefined, mfiData: mfiData ? { mfi: mfiData.mfi } : undefined, wprData: wprData ? (wprData as { time: string | number; value: number }[]) : undefined, diData: diData ? (diData as { time: string | number; value: number }[]) : undefined, cmfData: cmfData ? (cmfData as { time: string | number; value: number }[]) : undefined, adData: adData ? (adData as { time: string | number; value: number }[]) : undefined, nvData: nvData ? (nvData as { time: string | number; value: number }[]) : undefined, madrData: madrData ? (madrData as { time: string | number; value: number }[]) : undefined, almaData: almaData ? (almaData as { time: string | number; value: number }[]) : undefined, bbData }} />
+                    <CustomStrategyPanel 
+                        candles={candles} 
+                        allData={{ rsiData, cciData, waveTrendData, macdData, stochRsiData, dmiData, smiData, aoData: aoData ? (aoData as { time: string | number; value: number }[]) : undefined, mfiData: mfiData ? { mfi: mfiData.mfi } : undefined, wprData: wprData ? (wprData as { time: string | number; value: number }[]) : undefined, diData: diData ? (diData as { time: string | number; value: number }[]) : undefined, cmfData: cmfData ? (cmfData as { time: string | number; value: number }[]) : undefined, adData: adData ? (adData as { time: string | number; value: number }[]) : undefined, nvData: nvData ? (nvData as { time: string | number; value: number }[]) : undefined, madrData: madrData ? (madrData as { time: string | number; value: number }[]) : undefined, almaData: almaData ? (almaData as { time: string | number; value: number }[]) : undefined, bbData }} 
+                        symbol={symbol || ""}
+                        interval={(intervalParam as "1d" | "4h") || "1d"}
+                        userId={userId || ""}
+                    />
 
                     {activeIndicators.has('macd') && macdData && (
                         <div className="mt-4 p-4 border border-gray-800 rounded-xl bg-gray-950/20">

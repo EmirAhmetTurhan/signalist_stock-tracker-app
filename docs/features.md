@@ -366,7 +366,7 @@ Strategy correlation analysis. When the user has multiple active strategies, sho
 8. Actionable Roadmap
 Phased delivery so we can ship value early. Each phase is independently deployable.
 
-Phase 1 — Foundation (no AI, no automation)
+Phase 1 — Foundation (✅ TAMAMLANDI)
 New files:
 
 database/models/wallet.model.ts — schema per §1.1
@@ -387,7 +387,7 @@ store/useAppStore.ts — add paperPortfolio slice (§3.1)
 app/(root)/stocks/[symbol]/page.tsx — add "Paper Trade" button → opens ManualTradeModal
 Validation: at end of Phase 1, a user can deposit virtual $10k, manually buy AAPL, sell some of it, see realized + unrealized P&L on /portfolio. No AI, no strategy automation yet.
 
-Phase 2 — Forward Tests in Shadow Mode
+Phase 2 — Forward Tests in Shadow Mode (✅ TAMAMLANDI)
 New files:
 
 database/models/forward-test-strategy.model.ts
@@ -402,7 +402,7 @@ lib/inngest/client.ts — no changes (existing setup is sufficient)
 app/(root)/portfolio/page.tsx — add Forward Tests tab
 Critical: all new strategies created in Phase 2 are executionMode: 'shadow' by default. No actual trades fire from strategies yet. The system logs what would have happened in shadowPnl. This builds confidence that the evaluation logic is correct before flipping the switch.
 
-Phase 3 — Pending Orders + Auto-Execution
+Phase 3 — Pending Orders + Auto-Execution (✅ TAMAMLANDI)
 New files:
 
 database/models/pending-order.model.ts
@@ -414,7 +414,7 @@ Modified files:
 lib/paper-trading/execution-engine.ts — handle MARKET_CLOSED by routing to pending orders
 lib/actions/forward-test.actions.ts — allow user to switch a strategy from shadow to auto (with a confirmation modal warning)
 lib/inngest/forward-test-monitor.ts — when executionMode: 'auto', route through execution engine
-Phase 4 — Corporate Actions + Edge Cases
+Phase 4 — Corporate Actions + Edge Cases (✅ TAMAMLANDI)
 New files:
 
 lib/paper-trading/corporate-actions.ts — split/dividend/delisting logic
@@ -424,7 +424,7 @@ Modified files:
 
 database/models/position.model.ts — already includes splitAdjustments; ensure migration path
 lib/paper-trading/execution-engine.ts — market-hours check, holiday awareness
-Phase 5 — AI Integration
+Phase 5 — AI Integration (✅ TAMAMLANDI)
 New files:
 
 components/ai/TradeConfirmationCard.tsx — confirmation UI per §4.3
@@ -436,7 +436,7 @@ lib/ai/tool-contracts.ts — Zod output schemas for each new tool
 lib/ai/prompts.ts — add [PORTFOLIO_TOOLS] category to Router Agent, add one-line guardrail about proposeTrade vs executeTrade, add explicit "you are not a financial advisor, all trades are simulated" reminder
 components/ai/registry.tsx — register TradeConfirmationCard and any new portfolio cards (PortfolioStatusCard, StrategyListCard, etc.)
 lib/actions/trade.actions.ts — confirmAITrade(token, clientRequestId) server action
-Phase 6 — Pro-Grade Polish
+Phase 6 — Pro-Grade Polish (✅ TAMAMLANDI)
 In priority order:
 
 Performance metrics dashboard (lib/paper-trading/portfolio-metrics.ts extension + new MetricsPanel.tsx)
