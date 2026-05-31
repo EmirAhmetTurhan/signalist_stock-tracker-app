@@ -5,12 +5,16 @@ import { useSearchParams } from "next/navigation";
 import StrategyBacktestMonitor, { AllIndicatorData } from "@/components/panels/StrategyBacktestMonitor";
 import { loadCustomStrategies, AVAILABLE_INDICATORS } from "@/components/panels/CustomStrategyModal";
 import type { CustomStrategy } from "@/components/panels/CustomStrategyModal";
+import ForwardTestCreator from "@/components/portfolio/ForwardTestCreator";
 
 type Candle = { time: string | number; close: number; high: number; low: number };
 
 interface CustomStrategyPanelProps {
     candles: Candle[];
     allData: AllIndicatorData;
+    symbol: string;
+    interval: '1d' | '4h';
+    userId: string;
 }
 
 // Anlık sinyal hesapla (son bar)
@@ -149,7 +153,7 @@ function getLastSignal(key: string, data: AllIndicatorData, candles?: Candle[]):
     }
 }
 
-export default function CustomStrategyPanel({ candles, allData }: CustomStrategyPanelProps) {
+export default function CustomStrategyPanel({ candles, allData, symbol, interval, userId }: CustomStrategyPanelProps) {
     const searchParams = useSearchParams();
     const strategyParam = searchParams.get("strategy") || "";
 
@@ -227,6 +231,18 @@ export default function CustomStrategyPanel({ candles, allData }: CustomStrategy
                     }
                 </div>
             </div>
+
+            {symbol && (
+                <div className="mt-4 pt-4 border-t border-gray-800/50">
+                    <ForwardTestCreator 
+                        symbol={symbol} 
+                        interval={interval} 
+                        strategyName={strategy.name} 
+                        indicators={indicators} 
+                        userId={userId} 
+                    />
+                </div>
+            )}
         </div>
     );
 }
