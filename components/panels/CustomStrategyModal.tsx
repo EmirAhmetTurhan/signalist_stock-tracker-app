@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { X, Plus, CheckCircle2, Circle, ChevronRight, Trash2, AlertCircle, Users, Shield, Database, Loader2, BarChart3 } from "lucide-react";
 import type { StrategyMode } from '@/lib/ta/types';
-import { getSavedStrategies, deleteSavedStrategy } from '@/lib/actions/saved-strategy.actions';
+import { getSavedStrategies, deleteSavedStrategy, createSavedStrategy } from '@/lib/actions/saved-strategy.actions';
 
 // ─── Tip Tanımları ──────────────────────────────────────────────────────────
 export interface CustomStrategy {
@@ -237,24 +237,48 @@ export default function CustomStrategyModal({ open, onClose, onCreated, userId }
         setError("");
     };
 
-    const handleCreate = () => {
+    const handleCreate = async () => {
         const trimmed = name.trim();
         if (!trimmed) { setError("Strategy name is required."); return; }
         if (selected.size < 2) { setError("Select at least 2 indicators."); return; }
 
-        const strategy: CustomStrategy = {
-            key: `custom_${Date.now()}`,
-            name: trimmed,
-            indicators: Array.from(selected),
-            createdAt: Date.now(),
-            mode,
-            lookForward,
-        };
+        if (userId) {
+            const res = await createSavedStrategy({
+                userId,
+                name: trimmed,
+                indicators: Array.from(selected),
+                mode,
+                lookForward,
+            });
 
-        const existing = loadCustomStrategies();
-        saveCustomStrategies([...existing, strategy]);
-        onCreated(strategy);
-        onClose();
+            if (res.success && res.strategyId) {
+                onCreated({
+                    key: `saved_${res.strategyId}`,
+                    name: trimmed,
+                    indicators: Array.from(selected),
+                    createdAt: Date.now(),
+                    mode,
+                    lookForward,
+                });
+                onClose();
+            } else {
+                setError(res.error || "Failed to save strategy.");
+            }
+        } else {
+            const strategy: CustomStrategy = {
+                key: `custom_${Date.now()}`,
+                name: trimmed,
+                indicators: Array.from(selected),
+                createdAt: Date.now(),
+                mode,
+                lookForward,
+            };
+
+            const existing = loadCustomStrategies();
+            saveCustomStrategies([strategy, ...existing]);
+            onCreated(strategy);
+            onClose();
+        }
     };
 
     const handleLoadSaved = useCallback((item: SavedStrategyItem) => {

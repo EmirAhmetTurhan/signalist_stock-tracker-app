@@ -73,3 +73,9 @@
 * `lib/indicators/rsi.ts` (warmup eşiği + SMMA tohumu dalı)
 * `__tests__/fixtures/indicators/rsi.fixture.ts` (oscillating confidence uyumu)
 * `docs/HOTFIX_RESOLUTIONS.md` (bu kayıt)
+
+## 03.06.2026 (UI & State Management Fixes)
+
+**Kullanıcı Deneyimi & State Yönetimi:**
+* **Sorun:** "My Strategies" listesinde yeni oluşturulan özel stratejiler görünmüyordu. Yalnızca `localStorage`'a yazılıyor, UI ise sadece MongoDB'den okuyordu. -> **Çözüm:** `CustomStrategyModal.tsx` güncellendi; kullanıcı giriş yapmışsa `createSavedStrategy` action'ı ile strateji doğrudan MongoDB'ye kaydediliyor. `TAStrategiesButton.tsx`'te `localStrategies` ve `savedStrategies` (MongoDB) birleştirilerek `allStrategies` oluşturuldu. Local `custom_` ID'lerin parse/silinme işlemleri uyumlu hale getirildi.
+* **Sorun:** Seçilen bir stratejiyi iptal edip grafiği temizlemek için bir "Reset/Clear" butonu yoktu. -> **Çözüm:** `TAStrategiesButton.tsx` içine `clearStrategyFromURL` fonksiyonu eklendi. URL parametrelerinden (`strategy`, `ind`, `p`) strateji verileri temizlenerek router refresh sağlandı. `TAGlassDialog` alt kısmına "Remove Strategy" butonu eklendi.
