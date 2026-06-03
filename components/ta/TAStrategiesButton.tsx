@@ -105,14 +105,16 @@ const SORT_OPTIONS: { value: SortField; label: string }[] = [
 // ─── Helpers ─────────────────────────────────────────────────────────────────────
 
 function getStrategyKey(id: string) {
+    if (id.startsWith('custom_')) return id;
     return `saved_${id}`;
 }
 
 function isSavedKey(key: string) {
-    return key.startsWith('saved_');
+    return key.startsWith('saved_') || key.startsWith('custom_');
 }
 
 function parseSavedId(key: string) {
+    if (key.startsWith('custom_')) return key;
     return key.replace('saved_', '');
 }
 
@@ -140,8 +142,9 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
     const [deleteTarget, setDeleteTarget] = useState<SavedStrategyItem | null>(null);
     const [selectedStrategy, setSelectedStrategy] = useState<string>("");
 
-    // ── MongoDB strategies ────────────────────────────────────────────────────
+    // ── MongoDB & Local strategies ────────────────────────────────────────────────
     const [savedStrategies, setSavedStrategies] = useState<SavedStrategyItem[]>([]);
+    const [localStrategies, setLocalStrategies] = useState<CustomStrategy[]>([]);
     const [loadingSaved, setLoadingSaved] = useState(false);
 
     // ── Sort config per section ───────────────────────────────────────────────
@@ -159,6 +162,7 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
 
     // ── Fetch saved strategies ────────────────────────────────────────────────
     const fetchSaved = useCallback(async () => {
+        setLocalStrategies(loadCustomStrategies());
         if (!userId) return;
         setLoadingSaved(true);
         try {
@@ -188,15 +192,37 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
     }, [strategyParam]);
 
     // ── Filter & sort strategies ──────────────────────────────────────────────
+    const allStrategies = useMemo(() => {
+        const localItems: SavedStrategyItem[] = localStrategies.map(ls => ({
+            id: ls.key,
+            userId: userId || '',
+            name: ls.name,
+            indicators: ls.indicators,
+            mode: ls.mode || 'all',
+            lookForward: ls.lookForward || 14,
+            discoveredParams: ls.params || null,
+            discoveredWinRate: ls.discoveryWinRate || null,
+            discoveredTotalSignals: ls.discoverySignalCount || null,
+            discoveredSymbol: null,
+            discoveredInterval: null,
+            pinned: false,
+            sourceReportId: null,
+            isDiscovered: false,
+            createdAt: new Date(ls.createdAt).toISOString(),
+            updatedAt: new Date(ls.createdAt).toISOString(),
+        }));
+        return [...savedStrategies, ...localItems];
+    }, [savedStrategies, localStrategies, userId]);
+
     const myStrategies = useMemo(() => {
-        const items = savedStrategies.filter(s => !s.isDiscovered);
+        const items = allStrategies.filter(s => !s.isDiscovered);
         return sortStrategies(items, mySort);
-    }, [savedStrategies, mySort]);
+    }, [allStrategies, mySort]);
 
     const discoveredStrategies = useMemo(() => {
-        const items = savedStrategies.filter(s => s.isDiscovered);
+        const items = allStrategies.filter(s => s.isDiscovered);
         return sortStrategies(items, discoveredSort);
-    }, [savedStrategies, discoveredSort]);
+    }, [allStrategies, discoveredSort]);
 
     function sortStrategies(items: SavedStrategyItem[], sort: SortConfig): SavedStrategyItem[] {
         const pinned = items.filter(s => s.pinned);
@@ -269,7 +295,7 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
             params.delete("p");
         } else if (isSavedKey(selectedStrategy)) {
             const id = parseSavedId(selectedStrategy);
-            const found = savedStrategies.find(s => s.id === id);
+            const found = allStrategies.find(s => s.id === id);
             if (found) {
                 params.set("strategy", selectedStrategy);
                 params.set("ind", found.indicators.join(","));
@@ -285,19 +311,13 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
         router.replace(`${pathname}?${params.toString()}`, { scroll: false });
         router.refresh();
         setDialogOpen(false);
-    }, [selectedStrategy, searchParams, pathname, router, savedStrategies]);
+    }, [selectedStrategy, searchParams, pathname, router, allStrategies]);
 
     // ── Handle created custom strategy ────────────────────────────────────────
     const handleCreated = useCallback((_strategy: CustomStrategy) => {
         fetchSaved();
-        // Focus on the new strategy by selecting the last-created one
-        const latest = savedStrategies
-            .filter(s => !s.isDiscovered)
-            .sort((a, b) => ((a.createdAt ?? '') > (b.createdAt ?? '') ? -1 : 1))[0];
-        if (latest) {
-            setSelectedStrategy(getStrategyKey(latest.id));
-        }
-    }, [fetchSaved, savedStrategies]);
+        setSelectedStrategy(_strategy.key);
+    }, [fetchSaved]);
 
     // ── Handle pin toggle ─────────────────────────────────────────────────────
     const handleTogglePin = useCallback(async (e: React.MouseEvent, strategyId: string) => {
@@ -372,6 +392,26 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
     const confirmDelete = useCallback(async () => {
         if (!deleteTarget) return;
         const id = deleteTarget.id;
+
+        if (id.startsWith('custom_')) {
+            const existing = loadCustomStrategies();
+            const filtered = existing.filter(s => s.key !== id);
+            saveCustomStrategies(filtered);
+            setLocalStrategies(filtered);
+            
+            if (selectedStrategy === id) {
+                setSelectedStrategy("");
+                const params = new URLSearchParams(searchParams.toString());
+                params.delete("strategy");
+                params.delete("ind");
+                params.delete("p");
+                router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            }
+            toast.success('Local strategy deleted');
+            setDeleteTarget(null);
+            return;
+        }
+
         setDeletingStrategy(prev => new Set(prev).add(id));
         try {
             const res = await deleteSavedStrategy(userId!, id);
@@ -432,17 +472,27 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
     }, [searchParams, pathname, router]);
 
     // ── Get selection label ───────────────────────────────────────────────────
+    const clearStrategyFromURL = useCallback(() => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete("strategy");
+        params.delete("ind");
+        params.delete("p");
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+        router.refresh();
+        setDialogOpen(false);
+    }, [searchParams, pathname, router]);
+
     const getSelectionLabel = useCallback(() => {
         if (!selectedStrategy) return "Choose a strategy to apply";
         if (selectedStrategy === "rsi_cci_wt") return "RSI + CCI + WaveTrend";
         const id = parseSavedId(selectedStrategy);
-        const found = savedStrategies.find(s => s.id === id);
+        const found = allStrategies.find(s => s.id === id);
         if (found) {
             const wr = found.discoveredWinRate ? ` (${found.discoveredWinRate.toFixed(1)}%)` : '';
             return `${found.name}${wr}`;
         }
         return selectedStrategy;
-    }, [selectedStrategy, savedStrategies]);
+    }, [selectedStrategy, allStrategies]);
 
     const isActive = strategyParam !== "";
 
@@ -499,6 +549,16 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
                             {getSelectionLabel()}
                         </span>
                         <div className="flex items-center gap-2 shrink-0">
+                            {isActive && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs text-red-400 border-red-500/30 hover:bg-red-500/10 transition-all"
+                                    onClick={clearStrategyFromURL}
+                                >
+                                    Remove Strategy
+                                </Button>
+                            )}
                             {selectedStrategy && (
                                 <>
                                     <Button
