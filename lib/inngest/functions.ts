@@ -1,19 +1,21 @@
-import {inngest} from "@/lib/inngest/client";
-import {NEWS_SUMMARY_EMAIL_PROMPT, PERSONALIZED_WELCOME_EMAIL_PROMPT} from "@/lib/inngest/prompts";
-import {sendNewsSummaryEmail, sendWelcomeEmail, sendPriceAlertEmail} from "@/lib/nodemailer";
-import {getAllUsersForNewsEmail} from "@/lib/actions/user.actions";
+import { inngest } from "@/lib/inngest/client";
+import { NEWS_SUMMARY_EMAIL_PROMPT, PERSONALIZED_WELCOME_EMAIL_PROMPT } from "@/lib/inngest/prompts";
+import { sendNewsSummaryEmail, sendWelcomeEmail, sendPriceAlertEmail } from "@/lib/nodemailer";
+import { getAllUsersForNewsEmail } from "@/lib/actions/user.actions";
 import { getWatchlistSymbolsByEmail } from "@/lib/actions/watchlist.actions";
 import { getNews } from "@/lib/actions/finnhub.actions";
 import { getFormattedTodayDate } from "@/lib/utils";
 import { connectToDatabase } from "@/database/mongoose";
 import PriceAlert from "@/database/models/price-alert.model";
-import { fetchJSON, getDailyCandlesForAI, getDailyCandles, get4HourCandles } from "@/lib/actions/finnhub.actions";
+import { fetchJSON, getDailyCandlesForAI, getDailyCandles, get4HourCandles, getCandlesForInterval } from "@/lib/actions/finnhub.actions";
 import { Report } from "@/database/models/report.model";
 import AIJob from "@/database/models/ai-job.model";
 import Notification from "@/database/models/notification.model";
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";
 import type { Candle } from "@/lib/ta/backtest";
-import { INDICATOR_NAMES, mapIndicatorData, DEFAULT_PARAMS } from "@/lib/ai/tools";
+// SPRINT 3: timeframe-limits.ts silindi, inline clamp kullanılıyor.
+import { INDICATOR_KEYS, DEFAULT_PARAMS } from "@/lib/constants/indicators";
+import { mapIndicatorData } from "@/lib/ai/tools";
 import { calculateWinRate } from "@/lib/ta/backtest";
 import { computeIndicators } from "@/lib/ta/compute";
 import { evaluateForwardTests } from "@/lib/paper-trading/forward-test-evaluator";
@@ -29,7 +31,7 @@ type AICandidate = { content?: AIContent };
 type AIResponse = { candidates?: AICandidate[] };
 
 export const sendSignUpEmail = inngest.createFunction(
-    { id: 'sign-up-email', triggers: [{ event: 'app/user.created'}] },
+    { id: 'sign-up-email', triggers: [{ event: 'app/user.created' }] },
     async ({ event, step }) => {
         const userProfile = `
             - Country: ${event.data.country}
@@ -56,7 +58,7 @@ export const sendSignUpEmail = inngest.createFunction(
         await step.run('send-welcome-email', async () => {
             const ai = response as AIResponse;
             const part = ai.candidates?.[0]?.content?.parts?.[0];
-            const introText = (part && 'text' in part ? part.text : null) ||'Thanks for joining Signalist. You now have the tools to track markets and make smarter moves.'
+            const introText = (part && 'text' in part ? part.text : null) || 'Thanks for joining Signalist. You now have the tools to track markets and make smarter moves.'
 
             const { data: { email, name } } = event;
 
@@ -71,12 +73,12 @@ export const sendSignUpEmail = inngest.createFunction(
 )
 
 export const sendDailyNewsSummary = inngest.createFunction(
-    { id: 'daily-news-summary', triggers: [ { event: 'app/send.daily.news' }, { cron: '0 12 * * *' } ] },
+    { id: 'daily-news-summary', triggers: [{ event: 'app/send.daily.news' }, { cron: '0 12 * * *' }] },
     async ({ step }) => {
         // Step #1: Get all users for news delivery
         const users = await step.run('get-all-users', getAllUsersForNewsEmail)
 
-        if(!users || users.length === 0) return { success: false, message: 'No users found for news email' };
+        if (!users || users.length === 0) return { success: false, message: 'No users found for news email' };
 
         // Step #2: For each user, get watchlist symbols -> fetch news (fallback to general)
         const results = await step.run('fetch-user-news', async () => {
@@ -111,7 +113,7 @@ export const sendDailyNewsSummary = inngest.createFunction(
                 const response = await step.ai.infer(`summarize-news-${user.email}`, {
                     model: step.ai.models.gemini({ model: 'gemini-2.5-flash-lite' }),
                     body: {
-                        contents: [{ role: 'user', parts: [{ text:prompt }]}]
+                        contents: [{ role: 'user', parts: [{ text: prompt }] }]
                     }
                 });
 
@@ -129,8 +131,8 @@ export const sendDailyNewsSummary = inngest.createFunction(
         // Step #4: (placeholder) Send the emails
         await step.run('send-news-emails', async () => {
             await Promise.all(
-                userNewsSummaries.map(async ({ user, newsContent}) => {
-                    if(!newsContent) return false;
+                userNewsSummaries.map(async ({ user, newsContent }) => {
+                    if (!newsContent) return false;
 
                     return await sendNewsSummaryEmail({ email: user.email, date: getFormattedTodayDate(), newsContent })
                 })
@@ -143,7 +145,7 @@ export const sendDailyNewsSummary = inngest.createFunction(
 
 // Daily evaluation of price alerts; shares the same cadence as news
 export const evaluateDailyPriceAlerts = inngest.createFunction(
-    { id: 'daily-price-alerts', triggers: [ { event: 'app/evaluate.price.alerts' }, { cron: '0 12 * * *' } ] },
+    { id: 'daily-price-alerts', triggers: [{ event: 'app/evaluate.price.alerts' }, { cron: '0 12 * * *' }] },
     async ({ step }) => {
         // Load active daily alerts
         const alerts = await step.run('load-active-alerts', async () => {
@@ -176,7 +178,7 @@ export const evaluateDailyPriceAlerts = inngest.createFunction(
                 // Evaluate each alert
                 for (const alert of items as any[]) {
                     const last = alert.lastNotifiedOn ? new Date(alert.lastNotifiedOn) : null;
-                    const alreadyToday = last && last.toISOString().slice(0,10) === now.toISOString().slice(0,10);
+                    const alreadyToday = last && last.toISOString().slice(0, 10) === now.toISOString().slice(0, 10);
                     if (alreadyToday) continue; // once per day
 
                     const threshold = Number(alert.threshold);
@@ -240,8 +242,8 @@ export const aiOptimizeParameter = inngest.createFunction(
                 input: { symbol, indicator, interval },
                 startedAt: new Date(),
                 steps: [
-                  { name: 'create-job', status: 'completed', detail: 'Analysis job created', completedAt: new Date() },
-                  { name: 'fetch-candles', status: 'running', detail: `Fetching historical candle data for ${symbol}...` },
+                    { name: 'create-job', status: 'completed', detail: 'Analysis job created', completedAt: new Date() },
+                    { name: 'fetch-candles', status: 'running', detail: `Fetching historical candle data for ${symbol}...` },
                 ],
             });
         });
@@ -257,10 +259,9 @@ export const aiOptimizeParameter = inngest.createFunction(
                 const config = OPTIMIZABLE_INDICATORS[name];
                 if (!config) throw new Error(`${indicator} is not optimizable`);
 
-                const days = years * 365;
-                const candles: Candle[] = interval === '4h'
-                    ? await get4HourCandles(symbol, days)
-                    : await getDailyCandlesForAI(symbol, days);
+                // SPRINT 3: inline clamp (4h/1d max 10 yıl)
+                const days = Math.min(years * 365, 3650);
+                const candles: Candle[] = await getCandlesForInterval(symbol, interval, days);
 
                 if (!candles || candles.length === 0) {
                     return { error: `Insufficient candle data for ${symbol}` };
@@ -268,27 +269,35 @@ export const aiOptimizeParameter = inngest.createFunction(
 
                 // Step guncelle: veri cekildi, optimizasyon basliyor
                 await connectToDatabase();
-                await AIJob.updateOne({ jobId }, { $set: {
-                  'steps.1.status': 'completed',
-                  'steps.1.completedAt': new Date(),
-                  'steps.1.detail': `Fetched ${candles.length} candles for ${symbol}`,
-                }});
-                await AIJob.updateOne({ jobId }, { $push: {
-                  steps: { name: 'run-optimization', status: 'running', detail: `Computing ${name} for all parameter values...` },
-                }});
+                await AIJob.updateOne({ jobId }, {
+                    $set: {
+                        'steps.1.status': 'completed',
+                        'steps.1.completedAt': new Date(),
+                        'steps.1.detail': `Fetched ${candles.length} candles for ${symbol}`,
+                    }
+                });
+                await AIJob.updateOne({ jobId }, {
+                    $push: {
+                        steps: { name: 'run-optimization', status: 'running', detail: `Computing ${name} for all parameter values...` },
+                    }
+                });
 
                 const optResult = findBestParameter(name, candles);
 
                 // Step guncelle: optimizasyon tamamlandi
                 await connectToDatabase();
-                await AIJob.updateOne({ jobId }, { $set: {
-                  'steps.2.status': 'completed',
-                  'steps.2.completedAt': new Date(),
-                  'steps.2.detail': `${name} optimization complete. Best result found.`,
-                }});
-                await AIJob.updateOne({ jobId }, { $push: {
-                  steps: { name: 'finalize', status: 'running', detail: 'Saving results...' },
-                }});
+                await AIJob.updateOne({ jobId }, {
+                    $set: {
+                        'steps.2.status': 'completed',
+                        'steps.2.completedAt': new Date(),
+                        'steps.2.detail': `${name} optimization complete. Best result found.`,
+                    }
+                });
+                await AIJob.updateOne({ jobId }, {
+                    $push: {
+                        steps: { name: 'finalize', status: 'running', detail: 'Saving results...' },
+                    }
+                });
 
                 return optResult;
             });
@@ -306,17 +315,17 @@ export const aiOptimizeParameter = inngest.createFunction(
             // Hata durumunda raporu 'failed' olarak isaretle + kullanici dostu hata mesaji
             const errMsg = String(e);
             const userFriendlyError =
-              errMsg.includes('403') || errMsg.includes('access') || errMsg.includes('denied')
-                ? `Borsa veri saglayicisi (Finnhub) ${symbol} icin erisimi reddetti veya hata verdi.`
-                : errMsg.includes('Insufficient') || errMsg.includes('candle')
-                ? `${symbol} icin yeterli mum verisi bulunamadi. Bu hisse piyasada yeni olabilir.`
-                : `Optimizasyon sirasinda beklenmeyen bir hata olustu: ${errMsg.slice(0, 200)}`;
+                errMsg.includes('403') || errMsg.includes('access') || errMsg.includes('denied')
+                    ? `Borsa veri saglayicisi (Finnhub) ${symbol} icin erisimi reddetti veya hata verdi.`
+                    : errMsg.includes('Insufficient') || errMsg.includes('candle')
+                        ? `${symbol} icin yeterli mum verisi bulunamadi. Bu hisse piyasada yeni olabilir.`
+                        : `Optimizasyon sirasinda beklenmeyen bir hata olustu: ${errMsg.slice(0, 200)}`;
 
             await step.run('mark-failed', async () => {
                 await connectToDatabase();
                 await AIJob.updateOne({ jobId }, { $set: { status: 'failed', errorMessage: userFriendlyError, updatedAt: new Date() } });
                 await AIJob.updateOne({ jobId }, { $push: { steps: { name: 'error', status: 'failed', detail: userFriendlyError, completedAt: new Date() } } });
-                
+
                 await Notification.create({
                     userId,
                     type: 'ai_job_failed',
@@ -331,7 +340,7 @@ export const aiOptimizeParameter = inngest.createFunction(
         // Adim 3: Raporu gercek sonuclarla olustur ve isi 'completed' yap
         await step.run('update-report', async () => {
             await connectToDatabase();
-            
+
             const fullData = {
                 symbol,
                 indicator,
@@ -398,12 +407,20 @@ export const aiRankIndicatorsJob = inngest.createFunction(
         const data = event.data as { jobId?: string; symbol?: string; interval?: string; years?: number; indicators?: string[]; isSingle?: boolean; topN?: number };
         const jobId = data.jobId || 'unknown';
         const symbol = data.symbol || 'UNKNOWN';
-        const interval = data.interval || '1d';
+        let interval = data.interval || '1d';
         const years = data.years || 1;
         const topN = data.topN || 5;
         const isSingle = data.isSingle || false;
         const requestedIndicators = data.indicators;
-        
+
+        // ── Timeframe Isolation Guard ──────────────────────────────
+        try {
+            const { assertAllowedTimeframe } = await import('@/lib/ta/timeframe-guard');
+            interval = assertAllowedTimeframe(interval, 'inngest.aiRankIndicators');
+        } catch {
+            interval = '1d';
+        }
+
         const days = Math.round(years * 365);
 
         const userId = (data as any).userId || 'inngest-system';
@@ -420,8 +437,8 @@ export const aiRankIndicatorsJob = inngest.createFunction(
                 input: { symbol, indicator: isSingle ? 'FIND_BEST' : 'RANK', interval, years },
                 startedAt: new Date(),
                 steps: [
-                  { name: 'init', status: 'completed', detail: 'Analysis job started', completedAt: new Date() },
-                  { name: 'fetch-candles', status: 'running', detail: `Fetching ${years} years of historical data for ${symbol}...` },
+                    { name: 'init', status: 'completed', detail: 'Analysis job started', completedAt: new Date() },
+                    { name: 'fetch-candles', status: 'running', detail: `Fetching ${years} years of historical data for ${symbol}...` },
                 ],
             });
         });
@@ -430,37 +447,45 @@ export const aiRankIndicatorsJob = inngest.createFunction(
 
         try {
             const stepResult = await step.run('run-ranking', async () => {
-                const candles: Candle[] = interval === '4h'
-                    ? await get4HourCandles(symbol, Math.min(days, 730)) // Max 2 years for 4H
-                    : await getDailyCandlesForAI(symbol, Math.min(days, 365));
+                // SPRINT 3: inline clamp (4h/1d max 10 yıl)
+                const clampedDays = Math.min(days, 3650);
+                const candles: Candle[] = await getCandlesForInterval(symbol, interval, clampedDays);
 
                 if (!candles || candles.length === 0) {
                     return { error: `Insufficient candle data for ${symbol}` };
                 }
 
                 await connectToDatabase();
-                await AIJob.updateOne({ jobId }, { $set: {
-                  'steps.1.status': 'completed',
-                  'steps.1.completedAt': new Date(),
-                  'steps.1.detail': `Fetched data (${candles.length} candles)`,
-                }});
-                await AIJob.updateOne({ jobId }, { $push: {
-                  steps: { name: 'compute', status: 'running', detail: `Computing technical indicators...` },
-                }});
+                await AIJob.updateOne({ jobId }, {
+                    $set: {
+                        'steps.1.status': 'completed',
+                        'steps.1.completedAt': new Date(),
+                        'steps.1.detail': `Fetched data (${candles.length} candles)`,
+                    }
+                });
+                await AIJob.updateOne({ jobId }, {
+                    $push: {
+                        steps: { name: 'compute', status: 'running', detail: `Computing technical indicators...` },
+                    }
+                });
 
-                const toTest = requestedIndicators ?? INDICATOR_NAMES.filter((n) => OPTIMIZABLE_INDICATORS[n.toUpperCase()]);
+                const toTest = requestedIndicators ?? INDICATOR_KEYS.filter((n) => OPTIMIZABLE_INDICATORS[n.toUpperCase()]);
                 const activeSet = new Set(toTest.map((s) => s.toLowerCase()));
                 const computed = computeIndicators(candles as any, activeSet, DEFAULT_PARAMS);
 
                 await connectToDatabase();
-                await AIJob.updateOne({ jobId }, { $set: {
-                  'steps.2.status': 'completed',
-                  'steps.2.completedAt': new Date(),
-                  'steps.2.detail': `Indicators computed.`,
-                }});
-                await AIJob.updateOne({ jobId }, { $push: {
-                  steps: { name: 'backtest', status: 'running', detail: `Running historical backtests...` },
-                }});
+                await AIJob.updateOne({ jobId }, {
+                    $set: {
+                        'steps.2.status': 'completed',
+                        'steps.2.completedAt': new Date(),
+                        'steps.2.detail': `Indicators computed.`,
+                    }
+                });
+                await AIJob.updateOne({ jobId }, {
+                    $push: {
+                        steps: { name: 'backtest', status: 'running', detail: `Running historical backtests...` },
+                    }
+                });
 
                 const testResults: { name: string; winRate: number; signals: number }[] = [];
                 for (const ind of toTest) {
@@ -471,7 +496,7 @@ export const aiRankIndicatorsJob = inngest.createFunction(
                         testResults.push({ name: ind.toUpperCase(), winRate: Math.round(winRate * 100) / 100, signals: totalSignals });
                     } catch { /* ignore single error */ }
                 }
-                
+
                 testResults.sort((a, b) => b.winRate - a.winRate);
                 return { data: testResults };
             });
@@ -485,7 +510,7 @@ export const aiRankIndicatorsJob = inngest.createFunction(
                 await connectToDatabase();
                 await AIJob.updateOne({ jobId }, { $set: { status: 'failed', errorMessage: errMsg, updatedAt: new Date() } });
                 await AIJob.updateOne({ jobId }, { $push: { steps: { name: 'error', status: 'failed', detail: errMsg, completedAt: new Date() } } });
-                
+
                 await Notification.create({
                     userId,
                     type: 'ai_job_failed',
@@ -548,6 +573,7 @@ export const aiRankIndicatorsJob = inngest.createFunction(
         return { success: true, jobId };
     }
 );
+
 
 // ---- Forward Tests ----
 

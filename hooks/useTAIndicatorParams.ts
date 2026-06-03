@@ -2,70 +2,59 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { PARAM_DEFAULTS_STR } from '@/lib/constants/indicator-params';
 
 export function useTAIndicatorParams() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // --- MACD ---
-  const [macdFast, setMacdFast] = useState(searchParams.get('macd_fast') || '12');
-  const [macdSlow, setMacdSlow] = useState(searchParams.get('macd_slow') || '26');
-  const [macdSignal, setMacdSignal] = useState(searchParams.get('macd_sig') || '9');
+  // All param defaults derived from shared registry — update ONE file to add/change defaults
+  const [macdFast, setMacdFast] = useState(searchParams.get('macd_fast') || PARAM_DEFAULTS_STR.macd_fast);
+  const [macdSlow, setMacdSlow] = useState(searchParams.get('macd_slow') || PARAM_DEFAULTS_STR.macd_slow);
+  const [macdSignal, setMacdSignal] = useState(searchParams.get('macd_sig') || PARAM_DEFAULTS_STR.macd_sig);
 
-  // --- StochRSI ---
-  const [stochRsiLen, setStochRsiLen] = useState(searchParams.get('stoch_rsi_len') || '14');
-  const [stochLen, setStochLen] = useState(searchParams.get('stoch_len') || '14');
-  const [stochK, setStochK] = useState(searchParams.get('stoch_k') || '3');
-  const [stochD, setStochD] = useState(searchParams.get('stoch_d') || '3');
+  const [stochRsiLen, setStochRsiLen] = useState(searchParams.get('stoch_rsi_len') || PARAM_DEFAULTS_STR.stoch_rsi_len);
+  const [stochLen, setStochLen] = useState(searchParams.get('stoch_len') || PARAM_DEFAULTS_STR.stoch_len);
+  const [stochK, setStochK] = useState(searchParams.get('stoch_k') || PARAM_DEFAULTS_STR.stoch_k);
+  const [stochD, setStochD] = useState(searchParams.get('stoch_d') || PARAM_DEFAULTS_STR.stoch_d);
 
-  // --- WaveTrend ---
-  const [wtAvgLen, setWtAvgLen] = useState(Number(searchParams.get('wt_avg_len')) || 10);
-  const [wtChannelLen, setWtChannelLen] = useState(Number(searchParams.get('wt_channel_len')) || 21);
-  const [wtMaLen, setWtMaLen] = useState(Number(searchParams.get('wt_ma_len')) || 4);
+  const [wtAvgLen, setWtAvgLen] = useState(Number(searchParams.get('wt_avg_len')) || Number(PARAM_DEFAULTS_STR.wt_avg_len));
+  const [wtChannelLen, setWtChannelLen] = useState(Number(searchParams.get('wt_channel_len')) || Number(PARAM_DEFAULTS_STR.wt_channel_len));
+  const [wtMaLen, setWtMaLen] = useState(Number(searchParams.get('wt_ma_len')) || Number(PARAM_DEFAULTS_STR.wt_ma_len));
 
-  // --- DMI ---
-  const [dmiDiLen, setDmiDiLen] = useState(searchParams.get('dmi_di_len') || '14');
-  const [dmiAdxSmooth, setDmiAdxSmooth] = useState(searchParams.get('dmi_adx_smooth') || '14');
+  const [dmiDiLen, setDmiDiLen] = useState(searchParams.get('dmi_di_len') || PARAM_DEFAULTS_STR.dmi_di_len);
+  const [dmiAdxSmooth, setDmiAdxSmooth] = useState(searchParams.get('dmi_adx_smooth') || PARAM_DEFAULTS_STR.dmi_adx_smooth);
 
-  // --- MFI ---
-  const [mfiPeriod, setMfiPeriod] = useState(searchParams.get('mfi_period') || '14');
+  const [mfiPeriod, setMfiPeriod] = useState(searchParams.get('mfi_period') || PARAM_DEFAULTS_STR.mfi_period);
 
-  // --- SMI ---
-  const [smiLongLen, setSmiLongLen] = useState(searchParams.get('smi_long_len') || '20');
-  const [smiShortLen, setSmiShortLen] = useState(searchParams.get('smi_short_len') || '5');
-  const [smiSigLen, setSmiSigLen] = useState(searchParams.get('smi_sig_len') || '5');
+  const [smiLongLen, setSmiLongLen] = useState(searchParams.get('smi_long_len') || PARAM_DEFAULTS_STR.smi_long_len);
+  const [smiShortLen, setSmiShortLen] = useState(searchParams.get('smi_short_len') || PARAM_DEFAULTS_STR.smi_short_len);
+  const [smiSigLen, setSmiSigLen] = useState(searchParams.get('smi_sig_len') || PARAM_DEFAULTS_STR.smi_sig_len);
 
-  // --- RSI ---
-  const [rsiLen, setRsiLen] = useState(searchParams.get('rsi_len') || '14');
-  const [rsiMaLen, setRsiMaLen] = useState(searchParams.get('rsi_ma_len') || '14');
+  const [rsiLen, setRsiLen] = useState(searchParams.get('rsi_len') || PARAM_DEFAULTS_STR.rsi_len);
+  const [rsiMaLen, setRsiMaLen] = useState(searchParams.get('rsi_ma_len') || PARAM_DEFAULTS_STR.rsi_ma_len);
 
-  // --- CCI ---
-  const [cciLen, setCciLen] = useState(searchParams.get('cci_len') || '20');
-  const [cciMaLen, setCciMaLen] = useState(searchParams.get('cci_ma_len') || '14');
+  const [cciLen, setCciLen] = useState(searchParams.get('cci_len') || PARAM_DEFAULTS_STR.cci_len);
+  const [cciMaLen, setCciMaLen] = useState(searchParams.get('cci_ma_len') || PARAM_DEFAULTS_STR.cci_ma_len);
 
-  // --- WPR ---
-  const [wprLen, setWprLen] = useState(searchParams.get('wpr_len') || '14');
+  const [wprLen, setWprLen] = useState(searchParams.get('wpr_len') || PARAM_DEFAULTS_STR.wpr_len);
 
-  // --- DI ---
-  const [diLen, setDiLen] = useState(searchParams.get('di_len') || '10');
-  const [diSmooth, setDiSmooth] = useState(searchParams.get('di_smooth') || '10');
-  const [diK, setDiK] = useState(searchParams.get('di_k') || '2');
+  const [diLen, setDiLen] = useState(searchParams.get('di_len') || PARAM_DEFAULTS_STR.di_len);
+  const [diSmooth, setDiSmooth] = useState(searchParams.get('di_smooth') || PARAM_DEFAULTS_STR.di_smooth);
+  const [diK, setDiK] = useState(searchParams.get('di_k') || PARAM_DEFAULTS_STR.di_k);
 
-  // --- CMF ---
-  const [cmfLen, setCmfLen] = useState(searchParams.get('cmf_len') || '20');
+  const [cmfLen, setCmfLen] = useState(searchParams.get('cmf_len') || PARAM_DEFAULTS_STR.cmf_len);
 
-  // --- MADR ---
-  const [madrLen, setMadrLen] = useState(searchParams.get('madr_len') || '21');
+  const [madrLen, setMadrLen] = useState(searchParams.get('madr_len') || PARAM_DEFAULTS_STR.madr_len);
 
-  // --- ALMA ---
-  const [almaLen, setAlmaLen] = useState(searchParams.get('alma_len') || '9');
-  const [almaOffset, setAlmaOffset] = useState(searchParams.get('alma_offset') || '0.85');
-  const [almaSigma, setAlmaSigma] = useState(searchParams.get('alma_sigma') || '6');
-  const [almaColor, setAlmaColor] = useState(searchParams.get('alma_color') || '#fbbf24');
-  const [almaOpacity, setAlmaOpacity] = useState(searchParams.get('alma_opacity') || '100');
-  const [almaWidth, setAlmaWidth] = useState(searchParams.get('alma_width') || '2');
-  const [almaLineStyle, setAlmaLineStyle] = useState(searchParams.get('alma_style') || '0');
+  const [almaLen, setAlmaLen] = useState(searchParams.get('alma_len') || PARAM_DEFAULTS_STR.alma_len);
+  const [almaOffset, setAlmaOffset] = useState(searchParams.get('alma_offset') || PARAM_DEFAULTS_STR.alma_offset);
+  const [almaSigma, setAlmaSigma] = useState(searchParams.get('alma_sigma') || PARAM_DEFAULTS_STR.alma_sigma);
+  const [almaColor, setAlmaColor] = useState(searchParams.get('alma_color') || PARAM_DEFAULTS_STR.alma_color);
+  const [almaOpacity, setAlmaOpacity] = useState(searchParams.get('alma_opacity') || PARAM_DEFAULTS_STR.alma_opacity);
+  const [almaWidth, setAlmaWidth] = useState(searchParams.get('alma_width') || PARAM_DEFAULTS_STR.alma_width);
+  const [almaLineStyle, setAlmaLineStyle] = useState(searchParams.get('alma_style') || PARAM_DEFAULTS_STR.alma_style);
   const [almaTab, setAlmaTab] = useState('inputs');
 
   // --- Bollinger ---

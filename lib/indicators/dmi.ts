@@ -1,35 +1,33 @@
 // Directional Movement Index (DMI) utilities
 // Default period: 14
 
+import { createSMMA } from './_math';
+
 export type DMIInput = {
-  time: UTCTimestamp;
-  high: number;
-  low: number;
-  close: number;
+    time: UTCTimestamp;
+    high: number;
+    low: number;
+    close: number;
 };
 
 export type DMIPoint = {
-  time: UTCTimestamp;
-  plusDI?: number; // +DI
-  minusDI?: number; // -DI
-  adx?: number; // Average Directional Index
+    time: UTCTimestamp;
+    plusDI?: number; // +DI
+    minusDI?: number; // -DI
+    adx?: number; // Average Directional Index
 };
 
+/**
+ * Wilder's Smoothing for DMI
+ *
+ * DOĞRU formül: prev = (prev * (period - 1) + cur) / period
+ * (createSMMA ile aynı, ama eski DMI implementasyonu
+ *  prev = prev - prev/period + cur kullanıyordu — bu kümülatif toplamdır, MA değil)
+ *
+ * @deprecated Use createSMMA from _math.ts instead. Kept for backward compat.
+ */
 function wildersSmooth(values: number[], period: number): (number | undefined)[] {
-  const out: (number | undefined)[] = new Array(values.length).fill(undefined);
-  if (period <= 0 || values.length < period) return out;
-
-  let sum = 0;
-  for (let i = 0; i < period; i++) sum += values[i] ?? 0;
-  let prev = sum;
-  out[period - 1] = prev;
-
-  for (let i = period; i < values.length; i++) {
-    const cur = values[i] ?? 0;
-    prev = prev - prev / period + cur;
-    out[i] = prev;
-  }
-  return out;
+    return createSMMA(values, period);
 }
 
 export function computeDMI(
@@ -95,18 +93,16 @@ export function computeDMI(
         }
     }
 
+    // ADX: Wilder's Smoothing of DX
+    // Not: Artık createSMMA doğru ortalamayı üretir, ek bölme işlemi gerekmez.
+    // Eski kod `v / adxSmoothing` yapıyordu çünkü wildersSmooth kümülatif toplamdı.
     const adxSmooth = wildersSmooth(dxArr, adxSmoothing);
-    const adx: (number | undefined)[] = new Array(len).fill(undefined);
-    for (let i = 0; i < len; i++) {
-        const v = adxSmooth[i];
-        if (typeof v === 'number') adx[i] = v / adxSmoothing;
-    }
 
     const out: DMIPoint[] = candles.map((c, i) => ({
         time: c.time,
         plusDI: plusDI[i],
         minusDI: minusDI[i],
-        adx: adx[i],
+        adx: adxSmooth[i], // Artık ek bölme yok — doğru ADX değeri
     }));
 
     return out;

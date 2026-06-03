@@ -1,4 +1,4 @@
-import { createPriceAlertAction } from '@/lib/actions/alerts.actions';
+import { createAlert } from '@/lib/actions/alerts.actions';
 import { CONDITION_OPTIONS } from '@/lib/constants';
 import Link from 'next/link';
 import AlertStockSelector from '@/components/alerts/AlertStockSelector';
@@ -19,7 +19,7 @@ export default async function CreateAlertPage(props: CreateAlertPageProps) {
       <div className="w-full max-w-xl rounded-xl border border-gray-700 bg-[#141414] p-6 shadow-xl">
         <h1 className="text-xl font-semibold text-white mb-6">Price Alert</h1>
 
-        <form action={createPriceAlertAction} className="space-y-5">
+        <form action={createAlert} className="space-y-5">
           <AlertStockSelector defaultSymbol={initialSymbol} defaultCompany={initialCompany} />
 
           <div>

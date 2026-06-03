@@ -1,4 +1,4 @@
-import { ComputedIndicators } from '@/lib/ta/compute';
+import { ComputedIndicators } from '@/lib/ta/types';
 
 export type RuleCondition = {
   indicatorPath: string; // e.g. "rsi.rsi", "macd.histogram", "close"

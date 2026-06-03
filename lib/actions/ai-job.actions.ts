@@ -4,6 +4,7 @@ import { connectToDatabase } from '@/database/mongoose';
 import AIJob from '@/database/models/ai-job.model';
 import { auth } from '@/lib/better-auth/auth';
 import { headers } from 'next/headers';
+import { inngest } from '@/lib/inngest/client';
 
 async function getUserId(): Promise<string | null> {
   try {
@@ -21,16 +22,16 @@ export async function getActiveJobs() {
 
     await connectToDatabase();
     // Get all running or queued jobs
-    const activeJobs = await AIJob.find({ 
+    const activeJobs = await AIJob.find({
       userId,
       status: { $in: ['running', 'queued'] }
     })
       .sort({ createdAt: -1 })
       .lean();
 
-    return { 
-      success: true, 
-      activeJobs: JSON.parse(JSON.stringify(activeJobs)) 
+    return {
+      success: true,
+      activeJobs: JSON.parse(JSON.stringify(activeJobs))
     };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -75,9 +76,9 @@ export async function getAllJobs() {
       .sort({ createdAt: -1 })
       .lean();
 
-    return { 
-      success: true, 
-      jobs: JSON.parse(JSON.stringify(jobs)) 
+    return {
+      success: true,
+      jobs: JSON.parse(JSON.stringify(jobs))
     };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -90,6 +91,26 @@ export async function deleteJob(id: string) {
     if (!userId) return { success: false, error: 'Unauthorized' };
 
     await connectToDatabase();
+
+    // Find the job first to get its jobId and type for Inngest cancellation
+    const job = await AIJob.findOne({ _id: id, userId }).lean();
+    if (!job) return { success: false, error: 'Job not found' };
+
+    // Cancel the associated Inngest function if it's a deep_discovery job.
+    // This prevents Inngest's concurrency limit from blocking new discoveries
+    // when the old function is still running but the DB record was deleted.
+    // The cancelOn config in discovery-deep-search.ts listens for this event.
+    if ((job.type === 'deep_discovery' || job.status === 'running' || job.status === 'queued') && job.jobId) {
+      try {
+        await inngest.send({
+          name: 'discovery/deep-search.cancelled',
+          data: { jobId: job.jobId },
+        });
+      } catch (cancelError) {
+        console.warn(`[deleteJob] Failed to send cancel event for job ${job.jobId}:`, cancelError);
+      }
+    }
+
     await AIJob.deleteOne({ _id: id, userId });
 
     return { success: true };

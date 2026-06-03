@@ -38,7 +38,7 @@ function ParamInput({
         type={type}
         value={value}
         onChange={onChange}
-        className="bg-[#0f0f0f] border-gray-600 h-8"
+        className="bg-gray-800 border-gray-700 h-8 text-gray-200"
         min={min}
       />
     </div>
@@ -49,14 +49,78 @@ function ParamInput({
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="grid gap-3 border-b border-gray-700 pb-4">
-      <h4 className="font-medium text-yellow-500">{title}</h4>
+      <h4 className="font-medium text-yellow-400">{title}</h4>
       {children}
     </div>
   );
 }
 
+// ---- Prop interfaces for settings sub-components ----
+interface MacdSettingsProps {
+  fast: string;
+  setFast: (value: string) => void;
+  slow: string;
+  setSlow: (value: string) => void;
+  signal: string;
+  setSignal: (value: string) => void;
+}
+
+interface StochRSISettingsProps {
+  rsiLen: string;
+  setRsiLen: (value: string) => void;
+  stochLen: string;
+  setStochLen: (value: string) => void;
+  k: string;
+  setK: (value: string) => void;
+  d: string;
+  setD: (value: string) => void;
+}
+
+interface RsiSettingsProps {
+  len: string;
+  setLen: (value: string) => void;
+  maLen: string;
+  setMaLen: (value: string) => void;
+}
+
+interface AlmaSettingsProps {
+  almaLen: string;
+  setAlmaLen: (value: string) => void;
+  almaOffset: string;
+  setAlmaOffset: (value: string) => void;
+  almaSigma: string;
+  setAlmaSigma: (value: string) => void;
+  almaColor: string;
+  setAlmaColor: (value: string) => void;
+  almaOpacity: string;
+  setAlmaOpacity: (value: string) => void;
+  almaWidth: string;
+  setAlmaWidth: (value: string) => void;
+  almaLineStyle: string;
+  setAlmaLineStyle: (value: string) => void;
+  almaTab: string;
+  setAlmaTab: (value: string) => void;
+}
+
+interface BollingerSettingsProps {
+  bbLen: string;
+  setBbLen: (value: string) => void;
+  bbStdDev: string;
+  setBbStdDev: (value: string) => void;
+  bbOffset: string;
+  setBbOffset: (value: string) => void;
+  bbColor: string;
+  setBbColor: (value: string) => void;
+  bbOpacity: string;
+  setBbOpacity: (value: string) => void;
+  bbWidth: string;
+  setBbWidth: (value: string) => void;
+  bbTab: string;
+  setBbTab: (value: string) => void;
+}
+
 // ---- MACD Ayarları ----
-function MacdSettings({ fast, setFast, slow, setSlow, signal, setSignal }: any) {
+function MacdSettings({ fast, setFast, slow, setSlow, signal, setSignal }: MacdSettingsProps) {
   return (
     <SettingsSection title="MACD">
       <div className="grid grid-cols-3 gap-2">
@@ -69,7 +133,7 @@ function MacdSettings({ fast, setFast, slow, setSlow, signal, setSignal }: any) 
 }
 
 // ---- StochRSI Ayarları ----
-function StochRSISettings({ rsiLen, setRsiLen, stochLen, setStochLen, k, setK, d, setD }: any) {
+function StochRSISettings({ rsiLen, setRsiLen, stochLen, setStochLen, k, setK, d, setD }: StochRSISettingsProps) {
   return (
     <SettingsSection title="Stochastic RSI">
       <div className="grid grid-cols-4 gap-2">
@@ -83,7 +147,7 @@ function StochRSISettings({ rsiLen, setRsiLen, stochLen, setStochLen, k, setK, d
 }
 
 // ---- RSI Ayarları ----
-function RsiSettings({ len, setLen, maLen, setMaLen }: any) {
+function RsiSettings({ len, setLen, maLen, setMaLen }: RsiSettingsProps) {
   return (
     <SettingsSection title="RSI">
       <div className="grid grid-cols-2 gap-4">
@@ -95,23 +159,23 @@ function RsiSettings({ len, setLen, maLen, setMaLen }: any) {
 }
 
 // ---- ALMA Ayarları (Inputs + Style sekmeli) ----
-function AlmaSettings(props: any) {
+function AlmaSettings(props: AlmaSettingsProps) {
   const { almaLen, setAlmaLen, almaOffset, setAlmaOffset, almaSigma, setAlmaSigma,
     almaColor, setAlmaColor, almaOpacity, setAlmaOpacity, almaWidth, setAlmaWidth,
     almaLineStyle, setAlmaLineStyle, almaTab, setAlmaTab } = props;
   return (
     <SettingsSection title="ALMA">
-      <div className="flex gap-1 border-b border-gray-800 mb-2">
+      <div className="flex gap-1 border-b border-gray-700 mb-2">
         <button
           type="button"
-          className={`text-xs px-2 pb-1 ${almaTab === 'inputs' ? 'text-yellow-500 border-b border-yellow-500' : 'text-gray-500'}`}
+          className={`text-xs px-2 pb-1 ${almaTab === 'inputs' ? 'text-yellow-400 border-b border-yellow-400' : 'text-gray-500'}`}
           onClick={() => setAlmaTab('inputs')}
         >
           Inputs
         </button>
         <button
           type="button"
-          className={`text-xs px-2 pb-1 ${almaTab === 'style' ? 'text-yellow-500 border-b border-yellow-500' : 'text-gray-500'}`}
+          className={`text-xs px-2 pb-1 ${almaTab === 'style' ? 'text-yellow-400 border-b border-yellow-400' : 'text-gray-500'}`}
           onClick={() => setAlmaTab('style')}
         >
           Style
@@ -133,7 +197,7 @@ function AlmaSettings(props: any) {
             <select
               value={almaLineStyle}
               onChange={(e) => setAlmaLineStyle(e.target.value)}
-              className="w-full bg-[#0f0f0f] border border-gray-600 h-8 rounded text-xs text-gray-200"
+              className="w-full bg-gray-800 border border-gray-700 h-8 rounded text-xs text-gray-200"
             >
               <option value="0">Solid</option>
               <option value="1">Dotted</option>
@@ -147,22 +211,22 @@ function AlmaSettings(props: any) {
 }
 
 // ---- Bollinger Ayarları (Inputs + Style sekmeli) ----
-function BollingerSettings(props: any) {
+function BollingerSettings(props: BollingerSettingsProps) {
   const { bbLen, setBbLen, bbStdDev, setBbStdDev, bbOffset, setBbOffset,
     bbColor, setBbColor, bbOpacity, setBbOpacity, bbWidth, setBbWidth, bbTab, setBbTab } = props;
   return (
     <SettingsSection title="Bollinger Bands">
-      <div className="flex gap-1 border-b border-gray-800 mb-2">
+      <div className="flex gap-1 border-b border-amber-200 mb-2">
         <button
           type="button"
-          className={`text-xs px-2 pb-1 ${bbTab === 'inputs' ? 'text-yellow-500 border-b border-yellow-500' : 'text-gray-500'}`}
+          className={`text-xs px-2 pb-1 ${bbTab === 'inputs' ? 'text-yellow-700 border-b border-yellow-700' : 'text-gray-400'}`}
           onClick={() => setBbTab('inputs')}
         >
           Inputs
         </button>
         <button
           type="button"
-          className={`text-xs px-2 pb-1 ${bbTab === 'style' ? 'text-yellow-500 border-b border-yellow-500' : 'text-gray-500'}`}
+          className={`text-xs px-2 pb-1 ${bbTab === 'style' ? 'text-yellow-700 border-b border-yellow-700' : 'text-gray-400'}`}
           onClick={() => setBbTab('style')}
         >
           Style
@@ -198,7 +262,7 @@ export default function TAIndicatorSettings() {
           <Settings2 className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px] bg-[#141414] border-gray-700 text-gray-100">
+      <DialogContent className="sm:max-w-[425px] bg-gray-900 border-gray-700 text-gray-200">
         <DialogHeader>
           <DialogTitle>Indicator Settings</DialogTitle>
         </DialogHeader>

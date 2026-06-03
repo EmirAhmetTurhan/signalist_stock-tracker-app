@@ -7,20 +7,49 @@ import PriceAlert from '@/database/models/price-alert.model';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createAlertSchema, updateAlertSchema, validate } from '@/lib/validations/schemas';
+import { logError } from '@/lib/utils/error-utils';
 
-function logError(context: string, error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[Alerts] ${context}: ${message}`);
+// ─── Input types ─────────────────────────────────────────────────────────────
+
+export type CreateAlertInput = {
+  symbol: string;
+  company: string;
+  alertName: string;
+  alertType: 'upper' | 'lower';
+  threshold: number;
+  overrideUserId?: string;
+};
+
+export type DeleteAlertResult = { success: boolean; deletedCount?: number; error?: string };
+export type CreateAlertResult = { success: boolean; id?: string; error?: string };
+
+// ─── getSession helper ────────────────────────────────────────────────────────
+
+async function getUserId(overrideUserId?: string): Promise<{ userId?: string; userEmail?: string }> {
+  if (overrideUserId) return { userId: overrideUserId };
+  const session = await auth.api.getSession({ headers: await headers() });
+  return { userId: session?.user?.id, userEmail: session?.user?.email || 'unknown@example.com' };
 }
 
-export async function createPriceAlertAction(formData: FormData) {
+// ─── createAlert — dual-path overload ─────────────────────────────────────────
+// FormData path (server action, redirects)  → <form action={createAlert}>
+// JSON path (programmatic, returns JSON)    → createAlert({...})
+
+export async function createAlert(formData: FormData): Promise<void>;
+export async function createAlert(input: CreateAlertInput): Promise<CreateAlertResult>;
+export async function createAlert(input: FormData | CreateAlertInput): Promise<void | CreateAlertResult> {
+  if (input instanceof FormData) {
+    return createAlertFromFormData(input);
+  }
+  return createAlertFromJSON(input);
+}
+
+async function createAlertFromFormData(formData: FormData): Promise<void> {
   try {
     await connectToDatabase();
     const session = await auth.api.getSession({ headers: await headers() });
     const user = session?.user;
-    if (!user?.id || !user?.email) {
-      return;
-    }
+    if (!user?.id || !user?.email) return;
 
     const symbol = String(formData.get('symbol') || '').toUpperCase().trim();
     const company = String(formData.get('company') || symbol).trim();
@@ -32,7 +61,7 @@ export async function createPriceAlertAction(formData: FormData) {
 
     const parsed = validate(createAlertSchema, { symbol, company, alertName, alertType, threshold });
     if (!parsed.success) {
-      logError('Validation failed', parsed.error);
+      logError('Alerts', `Validation failed: ${parsed.error}`);
       redirect('/watchlist');
     }
 
@@ -50,39 +79,23 @@ export async function createPriceAlertAction(formData: FormData) {
 
     redirect('/watchlist');
   } catch (e) {
-    logError('createPriceAlertAction error', e);
+    logError('Alerts', `createAlert formData error: ${e}`);
     redirect('/watchlist');
   }
 }
 
-export async function createAlert(input: {
-  symbol: string;
-  company: string;
-  alertName: string;
-  alertType: 'upper' | 'lower';
-  threshold: number;
-  overrideUserId?: string;
-}): Promise<{ success: boolean; id?: string; error?: string }> {
+async function createAlertFromJSON(input: CreateAlertInput): Promise<CreateAlertResult> {
   try {
     await connectToDatabase();
-    let userId = input.overrideUserId;
-    let userEmail = 'unknown@example.com';
-    if (!userId) {
-      const session = await auth.api.getSession({ headers: await headers() });
-      const user = session?.user;
-      userId = user?.id;
-      userEmail = user?.email || userEmail;
-    }
-    if (!userId) {
-      return { success: false, error: 'Not authenticated' };
-    }
+    const { userId, userEmail } = await getUserId(input.overrideUserId);
+    if (!userId) return { success: false, error: 'Not authenticated' };
 
     const parsed = validate(createAlertSchema, input);
     if (!parsed.success) return { success: false, error: parsed.error };
 
     const doc = await PriceAlert.create({
-      userId: userId,
-      email: userEmail,
+      userId,
+      email: userEmail || 'unknown@example.com',
       symbol: parsed.data.symbol,
       company: parsed.data.company,
       alertName: parsed.data.alertName,
@@ -94,38 +107,64 @@ export async function createAlert(input: {
 
     return { success: true, id: String(doc._id) };
   } catch (e) {
-    logError('createAlert', e);
+    logError('Alerts', `createAlert JSON error: ${e}`);
     return { success: false, error: String(e) };
   }
 }
 
-export async function deleteAlert(symbol: string, overrideUserId?: string): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
+// ─── deleteAlert — dual-path overload ─────────────────────────────────────────
+// FormData path (server action, redirects)  → <form action={deleteAlert}>
+// JSON path (programmatic, returns JSON)    → deleteAlert(symbol, overrideUserId?)
+
+export async function deleteAlert(formData: FormData): Promise<void>;
+export async function deleteAlert(symbol: string, overrideUserId?: string): Promise<DeleteAlertResult>;
+export async function deleteAlert(input: FormData | string, overrideUserId?: string): Promise<void | DeleteAlertResult> {
+  if (input instanceof FormData) {
+    return deleteAlertFromFormData(input);
+  }
+  return deleteAlertBySymbol(input, overrideUserId);
+}
+
+async function deleteAlertFromFormData(formData: FormData): Promise<void> {
   try {
     await connectToDatabase();
-    let userId = overrideUserId;
-    if (!userId) {
-      const session = await auth.api.getSession({ headers: await headers() });
-      userId = session?.user?.id;
-    }
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+    if (!userId) return;
+
+    const alertId = String(formData.get('alertId') || '').trim();
+    if (!alertId) return;
+
+    await PriceAlert.deleteOne({ _id: alertId, userId });
+    revalidatePath('/watchlist');
+    redirect('/watchlist');
+  } catch (e) {
+    logError('Alerts', `deleteAlert formData error: ${e}`);
+    redirect('/watchlist');
+  }
+}
+
+async function deleteAlertBySymbol(symbol: string, overrideUserId?: string): Promise<DeleteAlertResult> {
+  try {
+    await connectToDatabase();
+    const { userId } = await getUserId(overrideUserId);
     if (!userId) return { success: false, error: 'Not authenticated' };
 
     const result = await PriceAlert.deleteOne({ userId, symbol: symbol.toUpperCase() });
     return { success: true, deletedCount: result.deletedCount };
   } catch (e) {
-    logError('deleteAlert', e);
+    logError('Alerts', `deleteAlert symbol error: ${e}`);
     return { success: false, error: String(e) };
   }
 }
 
+// ─── getUserAlerts ────────────────────────────────────────────────────────────
+
 export async function getUserAlerts(overrideUserId?: string): Promise<Alert[]> {
   try {
     await connectToDatabase();
-    let userId = overrideUserId;
-    if (!userId) {
-      const session = await auth.api.getSession({ headers: await headers() });
-      userId = session?.user?.id;
-    }
-    if (!userId) return [] as Alert[];
+    const { userId } = await getUserId(overrideUserId);
+    if (!userId) return [];
 
     const items = await PriceAlert.find({ userId, active: true }).sort({ createdAt: -1 }).lean();
     return (items || []).map((a) => ({
@@ -136,12 +175,14 @@ export async function getUserAlerts(overrideUserId?: string): Promise<Alert[]> {
       currentPrice: 0,
       alertType: a.alertType === 'lower' ? 'lower' : 'upper',
       threshold: Number(a.threshold),
-    }));
+    })) as Alert[];
   } catch (e) {
-    logError('getUserAlerts error', e);
-    return [] as Alert[];
+    logError('Alerts', `getUserAlerts error: ${e}`);
+    return [];
   }
 }
+
+// ─── updateAlertThresholdAction ───────────────────────────────────────────────
 
 export async function updateAlertThresholdAction(formData: FormData) {
   try {
@@ -156,7 +197,7 @@ export async function updateAlertThresholdAction(formData: FormData) {
 
     const parsed = validate(updateAlertSchema, { alertId, threshold });
     if (!parsed.success) {
-      logError('Validation failed', parsed.error);
+      logError('Alerts', `Validation failed: ${parsed.error}`);
       redirect('/watchlist');
     }
 
@@ -167,26 +208,7 @@ export async function updateAlertThresholdAction(formData: FormData) {
     revalidatePath('/watchlist');
     redirect('/watchlist');
   } catch (e) {
-    logError('updateAlertThresholdAction error', e);
-    redirect('/watchlist');
-  }
-}
-
-export async function deleteAlertAction(formData: FormData) {
-  try {
-    await connectToDatabase();
-    const session = await auth.api.getSession({ headers: await headers() });
-    const userId = session?.user?.id;
-    if (!userId) return;
-
-    const alertId = String(formData.get('alertId') || '').trim();
-    if (!alertId) return;
-
-    await PriceAlert.deleteOne({ _id: alertId, userId });
-    revalidatePath('/watchlist');
-    redirect('/watchlist');
-  } catch (e) {
-    logError('deleteAlertAction error', e);
+    logError('Alerts', `updateAlertThresholdAction error: ${e}`);
     redirect('/watchlist');
   }
 }

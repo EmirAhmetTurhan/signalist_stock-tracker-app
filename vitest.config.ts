@@ -8,6 +8,7 @@ const __dirname = dirname(__filename);
 export default defineConfig({
   test: {
     include: ['**/*.test.ts'],
+    pool: 'forks',
   },
   resolve: {
     alias: {

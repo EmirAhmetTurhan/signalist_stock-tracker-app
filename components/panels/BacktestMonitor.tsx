@@ -21,7 +21,8 @@ interface BacktestMonitorProps {
     candles: Candle[];
     data: IndicatorData;
     config?: {
-        lookForward: number; // How many days forward to test?
+        lookForward: number;
+        interval?: string;
     };
 }
 
@@ -33,6 +34,8 @@ export default function BacktestMonitor({
 }: BacktestMonitorProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const currentInterval = searchParams.get("interval") || "1d";
+    const configWithInterval = { ...config, interval: currentInterval };
     const [stats, setStats] = useState<{
         winRate: number;
         totalSignals: number;
@@ -43,7 +46,7 @@ export default function BacktestMonitor({
     const [isOptimizing, setIsOptimizing] = useState(false);
 
     useEffect(() => {
-        const result = calculateWinRate(indicatorName, candles, data, config);
+        const result = calculateWinRate(indicatorName, candles, data, configWithInterval);
         setStats(result);
 
         const timer = setTimeout(() => {
@@ -60,7 +63,7 @@ export default function BacktestMonitor({
         // bu şekilde en aza indirilir.
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                const result = findBestParameter(indicatorName, candles, config);
+                const result = findBestParameter(indicatorName, candles, configWithInterval);
                 if (result && result.bestVal !== -1) {
                     const params = new URLSearchParams(searchParams.toString());
                     const paramName = OPTIMIZABLE_INDICATORS[indicatorName]?.param;

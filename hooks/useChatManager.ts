@@ -176,7 +176,7 @@ export function useChatManager({
 
   const sendMessage = useCallback(async ({ text }: { text: string }) => {
     let cid = convIdRef.current;
-    
+
     setMessages(prev => [...prev, {
       id: crypto.randomUUID(),
       role: 'user',
@@ -198,10 +198,10 @@ export function useChatManager({
           apiKey
         })
       });
-      
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send message');
-      
+
       if (data.jobId && data.conversationId) {
         addActiveJob(data.conversationId, data.jobId);
       }
@@ -209,7 +209,7 @@ export function useChatManager({
       setError(err.message);
       setStatus('error');
     }
-  }, [messages, selectedModel, addActiveJob]);
+  }, [selectedModel, addActiveJob]);
 
   const handleSubmit = useCallback(async (input: string) => {
     if (!input.trim() || isLoading || isOffline) return;
@@ -246,7 +246,7 @@ export function useChatManager({
     setMessages(prev => {
       return prev.map(msg => {
         if (msg.role !== 'assistant' || !msg.parts) return msg;
-        
+
         const hasCall = msg.parts.some((p: any) => p.type === 'tool-call' && p.toolCallId === toolCallId);
         if (!hasCall) return msg;
 

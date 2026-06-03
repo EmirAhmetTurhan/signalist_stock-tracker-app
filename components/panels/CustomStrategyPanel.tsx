@@ -1,11 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useState, useCallback } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import StrategyBacktestMonitor, { AllIndicatorData } from "@/components/panels/StrategyBacktestMonitor";
-import { loadCustomStrategies, AVAILABLE_INDICATORS } from "@/components/panels/CustomStrategyModal";
+import { loadCustomStrategies, saveCustomStrategies, AVAILABLE_INDICATORS } from "@/components/panels/CustomStrategyModal";
 import type { CustomStrategy } from "@/components/panels/CustomStrategyModal";
+import StrategyDiscoveryDialog from "@/components/panels/StrategyDiscoveryDialog";
+import { getSavedStrategyById, getSavedStrategies } from "@/lib/actions/saved-strategy.actions";
+import type { Timeframe, StrategyMode } from "@/lib/ta/types";
 import ForwardTestCreator from "@/components/portfolio/ForwardTestCreator";
+import {
+    macdSignal, rsiSignal, stochRsiSignal, waveTrendSignal,
+    dmiSignal, smiSignal, aoSignal, cciSignal,
+    wprSignal, diSignal, cmfSignal, adSignal, netvolSignal,
+    madrSignal, almaSignal, bbSignal,
+    mfiSignal,
+} from '@/lib/ta/signal-registry';
+import type { SignalDir } from '@/lib/ta/signal-registry';
 
 type Candle = { time: string | number; close: number; high: number; low: number };
 
@@ -13,119 +24,116 @@ interface CustomStrategyPanelProps {
     candles: Candle[];
     allData: AllIndicatorData;
     symbol: string;
-    interval: '1d' | '4h';
+    interval: Timeframe;
     userId: string;
 }
 
-// Anlık sinyal hesapla (son bar)
+/** Map registry SignalDir → "BUY" | "SELL" | "—" */
+function toDisplay(s: SignalDir): "BUY" | "SELL" | "—" {
+    switch (s) {
+        case "BUY": return "BUY";
+        case "SELL": return "SELL";
+        default: return "—";
+    }
+}
+
+function last<T>(arr: T[]): T | undefined {
+    return arr[arr.length - 1];
+}
+
 function getLastSignal(key: string, data: AllIndicatorData, candles?: Candle[]): "BUY" | "SELL" | "—" {
-    const last = (arr: { value: number }[]) => arr?.[arr.length - 1]?.value;
     switch (key) {
         case "rsi": {
-            const r = last(data.rsiData?.rsi ?? []);
-            const m = last(data.rsiData?.ma ?? []);
-            if (r === undefined || m === undefined) return "—";
-            return r > m ? "BUY" : "SELL";
+            const rsi = last(data.rsiData?.rsi ?? [])?.value;
+            const ma = last(data.rsiData?.ma ?? [])?.value;
+            if (rsi === undefined || ma === undefined) return "—";
+            return toDisplay(rsiSignal(rsi, ma));
         }
         case "cci": {
-            const c = last(data.cciData?.cci ?? []);
-            if (c === undefined) return "—";
-            return c > 0 ? "BUY" : "SELL";
+            const cur = last(data.cciData?.cci ?? [])?.value;
+            const ma = last(data.cciData?.ma ?? [])?.value;
+            if (cur === undefined || ma === undefined) return "—";
+            return toDisplay(cciSignal(cur, ma));
         }
         case "wavetrend": {
-            const w1 = last(data.waveTrendData?.wt1 ?? []);
-            const w2 = last(data.waveTrendData?.wt2 ?? []);
-            if (w1 === undefined || w2 === undefined) return "—";
-            return w1 > w2 ? "BUY" : "SELL";
+            const wt1 = last(data.waveTrendData?.wt1 ?? [])?.value;
+            const wt2 = last(data.waveTrendData?.wt2 ?? [])?.value;
+            if (wt1 === undefined || wt2 === undefined) return "—";
+            return toDisplay(waveTrendSignal(wt1, wt2));
         }
         case "macd": {
-            const m = last(data.macdData?.macd ?? []);
-            const s = last(data.macdData?.signal ?? []);
+            const m = last(data.macdData?.macd ?? [])?.value;
+            const s = last(data.macdData?.signal ?? [])?.value;
             if (m === undefined || s === undefined) return "—";
-            return m > s ? "BUY" : "SELL";
+            return toDisplay(macdSignal(m, s));
         }
         case "stochrsi": {
-            const k = last(data.stochRsiData?.k ?? []);
-            const d = last(data.stochRsiData?.d ?? []);
+            const k = last(data.stochRsiData?.k ?? [])?.value;
+            const d = last(data.stochRsiData?.d ?? [])?.value;
             if (k === undefined || d === undefined) return "—";
-            return k > d ? "BUY" : "SELL";
+            return toDisplay(stochRsiSignal(k, d));
         }
         case "dmi": {
-            const plus = last(data.dmiData?.plusDI ?? []);
-            const minus = last(data.dmiData?.minusDI ?? []);
+            const plus = last(data.dmiData?.plusDI ?? [])?.value;
+            const minus = last(data.dmiData?.minusDI ?? [])?.value;
             if (plus === undefined || minus === undefined) return "—";
-            return plus > minus ? "BUY" : "SELL";
+            return toDisplay(dmiSignal(plus, minus));
         }
         case "smi": {
-            const s = last(data.smiData?.smi ?? []);
-            const g = last(data.smiData?.signal ?? []);
+            const s = last(data.smiData?.smi ?? [])?.value;
+            const g = last(data.smiData?.signal ?? [])?.value;
             if (s === undefined || g === undefined) return "—";
-            return s > g ? "BUY" : "SELL";
+            return toDisplay(smiSignal(s, g));
         }
         case "ao": {
             const arr = data.aoData ?? [];
             const cur = arr[arr.length - 1]?.value;
             const prev = arr[arr.length - 2]?.value;
             if (cur === undefined || prev === undefined) return "—";
-            if (cur > 0 && cur > prev) return "BUY";
-            if (cur < 0 && cur < prev) return "SELL";
-            return "—";
+            return toDisplay(aoSignal(cur, prev));
         }
         case "mfi": {
             const arr = data.mfiData?.mfi ?? [];
             const cur = arr[arr.length - 1]?.value;
             const prev = arr[arr.length - 2]?.value;
             if (cur === undefined || prev === undefined) return "—";
-            if (cur < 20) return "BUY";
-            if (cur > 80) return "SELL";
-            return cur > prev ? "BUY" : "SELL";
+            return toDisplay(mfiSignal(cur, prev));
         }
         case "wpr": {
             const arr = data.wprData ?? [];
             const cur = arr[arr.length - 1]?.value;
             const prev = arr[arr.length - 2]?.value;
             if (cur === undefined || prev === undefined) return "—";
-            if (cur < -80) return "BUY";
-            if (cur > -20) return "SELL";
-            return cur > prev ? "BUY" : "SELL";
+            return toDisplay(wprSignal(cur, prev));
         }
         case "di": {
             const arr = data.diData ?? [];
             const cur = arr[arr.length - 1]?.value;
-            const prev = arr[arr.length - 2]?.value;
-            if (cur === undefined || prev === undefined) return "—";
-            if (cur > 0 && cur > prev) return "BUY";
-            if (cur < 0 && cur < prev) return "SELL";
-            return "—";
+            if (cur === undefined) return "—";
+            return toDisplay(diSignal(cur));
         }
         case "cmf": {
-            const cur = last(data.cmfData ?? []);
+            const cur = last(data.cmfData ?? [])?.value;
             if (cur === undefined) return "—";
-            if (cur > 0.05) return "BUY";
-            if (cur < -0.05) return "SELL";
-            return "—";
+            return toDisplay(cmfSignal(cur));
         }
         case "ad": {
             const arr = data.adData ?? [];
             const cur = arr[arr.length - 1]?.value;
             if (cur === undefined || arr.length < 2) return "—";
-            const slice = arr.slice(Math.max(0, arr.length - 21)).map(p => p.value);
+            const slice = arr.slice(Math.max(0, arr.length - 21)).map(p => p.value).filter((v): v is number => v !== undefined);
             const sma = slice.reduce((a, b) => a + b, 0) / slice.length;
-            return cur > sma ? "BUY" : "SELL";
+            return toDisplay(adSignal(cur, sma));
         }
         case "netvol": {
-            const arr = data.nvData ?? [];
-            const cur = arr[arr.length - 1]?.value;
-            const prev = arr[arr.length - 2]?.value;
-            if (cur === undefined || prev === undefined) return "—";
-            if (cur > 0 && cur > prev) return "BUY";
-            if (cur < 0 && cur < prev) return "SELL";
-            return "—";
+            const cur = last(data.nvData ?? [])?.value;
+            if (cur === undefined) return "—";
+            return toDisplay(netvolSignal(cur));
         }
         case "madr": {
-            const cur = last(data.madrData ?? []);
+            const cur = last(data.madrData ?? [])?.value;
             if (cur === undefined) return "—";
-            return cur > 0 ? "BUY" : "SELL";
+            return toDisplay(madrSignal(cur));
         }
         case "alma": {
             const arr = data.almaData ?? [];
@@ -134,9 +142,7 @@ function getLastSignal(key: string, data: AllIndicatorData, candles?: Candle[]):
             const curC = candles?.[candles.length - 1]?.close;
             const prevC = candles?.[candles.length - 2]?.close;
             if (curA === undefined || prevA === undefined || curC === undefined || prevC === undefined) return "—";
-            if (prevC < prevA && curC > curA) return "BUY";
-            if (prevC > prevA && curC < curA) return "SELL";
-            return "—";
+            return toDisplay(almaSignal(curA, prevA, curC, prevC));
         }
         case "bb": {
             const arr = data.bbData ?? [];
@@ -144,10 +150,15 @@ function getLastSignal(key: string, data: AllIndicatorData, candles?: Candle[]):
             const prevBB = arr[arr.length - 2];
             const curC = candles?.[candles.length - 1]?.close;
             const prevC = candles?.[candles.length - 2]?.close;
-            if (!curBB || !prevBB || curC === undefined || prevC === undefined) return "—";
-            if (prevC < prevBB.lower && curC > curBB.lower) return "BUY";
-            if (prevC > prevBB.upper && curC < curBB.upper) return "SELL";
-            return "—";
+            if (!curBB || !prevBB || curC === undefined || prevC === undefined
+                || curBB.lower === undefined || prevBB.lower === undefined
+                || curBB.upper === undefined || prevBB.upper === undefined
+                || curBB.basis === undefined || prevBB.basis === undefined) return "—";
+            return toDisplay(bbSignal(
+                curBB as import('@/lib/ta/signal-registry').BBPoint,
+                prevBB as import('@/lib/ta/signal-registry').BBPoint,
+                curC, prevC
+            ));
         }
         default: return "—";
     }
@@ -155,23 +166,64 @@ function getLastSignal(key: string, data: AllIndicatorData, candles?: Candle[]):
 
 export default function CustomStrategyPanel({ candles, allData, symbol, interval, userId }: CustomStrategyPanelProps) {
     const searchParams = useSearchParams();
+    const router = useRouter();
+    const pathname = usePathname();
     const strategyParam = searchParams.get("strategy") || "";
 
     const [strategy, setStrategy] = useState<CustomStrategy | null>(null);
 
     useEffect(() => {
-        if (!strategyParam.startsWith("custom_")) { setStrategy(null); return; }
-        const all = loadCustomStrategies();
-        setStrategy(all.find(s => s.key === strategyParam) ?? null);
-    }, [strategyParam]);
+        if (strategyParam.startsWith("custom_")) {
+            // Load from localStorage
+            const all = loadCustomStrategies();
+            setStrategy(all.find(s => s.key === strategyParam) ?? null);
+        } else if (strategyParam.startsWith("saved_") && userId) {
+            // Load from MongoDB
+            const mongoId = strategyParam.replace("saved_", "");
+            getSavedStrategyById(userId, mongoId).then(res => {
+                if (res.success && res.data) {
+                    const d = res.data;
+                    setStrategy({
+                        key: `saved_${d.id}`,
+                        name: d.name,
+                        indicators: d.indicators,
+                        createdAt: d.createdAt ? new Date(d.createdAt).getTime() : Date.now(),
+                        mode: d.mode,
+                        lookForward: d.lookForward,
+                        params: d.discoveredParams ?? undefined,
+                        discoveryWinRate: d.discoveredWinRate ?? undefined,
+                        discoverySignalCount: d.discoveredTotalSignals ?? undefined,
+                    });
+                } else {
+                    setStrategy(null);
+                }
+            }).catch(() => setStrategy(null));
+        } else {
+            setStrategy(null);
+        }
+    }, [strategyParam, userId]);
 
-    if (!strategy || !strategyParam.startsWith("custom_")) return null;
+    if (!strategy || !strategyParam.startsWith("custom_") && !strategyParam.startsWith("saved_")) return null;
 
     const indicators = strategy.indicators;
     const signals = indicators.map(k => getLastSignal(k, allData, candles));
     const validSignals = signals.filter(s => s !== "—");
-    const allBuy = validSignals.length > 0 && validSignals.every(s => s === "BUY");
-    const allSell = validSignals.length > 0 && validSignals.every(s => s === "SELL");
+    const mode: StrategyMode = strategy.mode ?? 'all';
+    const total = validSignals.length;
+    const buyCount = validSignals.filter(s => s === "BUY").length;
+    const sellCount = validSignals.filter(s => s === "SELL").length;
+
+    // Decision string: "BUY" | "SELL" | "CONFLICT"
+    let decision: "BUY" | "SELL" | "CONFLICT";
+    if (mode === 'majority') {
+        if (buyCount > total / 2) decision = "BUY";
+        else if (sellCount > total / 2) decision = "SELL";
+        else decision = "CONFLICT";
+    } else {
+        if (buyCount === total) decision = "BUY";
+        else if (sellCount === total) decision = "SELL";
+        else decision = "CONFLICT";
+    }
 
     // Grid sütun sayısı: indikatörler + karar sütunu
     const cols = indicators.length + 1;
@@ -184,15 +236,52 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
                     <span className="text-base font-semibold text-emerald-200">{strategy.name}</span>
                     <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full border border-gray-700">
-                        Custom Strategy — {indicators.length} indicators, all must agree
+                        {strategyParam.startsWith("saved_") ? 'Saved' : 'Custom'} Strategy — {indicators.length} indicators, {mode === 'majority' ? 'majority (>50%)' : 'all must agree'}
                     </span>
                 </div>
-                <StrategyBacktestMonitor
-                    strategyName="CUSTOM"
-                    candles={candles}
-                    customIndicators={indicators}
-                    allData={allData}
-                />
+                <div className="flex items-center gap-2">
+                    <StrategyDiscoveryDialog
+                        candles={candles}
+                        allData={allData}
+                        symbol={symbol}
+                        interval={interval}
+                        mode={mode}
+                        userId={userId}
+                        onApply={(discovered) => {
+                            // Save discovered strategy with ALL params to localStorage and navigate
+                            const newStrategy: CustomStrategy = {
+                                key: `custom_${Date.now()}`,
+                                name: `Discovered — ${discovered.indicators.map(k =>
+                                    AVAILABLE_INDICATORS.find(i => i.key === k)?.label ?? k.toUpperCase()
+                                ).join(' + ')}`,
+                                indicators: discovered.indicators,
+                                createdAt: Date.now(),
+                                mode: mode,
+                                lookForward: Math.round(discovered.params.lookForward ?? 14),
+                                params: { ...discovered.params },
+                                discoveryWinRate: discovered.winRate,
+                                discoverySignalCount: discovered.totalSignals ?? 0,
+                            };
+                            const existing = loadCustomStrategies();
+                            saveCustomStrategies([newStrategy, ...existing]);
+                            const params = new URLSearchParams(searchParams.toString());
+                            params.set('strategy', newStrategy.key);
+                            router.push(`${pathname}?${params.toString()}`);
+                        }}
+                    />
+                    <StrategyBacktestMonitor
+                        strategyName="CUSTOM"
+                        candles={candles}
+                        customIndicators={indicators}
+                        allData={allData}
+                        mode={mode}
+                        interval={interval}
+                        config={{ lookForward: strategy.lookForward ?? 14 }}
+                        initialOptimizedParams={strategy.params}
+                        discoveryWinRate={strategy.discoveryWinRate}
+                        discoverySignalCount={strategy.discoverySignalCount}
+                    />
+                </div>
             </div>
 
             {/* Sinyal kartları */}
@@ -223,23 +312,23 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
                 {/* Strategy Decision */}
                 <div className="bg-gray-900/60 rounded-lg p-2.5 border border-gray-800">
                     <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Strategy Decision</div>
-                    {allBuy
-                        ? <span className="font-bold text-sm text-emerald-300">✓ BUY</span>
-                        : allSell
-                            ? <span className="font-bold text-sm text-red-300">✗ SELL</span>
-                            : <span className="font-semibold text-sm text-yellow-400">⚡ CONFLICT</span>
+                    {decision === "BUY"
+                        ? <span className="font-bold text-sm text-emerald-300">✓ BUY {mode === 'majority' && `(${buyCount}/${total})`}</span>
+                        : decision === "SELL"
+                            ? <span className="font-bold text-sm text-red-300">✗ SELL {mode === 'majority' && `(${sellCount}/${total})`}</span>
+                            : <span className="font-semibold text-sm text-yellow-400">⚡ CONFLICT {mode === 'majority' && `(${Math.max(buyCount, sellCount)}/${total})`}</span>
                     }
                 </div>
             </div>
 
             {symbol && (
                 <div className="mt-4 pt-4 border-t border-gray-800/50">
-                    <ForwardTestCreator 
-                        symbol={symbol} 
-                        interval={interval} 
-                        strategyName={strategy.name} 
-                        indicators={indicators} 
-                        userId={userId} 
+                    <ForwardTestCreator
+                        symbol={symbol}
+                        interval={interval}
+                        strategyName={strategy.name}
+                        indicators={indicators}
+                        userId={userId}
                     />
                 </div>
             )}

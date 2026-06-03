@@ -4,6 +4,7 @@ import { connectToDatabase } from '@/database/mongoose';
 import ForwardTestStrategy from '@/database/models/forward-test-strategy.model';
 import { toDecimal128, fromDecimal128 } from '@/lib/paper-trading/decimal-utils';
 import { revalidatePath } from 'next/cache';
+import type { Timeframe } from '@/lib/ta/types';
 
 // ============================================================
 // Create Forward Test
@@ -13,7 +14,7 @@ export async function createForwardTest(input: {
   userId: string;
   name: string;
   symbol: string;
-  interval: '1d' | '4h';
+  interval: Timeframe;
   indicatorConfig: any;
   entryRule: any;
   exitRule: any;
@@ -93,7 +94,7 @@ export async function getForwardTests(userId: string) {
 export async function changeForwardTestStatus(userId: string, id: string, status: 'running' | 'paused' | 'stopped') {
   try {
     await connectToDatabase();
-    
+
     // Validate authorization and find the strategy
     const strategy = await ForwardTestStrategy.findOne({ _id: id, userId });
     if (!strategy) return { success: false, error: 'Strategy not found' };
@@ -114,7 +115,7 @@ export async function changeForwardTestStatus(userId: string, id: string, status
 export async function changeForwardTestMode(userId: string, id: string, mode: 'shadow' | 'auto' | 'propose_only', confirmationText?: string) {
   try {
     await connectToDatabase();
-    
+
     const strategy = await ForwardTestStrategy.findOne({ _id: id, userId });
     if (!strategy) return { success: false, error: 'Strategy not found' };
 

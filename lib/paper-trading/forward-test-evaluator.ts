@@ -5,13 +5,14 @@ import Wallet from '@/database/models/wallet.model';
 import Trade from '@/database/models/trade.model';
 import { getDailyCandlesForAI, get4HourCandles } from '@/lib/actions/finnhub.actions';
 import { computeIndicators, parseActiveIndicators } from '@/lib/ta/compute';
+import type { Timeframe } from '@/lib/ta/types';
 import { evaluateRule } from './strategy-evaluator-utils';
 import { executeTrade } from './execution-engine';
 import { createPendingOrder } from '@/lib/actions/pending-orders.actions';
 import { fromDecimal128, toDecimal128, decimalAdd, decimalSub, decimalMul } from './decimal-utils';
 import { randomUUID } from 'crypto';
 
-export async function evaluateForwardTests(interval: '1d' | '4h') {
+export async function evaluateForwardTests(interval: Timeframe) {
   await connectToDatabase();
 
   // 1. Fetch all running strategies for this interval
@@ -28,11 +29,19 @@ export async function evaluateForwardTests(interval: '1d' | '4h') {
   let executedCount = 0;
   const now = new Date();
 
+  // 3. IDEMPOTENCY GUARD: Aynı evaluation cycle'ında aynı strateji+action
+  //    ikinci kez tetiklenirse skip et. Partial failure / re-entry durumlarında
+  //    double execution'ı engeller. Single-tenant in-memory Set yeterli (process
+  //    restart olmadıkça).
+  const evaluationCycleId = `eval-${now.getTime()}-${randomUUID().slice(0, 8)}`;
+  const executedInThisCycle = new Set<string>();
+  const dedupeKey = (stratId: string, action: 'BUY' | 'SELL') => `${stratId}::${action}::${evaluationCycleId}`;
+
   // 3. Process each symbol
   for (const [symbol, strats] of symbolMap.entries()) {
     try {
       // Fetch candles
-      const candles = interval === '1d' 
+      const candles = interval === '1d'
         ? await getDailyCandlesForAI(symbol, 365)
         : await get4HourCandles(symbol, 720);
 
@@ -72,11 +81,20 @@ export async function evaluateForwardTests(interval: '1d' | '4h') {
 
         const action = exitTriggered ? 'SELL' : 'BUY';
 
+        // IDEMPOTENCY CHECK: Aynı cycle'da aynı strateji+action zaten
+        // işlendiyse skip et (partial failure / re-entry guard).
+        const key = dedupeKey(strat._id.toString(), action);
+        if (executedInThisCycle.has(key)) {
+          console.warn(`[ForwardTest] DEDUPE: ${action} for ${strat.name} already executed in cycle ${evaluationCycleId}`);
+          continue;
+        }
+        executedInThisCycle.add(key);
+
         // Execution Logic based on mode
         if (strat.executionMode === 'shadow') {
-          await processShadowTrade(strat, action, currentCandle.close, now);
+          await processShadowTrade(strat, action, currentCandle.close, now, evaluationCycleId);
         } else if (strat.executionMode === 'auto') {
-          await processAutoTrade(strat, action, currentCandle.close, now);
+          await processAutoTrade(strat, action, currentCandle.close, now, evaluationCycleId);
         } else if (strat.executionMode === 'propose_only') {
           // In real app, we would push to a Notifications collection here
           console.log(`[ForwardTest] PROPOSE ${action} ${symbol} for Strategy ${strat.name}`);
@@ -85,7 +103,7 @@ export async function evaluateForwardTests(interval: '1d' | '4h') {
         // Update strategy stats
         await ForwardTestStrategy.updateOne(
           { _id: strat._id },
-          { 
+          {
             $set: { lastEvaluatedAt: now },
             $inc: { signalsLogged: 1 }
           }
@@ -105,15 +123,17 @@ export async function evaluateForwardTests(interval: '1d' | '4h') {
 // Sub-routines
 // ------------------------------------------------------------------
 
-async function processShadowTrade(strat: any, action: 'BUY' | 'SELL', price: number, now: Date) {
+async function processShadowTrade(strat: any, action: 'BUY' | 'SELL', price: number, now: Date, evaluationCycleId: string) {
   // Shadow trades maintain a hypothetical P&L.
   // Assuming 1 position at a time (buy then sell).
-  
+  // evaluationCycleId: log'larda izlenebilirlik için kullanılıyor (idempotency guard main loop'ta).
+  void evaluationCycleId;
+
   if (action === 'BUY' && !strat.shadowCurrentPosition) {
     // Open shadow position
     await ForwardTestStrategy.updateOne(
       { _id: strat._id },
-      { 
+      {
         $set: { shadowCurrentPosition: true, shadowEntryPrice: toDecimal128(price) },
         $inc: { shadowTrades: 1 }
       }
@@ -128,16 +148,16 @@ async function processShadowTrade(strat: any, action: 'BUY' | 'SELL', price: num
     const capital = fromDecimal128(strat.capitalAllocated);
     const shares = capital / entryPrice;
     const totalPnl = pnl * shares;
-    
+
     // Add to existing shadow Pnl
     const existingPnl = fromDecimal128(strat.shadowPnl);
     const newPnl = existingPnl + totalPnl;
 
     await ForwardTestStrategy.updateOne(
       { _id: strat._id },
-      { 
-        $set: { 
-          shadowCurrentPosition: false, 
+      {
+        $set: {
+          shadowCurrentPosition: false,
           shadowEntryPrice: null,
           shadowPnl: toDecimal128(newPnl)
         },
@@ -148,8 +168,11 @@ async function processShadowTrade(strat: any, action: 'BUY' | 'SELL', price: num
   }
 }
 
-async function processAutoTrade(strat: any, action: 'BUY' | 'SELL', price: number, now: Date) {
+async function processAutoTrade(strat: any, action: 'BUY' | 'SELL', price: number, now: Date, evaluationCycleId: string) {
   try {
+    // evaluationCycleId: idempotency anahtarı olarak clientRequestId'ye gömülü.
+    // Aynı cycle içinde iki kez execute edilse bile executeTrade'in kendi
+    // duplicate-check mekanizması trade'i 2. kez insert etmez.
     const wallet = await Wallet.findOne({ userId: strat.userId }).lean();
     if (!wallet) return;
 
@@ -184,7 +207,7 @@ async function processAutoTrade(strat: any, action: 'BUY' | 'SELL', price: numbe
       symbol: strat.symbol,
       side: action,
       quantity,
-      clientRequestId: `auto-${strat._id}-${now.getTime()}`,
+      clientRequestId: `auto-${strat._id}-${evaluationCycleId}-${action}`,
       triggerSource: 'strategy',
       triggerContext: { strategyId: strat._id.toString() },
     });
@@ -211,7 +234,7 @@ async function processAutoTrade(strat: any, action: 'BUY' | 'SELL', price: numbe
       { _id: strat._id },
       { $inc: { tradesExecuted: 1 } }
     );
-    
+
     console.log(`[ForwardTest] AUTO ${action} ${strat.symbol} x${quantity} for Strategy ${strat.name}`);
   } catch (e) {
     console.error(`[ForwardTest] Auto trade failed for strategy ${strat._id}:`, e);

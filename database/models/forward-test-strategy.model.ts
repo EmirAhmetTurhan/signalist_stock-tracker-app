@@ -1,4 +1,5 @@
 import { Schema, model, models, Document, Types } from 'mongoose';
+import type { Timeframe } from '@/lib/ta/types';
 
 export interface IPositionSizing {
   mode: 'fixed_cash' | 'percent_portfolio' | 'fixed_shares';
@@ -9,7 +10,7 @@ export interface IForwardTestStrategy extends Document {
   userId: string;
   name: string;
   symbol: string;
-  interval: '1d' | '4h';
+  interval: Timeframe;
   indicatorConfig: any; // Can be a composite of multiple indicators
   entryRule: any;       // E.g., { condition: 'RSI < 30' } or AST
   exitRule: any;        // E.g., { condition: 'RSI > 70' }
@@ -17,7 +18,7 @@ export interface IForwardTestStrategy extends Document {
   executionMode: 'shadow' | 'auto' | 'propose_only';
   status: 'draft' | 'running' | 'paused' | 'stopped';
   capitalAllocated: Types.Decimal128; // Theoretical max capital
-  
+
   // Risk and mechanics
   cooldownHours: number; // Prevent oscillating signals
   timeStop: number | null; // Max holding days/periods
@@ -29,7 +30,7 @@ export interface IForwardTestStrategy extends Document {
   nextEvaluationAt: Date | null;
   signalsLogged: number;
   tradesExecuted: number;
-  
+
   // Shadow performance tracking
   shadowPnl: Types.Decimal128;
   shadowTrades: number;
@@ -41,10 +42,10 @@ export interface IForwardTestStrategy extends Document {
 }
 
 const PositionSizingSchema = new Schema<IPositionSizing>({
-  mode: { 
-    type: String, 
-    enum: ['fixed_cash', 'percent_portfolio', 'fixed_shares'], 
-    required: true 
+  mode: {
+    type: String,
+    enum: ['fixed_cash', 'percent_portfolio', 'fixed_shares'],
+    required: true
   },
   value: { type: Number, required: true },
 }, { _id: false });
@@ -53,25 +54,25 @@ const ForwardTestStrategySchema = new Schema<IForwardTestStrategy>({
   userId: { type: String, required: true, index: true },
   name: { type: String, required: true },
   symbol: { type: String, required: true, uppercase: true, index: true },
-  interval: { type: String, enum: ['1d', '4h'], required: true },
-  
+  interval: { type: String, enum: ['1d', '4h', '1wk'], required: true },
+
   indicatorConfig: { type: Schema.Types.Mixed, required: true },
   entryRule: { type: Schema.Types.Mixed, required: true },
   exitRule: { type: Schema.Types.Mixed, required: true },
   positionSizing: { type: PositionSizingSchema, required: true },
-  
-  executionMode: { 
-    type: String, 
-    enum: ['shadow', 'auto', 'propose_only'], 
-    default: 'shadow' 
+
+  executionMode: {
+    type: String,
+    enum: ['shadow', 'auto', 'propose_only'],
+    default: 'shadow'
   },
-  status: { 
-    type: String, 
-    enum: ['draft', 'running', 'paused', 'stopped'], 
-    default: 'draft' 
+  status: {
+    type: String,
+    enum: ['draft', 'running', 'paused', 'stopped'],
+    default: 'draft'
   },
   capitalAllocated: { type: Schema.Types.Decimal128, required: true },
-  
+
   cooldownHours: { type: Number, default: 24 },
   timeStop: { type: Number, default: null },
   version: { type: Number, default: 1 },
@@ -81,7 +82,7 @@ const ForwardTestStrategySchema = new Schema<IForwardTestStrategy>({
   nextEvaluationAt: { type: Date, default: null },
   signalsLogged: { type: Number, default: 0 },
   tradesExecuted: { type: Number, default: 0 },
-  
+
   shadowPnl: { type: Schema.Types.Decimal128, default: Types.Decimal128.fromString('0') },
   shadowTrades: { type: Number, default: 0 },
   shadowCurrentPosition: { type: Boolean, default: false },

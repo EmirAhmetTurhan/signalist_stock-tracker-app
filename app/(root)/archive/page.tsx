@@ -12,11 +12,15 @@ export default function ArchivePage() {
       {/* Separator / title for the bottom section */}
       <div className="my-8 flex items-center">
         <div className="flex-1 border-t border-gray-800/50"></div>
-        <span className="mx-4 text-xs font-medium text-gray-500 tracking-wider uppercase">System Processes</span>
+        <div className="mx-4 flex items-center gap-2 text-xs font-medium text-gray-500 tracking-wider uppercase">
+          <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
+          Live Processes
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+        </div>
         <div className="flex-1 border-t border-gray-800/50"></div>
       </div>
 
-      {/* Lower section: Transient data (Active/Recent AI Jobs) */}
+      {/* Lower section: Transient data (Active Jobs & Discovery Tasks) */}
       <JobsSection />
     </div>
   );

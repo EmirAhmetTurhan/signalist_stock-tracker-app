@@ -12,24 +12,24 @@ export function computeALMA(data: { time: string | number; close: number }[], wi
         weightSum += w;
     }
 
-    const almaData = [];
+    const almaData: ({ time: string | number; value?: number })[] = new Array(data.length);
+
+    // Fill all entries with time and undefined value (dense array, warmup-safe)
     for (let i = 0; i < data.length; i++) {
-        if (i < window - 1) {
-            continue;
-        }
+        almaData[i] = { time: data[i].time, value: undefined };
+    }
+
+    for (let i = 0; i < data.length; i++) {
+        if (i < window - 1) continue;
 
         let weightedSum = 0;
         for (let j = 0; j < window; j++) {
-            // i is current index. We need to go back up to window-1.
-            // j=0 is oldest data point in the window, j=window-1 is newest.
-            // In typical ALMA implementation:
-            // price[0] is oldest, price[window-1] is newest in the window array.
             const priceIndex = i - (window - 1) + j;
             weightedSum += data[priceIndex].close * weights[j];
         }
 
         const alma = weightedSum / weightSum;
-        almaData.push({ time: data[i].time, value: alma });
+        almaData[i] = { time: data[i].time, value: alma };
     }
 
     return almaData;

@@ -8,7 +8,7 @@ export type CMFInput = {
 
 export type CMFPoint = {
     time: number;
-    value: number;
+    value?: number;
 };
 
 export function computeCMF(candles: CMFInput[], period = 20): CMFPoint[] {
@@ -32,7 +32,12 @@ export function computeCMF(candles: CMFInput[], period = 20): CMFPoint[] {
         vols.push(volume);
     }
 
-    const out: CMFPoint[] = [];
+    const out: CMFPoint[] = new Array(candles.length);
+
+    // Fill all entries with time and undefined value (dense array, warmup-safe)
+    for (let i = 0; i < candles.length; i++) {
+        out[i] = { time: candles[i].time, value: undefined };
+    }
 
     let sumMFV = 0;
     let sumVol = 0;
@@ -51,10 +56,10 @@ export function computeCMF(candles: CMFInput[], period = 20): CMFPoint[] {
             if (sumVol !== 0) {
                 cmfValue = sumMFV / sumVol;
             }
-            out.push({
+            out[i] = {
                 time: candles[i].time,
                 value: cmfValue
-            });
+            };
         }
     }
 

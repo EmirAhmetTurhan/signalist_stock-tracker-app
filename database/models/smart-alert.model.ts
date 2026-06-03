@@ -1,4 +1,5 @@
 import mongoose, { Document, Model, Schema, models } from 'mongoose';
+import type { Timeframe } from '@/lib/ta/types';
 
 export interface SmartCondition {
   indicator: string;
@@ -11,10 +12,10 @@ export interface SmartAlert extends Document {
   email: string;
   name: string;
   symbol: string;
-  interval: '1d' | '4h';
+  interval: Timeframe;
   conditions: SmartCondition[];
   active: boolean;
-  frequency: 'daily' | '4h' | '1h';
+  frequency: 'daily' | '4h';
   lastTriggeredAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -35,10 +36,10 @@ const SmartAlertSchema = new Schema<SmartAlert>(
     email: { type: String, required: true },
     name: { type: String, required: true, maxlength: 100 },
     symbol: { type: String, required: true, uppercase: true, trim: true },
-    interval: { type: String, enum: ['1d', '4h'], default: '1d' },
+    interval: { type: String, enum: ['1d', '4h', '1wk'], default: '1d' },
     conditions: { type: [SmartConditionSchema], required: true },
     active: { type: Boolean, default: true },
-    frequency: { type: String, enum: ['daily', '4h', '1h'], default: 'daily' },
+    frequency: { type: String, enum: ['daily', '4h'], default: 'daily' },
     lastTriggeredAt: { type: Date, default: null },
   },
   { timestamps: true }

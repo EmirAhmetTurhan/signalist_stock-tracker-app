@@ -4,12 +4,13 @@ import { connectToDatabase } from '@/database/mongoose';
 import { auth } from '@/lib/better-auth/auth';
 import { headers } from 'next/headers';
 import { SmartAlert } from '@/database/models/smart-alert.model';
+import type { Timeframe } from '@/lib/ta/types';
 
 export async function createSmartAlert(input: {
   name: string;
   symbol: string;
-  interval: '1d' | '4h';
-  frequency: 'daily' | '4h' | '1h';
+  interval: Timeframe;
+  frequency: 'daily' | '4h';
   conditions: Array<{ indicator: string; operator: '<' | '>' | 'cross_above' | 'cross_below'; value: number }>;
   overrideUserId?: string;
 }): Promise<{ success: boolean; id?: string; error?: string }> {

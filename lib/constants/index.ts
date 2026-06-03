@@ -62,8 +62,10 @@ export {
 
 export {
     INDICATOR_REGISTRY,
+    INDICATOR_KEYS,
     INDICATOR_NAMES,
     INDICATOR_NAMES_STRING,
     OPTIMIZABLE_INDICATOR_NAMES,
+    DEFAULT_PARAMS,
 } from './indicators';
 export type { IndicatorMeta } from './indicators';

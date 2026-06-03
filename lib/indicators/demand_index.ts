@@ -1,3 +1,5 @@
+import { createEMA, createSMA } from './_math';
+
 export type DIInput = {
     time: number; // UTCTimestamp
     high: number;
@@ -12,124 +14,60 @@ export type DIPoint = {
     value: number;
 };
 
-function calculateEMA(values: number[], period: number): number[] {
-    if (values.length === 0) return [];
-    const k = 2 / (period + 1);
-    const out = new Array(values.length).fill(0);
-
-    out[0] = values[0];
-
-    for (let i = 1; i < values.length; i++) {
-        const val = Number.isFinite(values[i]) ? values[i] : 0;
-        out[i] = val * k + out[i - 1] * (1 - k);
-    }
-    return out;
-}
-
-function calculateSMA(values: number[], period: number): number[] {
-    const out = new Array(values.length).fill(0);
-    let sum = 0;
-    for (let i = 0; i < values.length; i++) {
-        sum += values[i];
-        if (i >= period) {
-            sum -= values[i - period];
-        }
-
-        if (i >= period - 1) {
-            out[i] = sum / period;
-        } else {
-            out[i] = sum / (i + 1);
-        }
-    }
-    return out;
-}
-
-function highest(values: number[], index: number, length: number): number {
-    let maxVal = -Infinity;
-    const start = Math.max(0, index - length + 1);
-    for (let i = start; i <= index; i++) {
-        if (values[i] > maxVal) maxVal = values[i];
-    }
-    return maxVal;
-}
-
-function lowest(values: number[], index: number, length: number): number {
-    let minVal = Infinity;
-    const start = Math.max(0, index - length + 1);
-    for (let i = start; i <= index; i++) {
-        if (values[i] < minVal) minVal = values[i];
-    }
-    return minVal;
-}
-
+/**
+ * Demand Index (James Sibbet)
+ *
+ * Pine Script reference:
+ *   bp = volume * (close - low) / (high - low)      // buy pressure
+ *   sp = volume * (high - close) / (high - low)      // sell pressure
+ *   demand = ta.ema(bp, DI_LEN)
+ *   supply = ta.ema(sp, DI_LEN)
+ *   di = demand / supply                             // ratio (≈1.0 when balanced)
+ *   di_smoothed = ta.sma(di, DI_SMOOTH)
+ *
+ * ÖNCEKİ formül (hatalı): signed-volume EMA → volume-scale değerler (34M)
+ * YENİ formül: James Sibbet buy/sell pressure ratio → 0..∞ (≈0.4-1.5 tipik)
+ */
 export function computeDemandIndex(
     candles: DIInput[],
-    period = 10,
-    smooth = 10,
-    priceRange = 2
+    length = 13,
+    smooth = 8
 ): DIPoint[] {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
-    const highs = candles.map(c => c.high);
-    const lows = candles.map(c => c.low);
+    const eps = 1e-10;
 
-    const rawVaSeries: number[] = [];
+    // Buy pressure / sell pressure (James Sibbet)
+    const bp: number[] = candles.map((c) => {
+        const range = c.high - c.low;
+        if (range < eps) return c.volume * 0.5; // flat bar → equal pressure
+        return c.volume * (c.close - c.low) / range;
+    });
+    const sp: number[] = candles.map((c) => {
+        const range = c.high - c.low;
+        if (range < eps) return c.volume * 0.5; // flat bar → equal pressure
+        return c.volume * (c.high - c.close) / range;
+    });
+
+    // EMA of buy/sell pressure
+    const demand = createEMA(bp, length, 'sma');
+    const supply = createEMA(sp, length, 'sma');
+
+    // DI ratio: demand / supply
+    const diRatio: (number | undefined)[] = new Array(candles.length).fill(undefined);
     for (let i = 0; i < candles.length; i++) {
-        const h = highest(highs, i, priceRange);
-        const l = lowest(lows, i, priceRange);
-        rawVaSeries.push(h - l);
+        const d = demand[i];
+        const s = supply[i];
+        if (typeof d === 'number' && typeof s === 'number') {
+            diRatio[i] = d / (s + eps);
+        }
     }
 
-    const vaSeries = calculateSMA(rawVaSeries, period);
-
-    const diRaw: number[] = [];
-
-    for (let i = 0; i < candles.length; i++) {
-        const c = candles[i];
-        const open = c.open;
-        const close = c.close;
-        const volume = c.volume;
-
-        let p = open !== 0 ? (close - open) / open : 0;
-
-        let va = vaSeries[i];
-        if (va === 0) va = 1;
-
-        const k = (3 * close) / va;
-
-        p = p * k;
-
-        let bp = 0;
-        let sp = 0;
-
-        if (close > open) {
-            bp = volume;
-            sp = p !== 0 ? volume / p : volume; // p 0 ise koruma
-        } else {
-            bp = p !== 0 ? volume / p : volume;
-            sp = volume;
-        }
-
-        let di = 0;
-
-        const absBp = Math.abs(bp);
-        const absSp = Math.abs(sp);
-
-        if (absBp > absSp && bp !== 0) {
-            di = sp / bp;
-        } else if (sp !== 0) {
-            di = bp / sp;
-        } else {
-            di = 0;
-        }
-
-        diRaw.push(di);
-    }
-
-    const diSmoothed = calculateEMA(diRaw, smooth);
+    // SMA smoothing of DI ratio
+    const smoothed = createSMA(diRatio, smooth);
 
     return candles.map((c, i) => ({
         time: c.time,
-        value: diSmoothed[i]
+        value: smoothed[i] ?? 0
     }));
 }

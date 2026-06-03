@@ -23,7 +23,7 @@ const useTradingViewWidget = (scriptUrl: string, config: Record<string, unknown>
         containerRef.current.innerHTML = '';
       }
     };
-  }, [scriptUrl, config, height]);
+  }, [scriptUrl, JSON.stringify(config), height]);
 
   return containerRef;
 };

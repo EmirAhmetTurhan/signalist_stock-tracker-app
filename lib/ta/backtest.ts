@@ -8,6 +8,15 @@ export type BacktestHistoryItem = {
     isWin: boolean;
 };
 
+import {
+    macdSignal, rsiSignal, stochRsiSignal, waveTrendSignal,
+    dmiSignal, mfiSignal, smiSignal, aoSignal, cciSignal,
+    wprSignal, diSignal, cmfSignal, adSignal, netvolSignal,
+    madrSignal, almaSignal, bbSignal,
+} from './signal-registry';
+import type { SignalDir } from './signal-registry';
+import { assertAllowedTimeframe } from './timeframe-guard';
+
 export function calculateSMA(data: number[], window: number) {
     if (data.length < window) return null;
     let sum = 0;
@@ -18,8 +27,9 @@ export function calculateSMA(data: number[], window: number) {
 export function calculateWinRate(
     indicatorName: string,
     candles: Candle[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: any,
-    config: { lookForward: number } = { lookForward: 5 }
+    config: { lookForward: number; interval?: string } = { lookForward: 5 }
 ) {
     if (!candles || candles.length === 0 || !data) return { winRate: 0, totalSignals: 0, wins: 0, history: [] as BacktestHistoryItem[] };
 
@@ -28,115 +38,104 @@ export function calculateWinRate(
     const history: BacktestHistoryItem[] = [];
     const { lookForward } = config;
 
-    const startIndex = 50;
+    // ── Timeframe Isolation Guard ──────────────────────────────────
+    const effectiveInterval = assertAllowedTimeframe(config.interval || '1d', 'backtest.calculateWinRate');
+
+    // Dynamic warmup based on interval — longer intervals need fewer candles skipped
+    const warmupMap: Record<string, number> = {
+        '1d': 50,
+        '4h': 50,
+        '1wk': 20,
+    };
+    const startIndex = warmupMap[effectiveInterval] ?? 50;
     const endIndex = candles.length - lookForward;
 
     for (let i = startIndex; i < endIndex; i++) {
         const currentPrice = candles[i].close;
         const futurePrice = candles[i + lookForward].close;
 
-        let signal: "BUY" | "SELL" | null = null;
+        let signal: SignalDir = null;
 
         // --- 1. MACD ---
         if (indicatorName === "MACD" && data.macd && data.signal) {
             const macd = data.macd[i]?.value;
             const sig = data.signal[i]?.value;
-            if (macd > sig) signal = "BUY";
-            else if (macd < sig) signal = "SELL";
+            if (macd !== undefined && sig !== undefined) signal = macdSignal(macd, sig);
         }
 
         // --- 2. RSI ---
         else if (indicatorName === "RSI" && data.rsi && data.ma) {
             const rsi = data.rsi[i]?.value;
             const ma = data.ma[i]?.value;
-            if (rsi > ma) signal = "BUY";
-            else signal = "SELL";
+            if (rsi !== undefined && ma !== undefined) signal = rsiSignal(rsi, ma);
         }
 
         // --- 3. STOCH RSI ---
         else if (indicatorName === "STOCHRSI" && data.k && data.d) {
             const k = data.k[i]?.value;
             const d = data.d[i]?.value;
-            if (k > d) signal = "BUY";
-            else if (k < d) signal = "SELL";
+            if (k !== undefined && d !== undefined) signal = stochRsiSignal(k, d);
         }
 
         // --- 4. WAVE TREND ---
         else if (indicatorName === "WAVETREND" && data.wt1 && data.wt2) {
             const wt1 = data.wt1[i]?.value;
             const wt2 = data.wt2[i]?.value;
-            if (wt1 > wt2) signal = "BUY";
-            else if (wt1 < wt2) signal = "SELL";
+            if (wt1 !== undefined && wt2 !== undefined) signal = waveTrendSignal(wt1, wt2);
         }
 
         // --- 5. DMI ---
         else if (indicatorName === "DMI" && data.plusDI && data.minusDI) {
             const plus = data.plusDI[i]?.value;
             const minus = data.minusDI[i]?.value;
-            if (plus > minus) signal = "BUY";
-            else if (minus > plus) signal = "SELL";
+            if (plus !== undefined && minus !== undefined) signal = dmiSignal(plus, minus);
         }
 
         // --- 6. MFI ---
         else if (indicatorName === "MFI" && data.mfi) {
-            const last = data.mfi[i]?.value;
+            const cur = data.mfi[i]?.value;
             const prev = data.mfi[i - 1]?.value;
-            if (last < 20) signal = "BUY";
-            else if (last > 80) signal = "SELL";
-            else if (last > prev) signal = "BUY";
-            else if (last < prev) signal = "SELL";
+            if (cur !== undefined && prev !== undefined) signal = mfiSignal(cur, prev);
         }
 
         // --- 7. SMI ---
         else if (indicatorName === "SMI" && data.smi && data.signal) {
             const smi = data.smi[i]?.value;
             const sig = data.signal[i]?.value;
-            if (smi > sig) signal = "BUY";
-            else if (smi < sig) signal = "SELL";
+            if (smi !== undefined && sig !== undefined) signal = smiSignal(smi, sig);
         }
 
         // --- 8. AO ---
         else if (indicatorName === "AO" && data[i]) {
-            const curr = data[i]?.value;
+            const cur = data[i]?.value;
             const prev = data[i - 1]?.value;
-            const rising = curr > prev;
-            if (curr > 0) {
-                signal = rising ? "BUY" : "SELL";
-            } else {
-                signal = !rising ? "SELL" : "BUY";
-            }
+            if (cur !== undefined && prev !== undefined) signal = aoSignal(cur, prev);
         }
 
         // --- 9. CCI ---
         else if (indicatorName === "CCI" && data.cci && data.ma) {
             const cci = data.cci[i]?.value;
             const ma = data.ma[i]?.value;
-            if (cci > ma) signal = "BUY";
-            else signal = "SELL";
+            if (cci !== undefined && ma !== undefined) signal = cciSignal(cci, ma);
         }
 
         // --- 10. WPR ---
         else if (indicatorName === "WPR" && data[i]) {
             const cur = data[i]?.value;
             const prev = data[i - 1]?.value;
-            if (cur < -80) signal = "BUY";
-            else if (cur > -20) signal = "SELL";
-            else signal = cur > prev ? "BUY" : "SELL";
+            if (cur !== undefined && prev !== undefined) signal = wprSignal(cur, prev);
         }
 
         // --- 11. DI ---
         else if (indicatorName === "DI" && data[i]) {
             const cur = data[i]?.value;
-            const prev = data[i - 1]?.value;
-            if (cur > 0) signal = "BUY";
-            else signal = "SELL";
+            if (cur !== undefined) signal = diSignal(cur);
         }
 
         // --- 12. CMF ---
         else if (indicatorName === "CMF" && data[i]) {
             const val = data[i]?.value;
-            if (val > 0) signal = "BUY";
-            else signal = "SELL";
+            if (val !== undefined) signal = cmfSignal(val);
         }
 
         // --- 13. AD ---
@@ -147,27 +146,44 @@ export function calculateWinRate(
             }
             if (values.length >= 22) {
                 const cur = values[0];
-                // SMA yalnızca geçmiş 21 değerden (values[1]..values[21]), mevcut gün hariç
                 let sum = 0; for (let s = 1; s <= 21; s++) sum += values[s];
                 const curSMA = sum / 21;
-                if (cur > curSMA) signal = "BUY";
-                else signal = "SELL";
+                signal = adSignal(cur, curSMA);
             }
         }
 
         // --- 14. Net Volume ---
         else if (indicatorName === "NETVOL" && data[i]) {
             const cur = data[i]?.value;
-            const prev = data[i - 1]?.value;
-            if (cur > 0) signal = "BUY";
-            else if (cur < 0) signal = "SELL";
+            if (cur !== undefined) signal = netvolSignal(cur);
         }
 
         // --- 15. MADR ---
         else if (indicatorName === "MADR" && data[i]) {
             const cur = data[i]?.value;
-            if (cur > 0) signal = "BUY";
-            else signal = "SELL";
+            if (cur !== undefined) signal = madrSignal(cur);
+        }
+
+        // --- 16. ALMA ---
+        else if (indicatorName === "ALMA" && data[i]) {
+            const curA = data[i]?.value;
+            const prevA = data[i - 1]?.value;
+            if (curA !== undefined && prevA !== undefined) {
+                const curC = candles[i].close;
+                const prevC = candles[i - 1].close;
+                signal = almaSignal(curA, prevA, curC, prevC);
+            }
+        }
+
+        // --- 17. Bollinger Bands ---
+        else if (indicatorName === "BOLLINGER" && data[i]) {
+            const curBB = data[i];
+            const prevBB = data[i - 1];
+            if (curBB && prevBB && curBB.lower !== undefined && curBB.upper !== undefined) {
+                const curC = candles[i].close;
+                const prevC = candles[i - 1].close;
+                signal = bbSignal(curBB, prevBB, curC, prevC);
+            }
         }
 
         if (signal) {

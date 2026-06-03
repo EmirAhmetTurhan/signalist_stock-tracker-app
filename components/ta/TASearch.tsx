@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { TrendingUp, Loader2 } from "lucide-react";
+import { TrendingUp, Loader2, Search } from "lucide-react";
 import { searchStocks } from "@/lib/actions/finnhub.actions";
 
 // Simple search dialog used in T/A page. No watchlist interactions.
@@ -61,7 +61,10 @@ const TASearch = ({ initialStocks }: { initialStocks: StockWithWatchlistStatus[]
 
   return (
     <>
-      <Button onClick={() => setOpen(true)} className="search-btn">Search Brands</Button>
+      <Button variant="secondary" onClick={() => setOpen(true)} className="search-btn">
+        <Search className="w-3.5 h-3.5 opacity-60" />
+        Search
+      </Button>
       <CommandDialog open={open} onOpenChange={setOpen} className="search-dialog">
         <div className="search-field">
           <CommandInput

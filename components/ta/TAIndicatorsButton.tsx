@@ -1,275 +1,460 @@
 "use client";
 
-import { useMemo } from "react";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuCheckboxItem, // Bu bileşeni import ediyoruz
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { PARAM_DEFAULTS_STR } from "@/lib/constants/indicator-params";
+import {
+    INDICATOR_DETAILS,
+    CATEGORIES,
+    getIndicatorInfo,
+    getCategoryLabel,
+} from "@/lib/constants/indicator-categories";
+import TAGlassDialog from "./TAGlassDialog";
+import { cn } from "@/lib/utils";
+import {
+    Search,
+    Sparkles,
+    Check,
+    Layers,
+    ChevronDown,
+    ArrowUpDown,
+    SlidersHorizontal,
+    SortAsc,
+    LayoutGrid,
+    Star,
+} from "lucide-react";
+
+// ─── Indicator Categories (grouped) ──────────────────────────────────────────
+
+const groupedIndicators = CATEGORIES.map((cat) => ({
+    ...cat,
+    items: INDICATOR_DETAILS.filter((ind) => ind.category === cat.key),
+})).filter((g) => g.items.length > 0);
+
+type SortMode = "category" | "alphabetical" | "popularity";
+
+// ─── Bileşen ──────────────────────────────────────────────────────────────────
 
 const TAIndicatorsButton = () => {
     const router = useRouter();
     const pathname = usePathname();
     const searchParams = useSearchParams();
+    const filtersRef = useRef<HTMLDivElement>(null);
 
     const symbol = searchParams.get("symbol") || "";
     const indParam = searchParams.get("ind") || "";
 
-    const selected = useMemo(() =>
-        new Set(indParam.split(",").filter(Boolean).map((s) => s.trim().toLowerCase())),
-        [indParam]);
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [selectedIndicators, setSelectedIndicators] = useState<Set<string>>(new Set());
+    const [sortMode, setSortMode] = useState<SortMode>("category");
+    const [showFilters, setShowFilters] = useState(false);
 
-    const macdFast = searchParams.get("macd_fast") || "12";
-    const macdSlow = searchParams.get("macd_slow") || "26";
-    const macdSig = searchParams.get("macd_sig") || "9";
+    // Close filters dropdown on outside click
+    useEffect(() => {
+        if (!showFilters) return;
+        const handler = (e: MouseEvent) => {
+            if (filtersRef.current && !filtersRef.current.contains(e.target as Node)) {
+                setShowFilters(false);
+            }
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, [showFilters]);
 
-    const stochRsiLen = searchParams.get("stoch_rsi_len") || "14";
-    const stochLen = searchParams.get("stoch_len") || "14";
-    const stochK = searchParams.get("stoch_k") || "3";
-    const stochD = searchParams.get("stoch_d") || "3";
-
-    const wtAvg = searchParams.get("wt_avg_len") || "10";
-    const wtChan = searchParams.get("wt_channel_len") || "21";
-    const wtMa = searchParams.get("wt_ma_len") || "4";
-
-    const dmiLen = searchParams.get("dmi_di_len") || "14";
-    const dmiAdxSmooth = searchParams.get("dmi_adx_smooth") || "14";
-    const mfiLen = searchParams.get("mfi_period") || "14";
-
-    const smiLong = searchParams.get("smi_long_len") || "20";
-    const smiShort = searchParams.get("smi_short_len") || "5";
-    const smiSig = searchParams.get("smi_sig_len") || "5";
-
-    const rsiLen = searchParams.get("rsi_len") || "14";
-    const rsiMaLen = searchParams.get("rsi_ma_len") || "14";
-
-    const cciLen = searchParams.get("cci_len") || "20";
-    const cciMaLen = searchParams.get("cci_ma_len") || "14";
-
-    const wprLen = searchParams.get("wpr_len") || "14";
-
-    const diLen = searchParams.get("di_len") || "10";
-    const diSmooth = searchParams.get("di_smooth") || "10";
-    const diK = searchParams.get("di_k") || "2";
-
-    const cmfLen = searchParams.get("cmf_len") || "20";
-
-    const madrLen = searchParams.get("madr_len") || "21";
-
-    const almaLen = searchParams.get("alma_len") || "9";
-    const almaOffset = searchParams.get("alma_offset") || "0.85";
-    const almaSigma = searchParams.get("alma_sigma") || "6";
-
-    const bbLen = searchParams.get("bb_len") || "20";
-    const bbStdDev = searchParams.get("bb_stddev") || "2";
-
-    const toggle = (key: string) => {
-        const params = new URLSearchParams(searchParams.toString());
-
-        const currentIndStr = params.get("ind") || "";
-        const currentSet = new Set(
-            currentIndStr.split(",").filter(Boolean).map(s => s.trim().toLowerCase())
+    // Load current selection when dialog opens
+    const openDialog = useCallback(() => {
+        const current = new Set(
+            indParam.split(",").filter(Boolean).map((s) => s.trim().toLowerCase())
         );
+        setSelectedIndicators(current);
+        setSearchQuery("");
+        setSortMode("category");
+        setShowFilters(false);
+        setDialogOpen(true);
+    }, [indParam]);
 
-        if (currentSet.has(key)) {
-            currentSet.delete(key);
-        } else {
-            currentSet.add(key);
+    // Toggle indicator in local selection
+    const toggleSelection = useCallback((key: string) => {
+        setSelectedIndicators((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) {
+                next.delete(key);
+            } else {
+                next.add(key);
+            }
+            return next;
+        });
+    }, []);
+
+    // Apply (just update URL)
+    const applySelection = useCallback(
+        (optimize: boolean) => {
+            const params = new URLSearchParams(searchParams.toString());
+            const newIndStr = Array.from(selectedIndicators).join(",");
+
+            if (newIndStr) {
+                params.set("ind", newIndStr);
+            } else {
+                params.delete("ind");
+            }
+
+            // Optimize flag
+            if (optimize) {
+                params.set("optimize", "1");
+            } else {
+                params.delete("optimize");
+            }
+
+            if (symbol) params.set("symbol", symbol);
+
+            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+            router.refresh();
+            setDialogOpen(false);
+        },
+        [selectedIndicators, searchParams, pathname, router, symbol]
+    );
+
+    // All indicators flat-sorted alphabetically
+    const allIndicatorsSorted = useMemo(() => {
+        return [...INDICATOR_DETAILS].sort((a, b) => a.label.localeCompare(b.label));
+    }, []);
+
+    // All indicators flat-sorted by popularity (descending)
+    const allIndicatorsByPopularity = useMemo(() => {
+        return [...INDICATOR_DETAILS].sort((a, b) => b.popularity - a.popularity);
+    }, []);
+
+    // Filtered indicators based on search
+    const filteredGroups = useMemo(() => {
+        if (!searchQuery.trim()) {
+            if (sortMode === "alphabetical") {
+                return [{ key: "all", icon: "📊", label: "All Indicators", items: allIndicatorsSorted }];
+            }
+            if (sortMode === "popularity") {
+                return [{ key: "all", icon: "⭐", label: "By Popularity", items: allIndicatorsByPopularity }];
+            }
+            return groupedIndicators;
         }
 
-        const newIndStr = Array.from(currentSet).join(",");
+        const q = searchQuery.toLowerCase();
+        const filterFn = (ind: typeof INDICATOR_DETAILS[number]) =>
+            ind.label.toLowerCase().includes(q) ||
+            ind.full.toLowerCase().includes(q) ||
+            ind.key.toLowerCase().includes(q);
 
-        if (newIndStr) {
-            params.set("ind", newIndStr);
-        } else {
-            params.delete("ind");
+        if (sortMode === "alphabetical") {
+            const filtered = allIndicatorsSorted.filter(filterFn);
+            return filtered.length > 0
+                ? [{ key: "all", icon: "📊", label: "All Indicators", items: filtered }]
+                : [];
         }
 
-        if (symbol) params.set("symbol", symbol);
+        if (sortMode === "popularity") {
+            const filtered = allIndicatorsByPopularity.filter(filterFn);
+            return filtered.length > 0
+                ? [{ key: "all", icon: "⭐", label: "By Popularity", items: filtered }]
+                : [];
+        }
 
-        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    };
+        return groupedIndicators
+            .map((g) => ({
+                ...g,
+                items: g.items.filter(filterFn),
+            }))
+            .filter((g) => g.items.length > 0);
+    }, [searchQuery, sortMode, allIndicatorsSorted, allIndicatorsByPopularity]);
+
+    const selectedCount = selectedIndicators.size;
 
     return (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button variant="secondary" className="search-btn">Indicators</Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="text-gray-100 max-h-[400px] overflow-y-auto">
-                <DropdownMenuLabel>Indicators</DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-gray-600" />
+        <>
+            <Button
+                variant="secondary"
+                className={cn(
+                    "search-btn",
+                    selectedCount > 0 && "border-yellow-500/40 text-yellow-400"
+                )}
+                onClick={openDialog}
+            >
+                <Layers className="w-3.5 h-3.5 mr-1.5 opacity-60" />
+                Indicators
+                {selectedCount > 0 && (
+                    <span className="ml-1.5 text-[10px] font-bold bg-yellow-500/20 text-yellow-400 px-1.5 py-0.5 rounded-full">
+                        {selectedCount}
+                    </span>
+                )}
+            </Button>
 
+            <TAGlassDialog
+                open={dialogOpen}
+                onOpenChange={setDialogOpen}
+                title="Indicators"
+                icon={<Layers className="w-4 h-4 text-yellow-400" />}
+                width="max-w-lg"
+                footer={
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">
+                            {selectedCount > 0
+                                ? `${selectedCount} indicator${selectedCount > 1 ? "s" : ""} selected`
+                                : "Select indicators to analyze"}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            {selectedCount > 0 && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs text-gray-400 hover:text-gray-200"
+                                    onClick={() => setSelectedIndicators(new Set())}
+                                >
+                                    Clear
+                                </Button>
+                            )}
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                className={cn(
+                                    "text-xs font-medium transition-all",
+                                    selectedCount > 0
+                                        ? "bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
+                                        : "bg-gray-800 border border-gray-700 text-gray-600 cursor-not-allowed"
+                                )}
+                                disabled={selectedCount === 0}
+                                onClick={() => applySelection(false)}
+                            >
+                                <Check className="w-3.5 h-3.5 mr-1" />
+                                Apply
+                            </Button>
+                            {selectedCount > 0 && (
+                                <Button
+                                    size="sm"
+                                    className={cn(
+                                        "text-xs font-medium transition-all",
+                                        "bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
+                                    )}
+                                    onClick={() => applySelection(true)}
+                                >
+                                    <Sparkles className="w-3.5 h-3.5 mr-1" />
+                                    Apply & Optimize
+                                </Button>
+                            )}
+                        </div>
+                    </div>
+                }
+            >
+                {/* Search + Filters row */}
+                <div className="flex items-center gap-2 mb-3">
+                    {/* Search input — ~75% */}
+                    <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Filter indicators..."
+                            className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg
+                                bg-gray-800 border border-gray-700 text-gray-200
+                                placeholder:text-gray-500
+                                focus:outline-none focus:border-yellow-500/40 focus:bg-gray-700
+                                transition-colors"
+                        />
+                    </div>
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("macd")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("macd")}
-                >
-                    MACD ({macdFast}, {macdSlow}, {macdSig})
-                </DropdownMenuCheckboxItem>
+                    {/* Filters button — ~25% */}
+                    <div className="relative shrink-0" ref={filtersRef}>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            className={cn(
+                                "text-xs gap-1.5 px-2.5 py-1.5 h-[30px]",
+                                sortMode !== "category"
+                                    ? "border-yellow-500/30 text-yellow-400"
+                                    : "border-gray-700 text-gray-400"
+                            )}
+                            onClick={() => setShowFilters((v) => !v)}
+                        >
+                            <SlidersHorizontal className="w-3 h-3" />
+                            <span className="hidden sm:inline">Filters</span>
+                        </Button>
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("stochrsi")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("stochrsi")}
-                >
-                    Stochastic RSI ({stochRsiLen}, {stochLen}, {stochK}, {stochD})
-                </DropdownMenuCheckboxItem>
+                        {/* Filters dropdown */}
+                        {showFilters && (
+                            <div className="absolute right-0 top-full mt-1 w-44 z-50
+                                bg-gray-900 border border-gray-700 rounded-lg shadow-lg py-1">
+                                <div className="px-3 py-1.5 text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                                    Sort by
+                                </div>
+                                <button
+                                    onClick={() => { setSortMode("category"); setShowFilters(false); }}
+                                    className={cn(
+                                        "w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors text-left",
+                                        sortMode === "category"
+                                            ? "text-yellow-400 bg-yellow-500/10"
+                                            : "text-gray-400 hover:bg-white/5"
+                                    )}
+                                >
+                                    <LayoutGrid className="w-3 h-3 shrink-0" />
+                                    <span>By Category</span>
+                                    {sortMode === "category" && <Check className="w-3 h-3 ml-auto" />}
+                                </button>
+                                <button
+                                    onClick={() => { setSortMode("alphabetical"); setShowFilters(false); }}
+                                    className={cn(
+                                        "w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors text-left",
+                                        sortMode === "alphabetical"
+                                            ? "text-yellow-400 bg-yellow-500/10"
+                                            : "text-gray-400 hover:bg-white/5"
+                                    )}
+                                >
+                                    <SortAsc className="w-3 h-3 shrink-0" />
+                                    <span>Alphabetical A–Z</span>
+                                    {sortMode === "alphabetical" && <Check className="w-3 h-3 ml-auto" />}
+                                </button>
+                                <button
+                                    onClick={() => { setSortMode("popularity"); setShowFilters(false); }}
+                                    className={cn(
+                                        "w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors text-left",
+                                        sortMode === "popularity"
+                                            ? "text-yellow-400 bg-yellow-500/10"
+                                            : "text-gray-400 hover:bg-white/5"
+                                    )}
+                                >
+                                    <Star className="w-3 h-3 shrink-0" />
+                                    <span>By Popularity</span>
+                                    {sortMode === "popularity" && <Check className="w-3 h-3 ml-auto" />}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("wavetrend")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("wavetrend")}
-                >
-                    WaveTrend ({wtAvg}, {wtChan}, {wtMa})
-                </DropdownMenuCheckboxItem>
+                {/* Indicator list by category */}
+                <div className="space-y-3">
+                    {filteredGroups.map((group) => (
+                        <div key={group.key}>
+                            {/* Category header — only show when sortMode === "category" */}
+                            {sortMode === "category" && (
+                                <div className="flex items-center gap-1.5 mb-1.5">
+                                    <span className="text-xs opacity-60">{group.icon}</span>
+                                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                                        {getCategoryLabel(group.key)}
+                                    </span>
+                                    <span className="text-[10px] text-gray-500 ml-auto">
+                                        {group.items.length}
+                                    </span>
+                                </div>
+                            )}
+                            {sortMode === "popularity" && (
+                                <div className="flex items-center gap-1.5 mb-1.5">
+                                    <Star className="w-3 h-3 text-yellow-500" />
+                                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
+                                        Popularity
+                                    </span>
+                                    <span className="text-[10px] text-gray-500 ml-auto">
+                                        {group.items.length} indicators
+                                    </span>
+                                </div>
+                            )}
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("dmi")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("dmi")}
-                >
-                    DMI ({dmiLen}, {dmiAdxSmooth})
-                </DropdownMenuCheckboxItem>
+                            {/* Items */}
+                            <div className="space-y-0.5">
+                                {group.items.map((ind) => {
+                                    const isSelected = selectedIndicators.has(ind.key);
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("mfi")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("mfi")}
-                >
-                    Money Flow Index ({mfiLen})
-                </DropdownMenuCheckboxItem>
+                                    return (
+                                        <button
+                                            key={ind.key}
+                                            onClick={() => toggleSelection(ind.key)}
+                                            className={cn(
+                                                "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg",
+                                                "transition-all duration-150 text-left",
+                                                isSelected
+                                                    ? "bg-yellow-500/10 border border-yellow-500/30"
+                                                    : "hover:bg-white/5 border border-transparent"
+                                            )}
+                                        >
+                                            {/* Color dot + icon */}
+                                            <div
+                                                className="w-7 h-7 rounded-md flex items-center justify-center text-xs shrink-0"
+                                                style={{
+                                                    backgroundColor: `${ind.color}15`,
+                                                    borderColor: `${ind.color}30`,
+                                                    borderWidth: 1,
+                                                }}
+                                            >
+                                                <span style={{ color: ind.color }}>
+                                                    {ind.icon}
+                                                </span>
+                                            </div>
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("smi")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("smi")}
-                >
-                    SMI Ergodic ({smiLong}, {smiShort}, {smiSig})
-                </DropdownMenuCheckboxItem>
+                                            {/* Info */}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span
+                                                        className="text-sm font-medium text-gray-200"
+                                                        style={{ color: isSelected ? ind.color : undefined }}
+                                                    >
+                                                        {ind.label}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400 truncate hidden sm:inline">
+                                                        {ind.full}
+                                                    </span>
+                                                </div>
+                                                <div className="text-[10px] text-gray-500 truncate mt-0.5">
+                                                    {ind.description}
+                                                </div>
+                                            </div>
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("ao")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("ao")}
-                >
-                    Awesome Oscillator
-                </DropdownMenuCheckboxItem>
+                                            {/* Popularity score — shown only in popularity mode */}
+                                            {sortMode === "popularity" && (
+                                                <div className="flex items-center gap-1.5 shrink-0 mr-1">
+                                                    <div className="w-10 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                                                        <div
+                                                            className="h-full rounded-full transition-all"
+                                                            style={{
+                                                                width: `${ind.popularity}%`,
+                                                                backgroundColor:
+                                                                    ind.popularity >= 80 ? '#22c55e' :
+                                                                        ind.popularity >= 60 ? '#eab308' :
+                                                                            ind.popularity >= 40 ? '#f97316' : '#ef4444'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <span className="text-[10px] font-medium text-gray-400 w-5 text-right">
+                                                        {ind.popularity}
+                                                    </span>
+                                                </div>
+                                            )}
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("rsi")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("rsi")}
-                >
-                    RSI ({rsiLen}, {rsiMaLen})
-                </DropdownMenuCheckboxItem>
+                                            {/* Checkbox — amber */}
+                                            <div
+                                                className={cn(
+                                                    "w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all",
+                                                    isSelected
+                                                        ? "border-yellow-500 bg-yellow-500/20"
+                                                        : "border-gray-600 bg-transparent"
+                                                )}
+                                            >
+                                                {isSelected && (
+                                                    <Check className="w-3 h-3 text-yellow-400" />
+                                                )}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
 
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("cci")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("cci")}
-                >
-                    CCI ({cciLen}, {cciMaLen})
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("wpr")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("wpr")}
-                >
-                    Williams %R ({wprLen})
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("di")}
-                    onSelect={(e) => {
-                        e.preventDefault();
-                        toggle("di");
-                    }}
-                >
-                    Demand Index ({diLen}, {diK}, {diSmooth})
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("cmf")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("cmf")}
-                >
-                    Chaikin Money Flow ({cmfLen})
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("ad")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("ad")}
-                >
-                    Accumulation/Distribution
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("netvol")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("netvol")}
-                >
-                    Net Volume
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("madr")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("madr")}
-                >
-                    MADR ({madrLen})
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("alma")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("alma")}
-                >
-                    ALMA ({almaLen}, {almaOffset}, {almaSigma})
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("bb")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("bb")}
-                >
-                    Bollinger Bands ({bbLen}, {bbStdDev})
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuSeparator className="bg-gray-600" />
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("patterns")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("patterns")}
-                >
-                    Candle Pattern Recognition
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("fractals")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("fractals")}
-                >
-                    Historical Fractals
-                </DropdownMenuCheckboxItem>
-
-                <DropdownMenuCheckboxItem
-                    checked={selected.has("sr")}
-                    onSelect={(e) => e.preventDefault()}
-                    onCheckedChange={() => toggle("sr")}
-                >
-                    Support &amp; Resistance
-                </DropdownMenuCheckboxItem>
-            </DropdownMenuContent>
-        </DropdownMenu>
+                    {filteredGroups.length === 0 && (
+                        <div className="text-center py-6 text-gray-500 text-xs">
+                            No indicators match "{searchQuery}"
+                        </div>
+                    )}
+                </div>
+            </TAGlassDialog>
+        </>
     );
 };
 

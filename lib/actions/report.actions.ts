@@ -3,8 +3,10 @@
 import { connectToDatabase } from '@/database/mongoose';
 import { Report } from '@/database/models/report.model';
 import AIJob from '@/database/models/ai-job.model';
+import Notification from '@/database/models/notification.model';
 import { auth } from '@/lib/better-auth/auth';
 import { headers } from 'next/headers';
+import { inngest } from '@/lib/inngest/client';
 
 export async function getReportByJobId(jobId: string): Promise<{
   success: boolean;
@@ -28,14 +30,14 @@ export async function getReportByJobId(jobId: string): Promise<{
     if (!userId) return { success: false, error: 'Unauthorized' };
 
     await connectToDatabase();
-    
+
     // First, look for the AIJob
     const job = await AIJob.findOne({ jobId, userId }).lean();
     if (!job) {
       // Fallback to Report for older jobs that didn't have AIJob
       const oldReport = await Report.findOne({ jobId, userId }).lean();
       if (!oldReport) return { success: false, error: 'Report not found' };
-      
+
       return {
         success: true,
         report: {
@@ -107,13 +109,13 @@ export async function getAllReports() {
     if (!userId) return { success: false, error: 'Unauthorized' };
 
     await connectToDatabase();
-    
+
     const reports = await Report.find({ userId })
       .sort({ createdAt: -1 })
       .lean();
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       reports: JSON.parse(JSON.stringify(reports))
     };
   } catch (error) {
@@ -132,9 +134,123 @@ export async function getReportById(id: string) {
 
     if (!report) return { success: false, error: 'Report not found' };
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       report: JSON.parse(JSON.stringify(report))
+    };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+// ─── Re-Optimize a previously completed discovery report ────────────────────────────
+
+export async function reoptimizeStrategy(reportId: string) {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+    if (!userId) return { success: false, error: 'Unauthorized' };
+
+    await connectToDatabase();
+
+    // Find the original report
+    const report = await Report.findOne({ _id: reportId, userId }).lean();
+    if (!report) return { success: false, error: 'Report not found' };
+    if (report.type !== 'discovery') {
+      return { success: false, error: 'Only discovery reports can be re-optimized' };
+    }
+
+    const config = report.discoveryConfig as
+      | { symbol?: string; interval?: string; years?: number }
+      | undefined;
+    if (!config?.symbol) {
+      return { success: false, error: 'Invalid discovery configuration — missing symbol' };
+    }
+
+    const symbol = config.symbol;
+    const interval = config.interval || '1d';
+    const years = config.years || 2;
+
+    // Generate new job ID
+    const jobId = `deep-disc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Create AIJob with rerunOfArtifactId linking back to the original report
+    await AIJob.create({
+      jobId,
+      userId,
+      type: 'deep_discovery',
+      status: 'queued',
+      title: `${symbol.toUpperCase()} Deep Discovery (Re-Optimize)`,
+      source: 'discovery',
+      input: { symbol: symbol.toUpperCase(), interval, years },
+      progress: 0,
+      currentPhase: 0,
+      phaseDetail: 'Queued — waiting to start...',
+      steps: [
+        {
+          name: 'init',
+          status: 'completed',
+          detail: 'Re-optimization job created',
+          completedAt: new Date(),
+        },
+      ],
+    });
+
+    // Dispatch Inngest event with rerunOfArtifactId
+    await inngest.send({
+      name: 'discovery/deep-search.started',
+      data: {
+        jobId,
+        symbol: symbol.toUpperCase(),
+        interval,
+        years,
+        userId,
+        rerunOfArtifactId: reportId,
+      },
+    });
+
+    return { success: true, jobId };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Delete a report and cascade-delete all associated notifications.
+ *
+ * This ensures that when a report is removed from the Archive, its
+ * corresponding notification entries in the notification center are
+ * also cleaned up, preventing orphaned ("yetim") notifications.
+ */
+export async function deleteReport(reportId: string) {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+    if (!userId) return { success: false, error: 'Unauthorized' };
+
+    await connectToDatabase();
+
+    // 1. Find the report to verify ownership
+    const report = await Report.findOne({ _id: reportId, userId }).lean();
+    if (!report) return { success: false, error: 'Report not found' };
+
+    // 2. Delete the report
+    await Report.deleteOne({ _id: reportId, userId });
+
+    // 3. Cascade delete: remove any notifications referencing this report
+    const notifResult = await Notification.deleteMany({
+      userId,
+      reportId: reportId,
+    });
+
+    // 4. Also clean up linked AIJob records
+    if (report.jobId) {
+      await AIJob.deleteOne({ jobId: report.jobId, userId });
+    }
+
+    return {
+      success: true,
+      deletedNotifications: notifResult.deletedCount ?? 0,
     };
   } catch (error) {
     return { success: false, error: String(error) };

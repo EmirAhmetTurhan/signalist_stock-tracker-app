@@ -1,5 +1,8 @@
 // Money Flow Index (MFI) utilities
 // Default period: 14
+// Pine Script reference: ta.rma() (Wilder smoothing) for pos/neg money flow
+
+import { createSMMA } from './_math';
 
 export type MFIInput = {
   time: UTCTimestamp;
@@ -31,36 +34,31 @@ export function computeMFI(candles: MFIInput[], period = 14): MFIPoint[] {
     rmf[i] = t * Math.max(v, 0);
   }
 
+  // Positive / negative money flow (with sign)
+  // Pine Script: mf_sign = tp > tp[1] ? tp * volume : tp[1] > tp ? -tp * volume : 0
+  // NOT: tp[i] == tp[i-1] olduğunda Pine Script 0 döndürür (hem pos hem neg 0).
+  //   Önceki kod: `tp[i] > tp[i-1] ? rmf[i] : -rmf[i]` → eşitlikte -rmf (hatalı)
   const posMF: number[] = new Array(len).fill(0);
   const negMF: number[] = new Array(len).fill(0);
   for (let i = 1; i < len; i++) {
-    if (tp[i] > tp[i - 1]) posMF[i] = rmf[i];
-    else if (tp[i] < tp[i - 1]) negMF[i] = rmf[i];
-    // if equal, both 0
+    const sign = tp[i] > tp[i - 1] ? rmf[i] : tp[i] < tp[i - 1] ? -rmf[i] : 0;
+    if (sign > 0) posMF[i] = sign;
+    else if (sign < 0) negMF[i] = -sign;
   }
 
-  // rolling sums over period
-  const sumPos: number[] = new Array(len).fill(0);
-  const sumNeg: number[] = new Array(len).fill(0);
-  let accPos = 0;
-  let accNeg = 0;
-  for (let i = 0; i < len; i++) {
-    accPos += posMF[i];
-    accNeg += negMF[i];
-    if (i >= period) {
-      accPos -= posMF[i - period];
-      accNeg -= negMF[i - period];
-    }
-    sumPos[i] = i >= period ? accPos : 0;
-    sumNeg[i] = i >= period ? accNeg : 0;
-  }
+  // Wilder smoothing (RMA) — matches ta.rma() in Pine Script
+  const rmaPos = createSMMA(posMF, period);
+  const rmaNeg = createSMMA(negMF, period);
 
   const out: MFIPoint[] = candles.map((c, i) => {
-    if (i < period) return { time: c.time, mfi: undefined };
-    const pos = sumPos[i];
-    const neg = sumNeg[i];
+    const pos = rmaPos[i];
+    const neg = rmaNeg[i];
+    if (typeof pos !== 'number' || typeof neg !== 'number') {
+      return { time: c.time, mfi: undefined };
+    }
     if (neg === 0) return { time: c.time, mfi: 100 };
-    const mfr = pos / (neg || 1e-12);
+    // Pine Script: 100 - (100 / (1 + mfi_pos / (mfi_neg + 1e-10)))
+    const mfr = pos / (neg + 1e-10);
     const mfi = 100 - 100 / (1 + mfr);
     return { time: c.time, mfi };
   });

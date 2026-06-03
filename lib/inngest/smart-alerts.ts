@@ -5,29 +5,12 @@ import { computeIndicators } from '@/lib/ta/compute';
 import { connectToDatabase } from '@/database/mongoose';
 import { SmartAlert } from '@/database/models/smart-alert.model';
 import { sendSmartAlertEmail } from '@/lib/nodemailer';
-
-const DEFAULT_PARAMS = {
-  macdFast: 12, macdSlow: 26, macdSig: 9,
-  stochRsiLen: 14, stochLen: 14, stochK: 3, stochD: 3,
-  wtAvgLen: 10, wtChannelLen: 21, wtMaLen: 4,
-  dmiDiLen: 14, dmiAdxSmooth: 14,
-  mfiPeriod: 14,
-  smiLongLen: 20, smiShortLen: 5, smiSigLen: 5,
-  rsiLen: 14, rsiMaLen: 14,
-  cciLen: 20, cciMaLen: 14,
-  wprLen: 14,
-  diLen: 10, diSmooth: 10, diK: 2,
-  cmfLen: 20,
-  madrLen: 21,
-  almaLen: 9, almaOffset: 0.85, almaSigma: 6,
-  almaColor: '#fbbf24', almaOpacity: 100, almaWidth: 2, almaStyle: 0,
-  bbLen: 20, bbStdDev: 2, bbOffset: 0,
-  bbColor: '#3b82f6', bbOpacity: 100, bbWidth: 1,
-};
+import { DEFAULT_PARAMS } from '@/lib/constants/indicators';
+import type { ComputedIndicators } from '@/lib/ta/types';
 
 function evaluateCondition(
   indicatorName: string,
-  computed: any,
+  computed: ComputedIndicators,
   candles: any[],
   condition: { indicator: string; operator: string; value: number }
 ): boolean {
@@ -36,33 +19,34 @@ function evaluateCondition(
   let prevValue: number | null = null;
 
   // Extract current and previous values based on indicator structure
-  if (ind === 'rsi' && computed.rsi?.rsi?.length >= 2) {
-    currentValue = computed.rsi.rsi[computed.rsi.rsi.length - 1].value;
-    prevValue = computed.rsi.rsi[computed.rsi.rsi.length - 2].value;
-  } else if (ind === 'macd' && computed.macd?.macd?.length >= 2) {
-    currentValue = computed.macd.macd[computed.macd.macd.length - 1].value;
-    prevValue = computed.macd.macd[computed.macd.macd.length - 2].value;
-  } else if (ind === 'mfi' && computed.mfi?.mfi?.length >= 2) {
-    currentValue = computed.mfi.mfi[computed.mfi.mfi.length - 1].value;
-    prevValue = computed.mfi.mfi[computed.mfi.mfi.length - 2].value;
-  } else if (ind === 'cci' && computed.cci?.cci?.length >= 2) {
-    currentValue = computed.cci.cci[computed.cci.cci.length - 1].value;
-    prevValue = computed.cci.cci[computed.cci.cci.length - 2].value;
-  } else if (ind === 'wpr' && computed.wpr?.length >= 2) {
-    currentValue = computed.wpr[computed.wpr.length - 1].value;
-    prevValue = computed.wpr[computed.wpr.length - 2].value;
-  } else if (ind === 'ao' && computed.ao?.length >= 2) {
-    currentValue = computed.ao[computed.ao.length - 1].value;
-    prevValue = computed.ao[computed.ao.length - 2].value;
-  } else if (ind === 'dmi' && computed.dmi?.plusDI?.length >= 2) {
-    currentValue = computed.dmi.plusDI[computed.dmi.plusDI.length - 1].value;
-    prevValue = computed.dmi.plusDI[computed.dmi.plusDI.length - 2].value;
-  } else if (ind === 'wavetrend' && computed.wavetrend?.wt1?.length >= 2) {
-    currentValue = computed.wavetrend.wt1[computed.wavetrend.wt1.length - 1].value;
-    prevValue = computed.wavetrend.wt1[computed.wavetrend.wt1.length - 2].value;
-  } else if (ind === 'stochrsi' && computed.stochrsi?.k?.length >= 2) {
-    currentValue = computed.stochrsi.k[computed.stochrsi.k.length - 1].value;
-    prevValue = computed.stochrsi.k[computed.stochrsi.k.length - 2].value;
+  // Local variable extraction ensures TypeScript narrows types properly
+  if (ind === 'rsi') {
+    const arr = computed.rsi?.rsi;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
+  } else if (ind === 'macd') {
+    const arr = computed.macd?.macd;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
+  } else if (ind === 'mfi') {
+    const arr = computed.mfi?.mfi;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
+  } else if (ind === 'cci') {
+    const arr = computed.cci?.cci;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
+  } else if (ind === 'wpr') {
+    const arr = computed.wpr;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
+  } else if (ind === 'ao') {
+    const arr = computed.ao;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
+  } else if (ind === 'dmi') {
+    const arr = computed.dmi?.plusDI;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
+  } else if (ind === 'wavetrend') {
+    const arr = computed.wavetrend?.wt1;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
+  } else if (ind === 'stochrsi') {
+    const arr = computed.stochrsi?.k;
+    if (arr && arr.length >= 2) { currentValue = arr[arr.length - 1].value ?? null; prevValue = arr[arr.length - 2].value ?? null; }
   }
 
   if (currentValue === null) return false;
@@ -128,7 +112,7 @@ export const evaluateSmartAlerts = inngest.createFunction(
           const last = alert.lastTriggeredAt ? new Date(alert.lastTriggeredAt) : null;
           const now = new Date();
           const hoursSinceLast = last ? (now.getTime() - last.getTime()) / 3600000 : Infinity;
-          const minHours = alert.frequency === '1h' ? 0.5 : alert.frequency === '4h' ? 3 : 20;
+          const minHours = alert.frequency === '4h' ? 3 : 20;
           if (hoursSinceLast < minHours) continue;
 
           const allMet = (alert.conditions || []).every((c: any) =>

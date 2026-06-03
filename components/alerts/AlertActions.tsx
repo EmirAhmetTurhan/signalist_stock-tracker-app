@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { deleteAlertAction, updateAlertThresholdAction } from '@/lib/actions/alerts.actions';
+import { deleteAlert, updateAlertThresholdAction } from '@/lib/actions/alerts.actions';
 
 type AlertActionsProps = {
   alertId: string;
@@ -47,7 +47,7 @@ export default function AlertActions({ alertId, threshold }: AlertActionsProps) 
       ) : (
         <>
           <form
-            action={deleteAlertAction}
+            action={deleteAlert}
             onSubmit={(e) => {
               const ok = window.confirm('Delete this alert?');
               if (!ok) e.preventDefault();

@@ -201,7 +201,7 @@ export const TECHNICAL_ANALYSIS_WIDGET_CONFIG = (symbol: string) => ({
     locale: 'en',
     width: '100%',
     height: 400,
-    interval: '1h',
+    interval: '1d',
     largeChartUrl: '',
 });
 

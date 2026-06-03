@@ -180,6 +180,22 @@ export async function executeTrade(input: TradeInput): Promise<TradeResult> {
   const wallet = await Wallet.findOne({ userId }).lean();
   if (!wallet) return tradeError('INTERNAL_ERROR', 'Cüzdan bulunamadı.');
 
+  // --- Circuit breaker: auto-reset on new day ---
+  if (wallet.circuitBreakerTriggered) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const lastSellTrade = await Trade.findOne(
+      { userId, side: 'SELL', status: 'executed' },
+      { executedAt: 1 },
+      { sort: { executedAt: -1 } }
+    ).lean();
+    if (!lastSellTrade?.executedAt || new Date(lastSellTrade.executedAt) < todayStart) {
+      // Last sell was on a previous day — clear breaker for new trading day
+      await Wallet.updateOne({ userId }, { $set: { circuitBreakerTriggered: false } });
+      wallet.circuitBreakerTriggered = false;
+    }
+  }
+
   if (side === 'BUY') {
     if (wallet.circuitBreakerTriggered) {
       return tradeError('CIRCUIT_BREAKER', 'Günlük zarar limitine ulaşıldı. Yeni alımlar geçici olarak durduruldu.');
@@ -198,7 +214,7 @@ export async function executeTrade(input: TradeInput): Promise<TradeResult> {
     const portfolio = await getPortfolioSummary(userId);
     const maxExposure = decimalMul(portfolio.totalEquity, (wallet.maxPositionPercent || 20) / 100);
     const currentExposure = existingPosition ? decimalMul(existingPosition.quantity, fillPrice) : 0;
-    
+
     if (decimalAdd(currentExposure, notional) > maxExposure) {
       return tradeError('POSITION_LIMIT_EXCEEDED', `Bu işlem ile pozisyon büyüklüğünüz izin verilen maksimum değeri (${wallet.maxPositionPercent}%) aşacaktır.`);
     }
@@ -228,7 +244,7 @@ export async function executeTrade(input: TradeInput): Promise<TradeResult> {
 
       // Layer 1: Atomic conditional debit (covers 95% of race conditions)
       const walletUpdate = await Wallet.findOneAndUpdate(
-        useReservedFunds 
+        useReservedFunds
           ? { userId, reservedBalance: { $gte: toDecimal128(notional) } }
           : { userId, cashBalance: { $gte: toDecimal128(notional) } },
         useReservedFunds
@@ -377,9 +393,9 @@ export async function executeTrade(input: TradeInput): Promise<TradeResult> {
               closedAt: now,
               closeReason: triggerSource === 'manual' ? 'user_sell'
                 : triggerSource === 'stop_loss' ? 'stop_loss'
-                : triggerSource === 'take_profit' ? 'take_profit'
-                : triggerSource === 'strategy' ? 'strategy_exit'
-                : 'user_sell',
+                  : triggerSource === 'take_profit' ? 'take_profit'
+                    : triggerSource === 'strategy' ? 'strategy_exit'
+                      : 'user_sell',
             } : {}),
           },
         },
@@ -410,6 +426,28 @@ export async function executeTrade(input: TradeInput): Promise<TradeResult> {
       }], sessionOpt);
 
       if (useTransaction && session) await session.commitTransaction();
+
+      // --- Circuit breaker: check daily loss limit after sell ---
+      if (realizedPnl < 0) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todaySells = await Trade.find({
+          userId,
+          side: 'SELL',
+          status: 'executed',
+          executedAt: { $gte: todayStart },
+        }).lean();
+        const totalDailyLoss = todaySells.reduce((sum, t) => {
+          if (!t.realizedPnl) return sum;
+          const pnl = fromDecimal128(t.realizedPnl);
+          return pnl < 0 ? sum + Math.abs(pnl) : sum;
+        }, 0);
+        const initialBal = fromDecimal128(wallet.initialBalance);
+        const maxLoss = (wallet.maxDailyLossPercent / 100) * initialBal;
+        if (totalDailyLoss >= maxLoss) {
+          await Wallet.updateOne({ userId }, { $set: { circuitBreakerTriggered: true } });
+        }
+      }
 
       if (isFullClose) {
         // Fire & forget cleanup for dangling SL/TP orders

@@ -19,48 +19,9 @@ import { computeMADR } from '@/lib/indicators/madr';
 import { computeALMA } from '@/lib/indicators/alma';
 import { computeBollingerBands } from '@/lib/indicators/bollinger';
 import { detectCandlePatterns } from '@/lib/indicators/candlePatterns';
-import type { CandlePattern } from '@/lib/indicators/candlePatterns';
 import { detectHistoricalFractals } from '@/lib/indicators/historicalFractals';
-import type { FractalResult } from '@/lib/indicators/historicalFractals';
 import { detectSupportResistance } from '@/lib/indicators/supportResistance';
-import type { SRResult } from '@/lib/indicators/supportResistance';
-import type { IndicatorParams } from './types';
-
-type CandleInput = {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume?: number;
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TimePoint = any;
-
-export type ComputedIndicators = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  macd?: any;
-  rsi?: any;
-  stochrsi?: any;
-  wavetrend?: any;
-  dmi?: any;
-  mfi?: any;
-  smi?: any;
-  ao?: TimePoint[];
-  cci?: any;
-  wpr?: TimePoint[];
-  di?: TimePoint[];
-  cmf?: TimePoint[];
-  ad?: TimePoint[];
-  netvol?: TimePoint[];
-  madr?: TimePoint[];
-  alma?: TimePoint[];
-  bb?: any;
-  candlePatterns?: CandlePattern[];
-  fractals?: FractalResult | null;
-  sr?: SRResult | null;
-};
+import type { IndicatorParams, CandleInput, TimePoint, ComputedIndicators } from './types';
 
 /** Kullanıcının seçtiği indikatörleri hesapla. Sadece activeIndicators içinde olanlar çalışır. */
 export function computeIndicators(
@@ -79,9 +40,9 @@ export function computeIndicators(
       p.macdFast, p.macdSlow, p.macdSig,
     );
     result.macd = {
-      macd: series.filter((x) => typeof x.macd === 'number').map((x) => ({ time: x.time, value: x.macd as number })),
-      signal: series.filter((x) => typeof x.signal === 'number').map((x) => ({ time: x.time, value: x.signal as number })),
-      histogram: series.filter((x) => typeof x.histogram === 'number').map((x) => ({
+      macd: series.map((x) => ({ time: x.time, value: x.macd as number })),
+      signal: series.map((x) => ({ time: x.time, value: x.signal as number })),
+      histogram: series.map((x) => ({
         time: x.time, value: x.histogram as number,
         color: (x.histogram as number) >= 0 ? '#0db27a' : '#ef4444',
       })),
@@ -94,8 +55,10 @@ export function computeIndicators(
       p.rsiLen, p.rsiMaLen,
     );
     result.rsi = {
-      rsi: series.filter((x) => typeof x.rsi === 'number').map((x) => ({ time: x.time, value: x.rsi as number })),
-      ma: series.filter((x) => typeof x.ma === 'number').map((x) => ({ time: x.time, value: x.ma as number })),
+      rsi: series.map((x) => ({ time: x.time, value: x.rsi as number })),
+      ma: series.map((x) => ({ time: x.time, value: x.ma as number })),
+      // SPRINT 1 / B4.1: Confidence pass-through (DST fusion tüketecek)
+      confidence: series.map((x) => x.confidence),
     };
   }
 
@@ -105,8 +68,8 @@ export function computeIndicators(
       p.stochRsiLen, p.stochLen, p.stochK, p.stochD,
     );
     result.stochrsi = {
-      k: series.filter((x) => typeof x.k === 'number').map((x) => ({ time: x.time, value: x.k as number })),
-      d: series.filter((x) => typeof x.d === 'number').map((x) => ({ time: x.time, value: x.d as number })),
+      k: series.map((x) => ({ time: x.time, value: x.k as number })),
+      d: series.map((x) => ({ time: x.time, value: x.d as number })),
     };
   }
 
@@ -116,9 +79,12 @@ export function computeIndicators(
       p.wtAvgLen, p.wtChannelLen, p.wtMaLen,
     );
     result.wavetrend = {
-      wt1: series.filter((x) => typeof x.wt1 === 'number').map((x) => ({ time: x.time, value: x.wt1 as number })),
-      wt2: series.filter((x) => typeof x.wt2 === 'number').map((x) => ({ time: x.time, value: x.wt2 as number })),
+      wt1: series.map((x) => ({ time: x.time, value: x.wt1 as number })),
+      wt2: series.map((x) => ({ time: x.time, value: x.wt2 as number })),
       crosses: series.filter((x) => x.cross === 1 || x.cross === -1).map((x) => ({ time: x.time, cross: x.cross as 1 | -1 })),
+      // SPRINT 1 / B4.1: wt1 ve wt2 için ayrı confidence pass-through
+      wt1Confidence: series.map((x) => x.wt1Confidence),
+      wt2Confidence: series.map((x) => x.wt2Confidence),
     };
   }
 
@@ -128,9 +94,9 @@ export function computeIndicators(
       p.dmiDiLen, p.dmiAdxSmooth,
     );
     result.dmi = {
-      plusDI: series.filter((x) => typeof x.plusDI === 'number').map((x) => ({ time: x.time, value: x.plusDI as number })),
-      minusDI: series.filter((x) => typeof x.minusDI === 'number').map((x) => ({ time: x.time, value: x.minusDI as number })),
-      adx: series.filter((x) => typeof x.adx === 'number').map((x) => ({ time: x.time, value: x.adx as number })),
+      plusDI: series.map((x) => ({ time: x.time, value: x.plusDI as number })),
+      minusDI: series.map((x) => ({ time: x.time, value: x.minusDI as number })),
+      adx: series.map((x) => ({ time: x.time, value: x.adx as number })),
     };
   }
 
@@ -139,18 +105,18 @@ export function computeIndicators(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume })),
       p.mfiPeriod,
     );
-    result.mfi = { mfi: series.filter((x) => typeof x.mfi === 'number').map((x) => ({ time: x.time, value: x.mfi as number })) };
+    result.mfi = { mfi: series.map((x) => ({ time: x.time, value: x.mfi as number })) };
   }
 
   if (activeIndicators.has('smi')) {
     const series = computeSMI(
-      candles.map((c) => ({ time: c.time, close: c.close })),
+      candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })),
       p.smiLongLen, p.smiShortLen, p.smiSigLen,
     );
     result.smi = {
-      smi: series.filter((x) => typeof x.smi === 'number').map((x) => ({ time: x.time, value: x.smi as number })),
-      signal: series.filter((x) => typeof x.signal === 'number').map((x) => ({ time: x.time, value: x.signal as number })),
-      histogram: series.filter((x) => typeof x.histogram === 'number').map((x) => ({
+      smi: series.map((x) => ({ time: x.time, value: x.smi as number })),
+      signal: series.map((x) => ({ time: x.time, value: x.signal as number })),
+      histogram: series.map((x) => ({
         time: x.time, value: x.histogram as number,
         color: (x.histogram as number) >= 0 ? '#0db27a' : '#ef4444',
       })),
@@ -169,8 +135,8 @@ export function computeIndicators(
       p.cciLen, p.cciMaLen,
     );
     result.cci = {
-      cci: series.filter((x) => typeof x.cci === 'number').map((x) => ({ time: x.time, value: x.cci as number })),
-      ma: series.filter((x) => typeof x.ma === 'number').map((x) => ({ time: x.time, value: x.ma as number })),
+      cci: series.map((x) => ({ time: x.time, value: x.cci as number })),
+      ma: series.map((x) => ({ time: x.time, value: x.ma as number })),
     };
   }
 
@@ -184,7 +150,7 @@ export function computeIndicators(
   if (activeIndicators.has('di')) {
     result.di = computeDemandIndex(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, open: c.open, volume: c.volume || 0 })),
-      p.diLen, p.diSmooth, p.diK,
+      p.diLen, p.diSmooth,
     ).map((x) => ({ time: x.time, value: x.value }));
   }
 
@@ -215,7 +181,7 @@ export function computeIndicators(
   }
 
   if (activeIndicators.has('alma')) {
-    result.alma = computeALMA(closes, p.almaLen, p.almaOffset, p.almaSigma);
+    result.alma = computeALMA(closes, p.almaLen, p.almaOffset, p.almaSigma) as TimePoint[];
   }
 
   if (activeIndicators.has('bb')) {

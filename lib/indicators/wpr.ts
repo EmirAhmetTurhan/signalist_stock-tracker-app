@@ -7,7 +7,7 @@ export type WPRInput = {
 
 export type WPRPoint = {
     time: number;
-    value: number;
+    value?: number;
 };
 
 export function computeWPR(
@@ -16,7 +16,12 @@ export function computeWPR(
 ): WPRPoint[] {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 
-    const out: WPRPoint[] = [];
+    const out: WPRPoint[] = new Array(candles.length);
+
+    // Fill all entries with time and undefined value (dense array, warmup-safe)
+    for (let i = 0; i < candles.length; i++) {
+        out[i] = { time: candles[i].time, value: undefined };
+    }
 
     for (let i = 0; i < candles.length; i++) {
         if (i < period - 1) continue;
@@ -38,10 +43,10 @@ export function computeWPR(
             wpr = ((highestHigh - close) / denominator) * -100;
         }
 
-        out.push({
+        out[i] = {
             time: candles[i].time,
             value: wpr,
-        });
+        };
     }
 
     return out;

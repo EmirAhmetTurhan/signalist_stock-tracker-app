@@ -1,4 +1,4 @@
-// lib/ai/tools.ts — AI Agent'ın kullanabileceği 16 araç
+// lib/ai/tools.ts — AI Agent'ın kullanabileceği araçlar (20 tools)
 // Her tool: Zod schema (input validasyonu) + execute (iş mantığı)
 // Dört savunma hattı: Zod, try-catch, timeout, event-loop yield
 
@@ -18,6 +18,7 @@ import { computeIndicators } from '@/lib/ta/compute';
 import { generateAllSignals } from '@/lib/ta/signals';
 import { calculateWinRate } from '@/lib/ta/backtest';
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from '@/lib/ta/optimizer';
+import { optimizeStrategyParams, discoverStrategy, mapComputedToAllData, DISCOVERY_POOL } from '@/lib/ta/strategy-optimizer';
 import { randomUUID } from 'crypto';
 import { inngest } from '@/lib/inngest/client';
 import { stockSymbolSchema } from '@/lib/validations/schemas';
@@ -128,7 +129,7 @@ function toToolError(e: unknown, symbol?: string): ToolResult {
 // SAVUNMA HATTI 2: Try-catch wrapper
 // ========================================================================
 
-type ToolResult = { success: boolean; error?: string; errorCode?: string; userMessage?: string; recoverable?: boolean; [key: string]: unknown };
+type ToolResult = { success: boolean; error?: string; errorCode?: string; userMessage?: string; recoverable?: boolean;[key: string]: unknown };
 
 function safeResult(fnName: string, result: any): ToolResult {
   // Eğer zaten { success: ... } formatında döndüyse aynen kullan
@@ -137,34 +138,12 @@ function safeResult(fnName: string, result: any): ToolResult {
   return { success: true, data: result };
 }
 
-// ========================================================================
-// Yardımcılar
-// ========================================================================
+import { INDICATOR_KEYS, DEFAULT_PARAMS } from '@/lib/constants/indicators';
+// SPRINT 3: timeframe-limits.ts silindi, inline clamp kullanılıyor.
+import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';
 
-// ========================================================================
-// Yardımcılar
-// ========================================================================
-
-export const DEFAULT_PARAMS = {
-  macdFast: 12, macdSlow: 26, macdSig: 9,
-  stochRsiLen: 14, stochLen: 14, stochK: 3, stochD: 3,
-  wtAvgLen: 10, wtChannelLen: 21, wtMaLen: 4,
-  dmiDiLen: 14, dmiAdxSmooth: 14,
-  mfiPeriod: 14,
-  smiLongLen: 20, smiShortLen: 5, smiSigLen: 5,
-  rsiLen: 14, rsiMaLen: 14,
-  cciLen: 20, cciMaLen: 14,
-  wprLen: 14,
-  diLen: 10, diSmooth: 10, diK: 2,
-  cmfLen: 20,
-  madrLen: 21,
-  almaLen: 9, almaOffset: 0.85, almaSigma: 6,
-  almaColor: '#fbbf24', almaOpacity: 100, almaWidth: 2, almaStyle: 0,
-  bbLen: 20, bbStdDev: 2, bbOffset: 0,
-  bbColor: '#3b82f6', bbOpacity: 100, bbWidth: 1,
-};
-
-const intervalSchema = z.enum(['1d', '4h']).default('1d');
+const intervalSchema = z.enum(['1d', '4h']).default('1d')
+  .describe('1d=daily, 4h=4-hour');
 const indicatorsListSchema = z.array(z.string()).min(1).max(17);
 
 // SAVUNMA HATTI 1: Zorunlu sembol şeması — AI'a açık talimat
@@ -179,20 +158,53 @@ const requiredSymbol = stockSymbolSchema.describe(
 // KATEGORİ B: RESEARCH_TOOLS — Araştırma / Backtest / Optimizasyon (ağır CPU)
 // KATEGORİ C: USER_TOOLS — Kullanıcı Verisi (watchlist, alarm, not)
 
-export const INDICATOR_NAMES = [
-  'macd', 'rsi', 'stochrsi', 'wavetrend', 'dmi', 'mfi', 'smi', 'ao',
-  'cci', 'wpr', 'di', 'cmf', 'ad', 'netvol', 'madr', 'alma', 'bb',
-];
+import type { ComputedIndicators } from '@/lib/ta/types';
 
-export function mapIndicatorData(computed: Record<string, unknown>, key: string): unknown | undefined {
+export function mapIndicatorData(computed: ComputedIndicators, key: string): unknown | undefined {
   const map: Record<string, unknown> = {
     macd: computed.macd, rsi: computed.rsi, stochrsi: computed.stochrsi,
     wavetrend: computed.wavetrend, dmi: computed.dmi, mfi: computed.mfi,
     smi: computed.smi, ao: computed.ao, cci: computed.cci, wpr: computed.wpr,
     di: computed.di, cmf: computed.cmf, ad: computed.ad, netvol: computed.netvol,
-    madr: computed.madr,
+    madr: computed.madr, bb: computed.bb, alma: computed.alma,
   };
   return map[key] ?? undefined;
+}
+
+function getSignalDescription(indicator: string, signal: string): string {
+  const isBuy = signal.includes('BUY');
+  const isStrong = signal.includes('STRONG');
+  const isNeutral = signal === 'NEUTRAL';
+  if (isNeutral) return 'Nötr sinyal; belirgin bir trend gözlemlenmiyor.';
+
+  switch (indicator.toLowerCase()) {
+    case 'macd': return isBuy ? (isStrong ? 'Güçlü alım sinyali; MACD çizgisi sinyal çizgisini güçlü şekilde yukarı kesti.' : 'Hafif alım sinyali; kısa vadeli momentum toparlanıyor.') : (isStrong ? 'Güçlü satış sinyali; MACD çizgisi sinyal çizgisini sert şekilde aşağı kesti.' : 'Hafif satış sinyali; kısa vadeli momentum zayıflıyor.');
+    case 'rsi': return isBuy ? (isStrong ? 'Aşırı satım bölgesinden dönüş; güçlü alım fırsatı.' : 'Hafif alım sinyali; momentum zayıf ancak yükseliş eğilimi sürüyor.') : (isStrong ? 'Aşırı alım bölgesinden dönüş; güçlü satış baskısı.' : 'Hafif satış sinyali; fiyat zirvelerden geriliyor.');
+    case 'stochrsi': return isBuy ? (isStrong ? 'Güçlü alım sinyali; fiyatın aşırı satım bölgesinden çıkma ihtimali yüksek.' : 'Hafif alım sinyali; fiyatın aşırı satım bölgesine girme ihtimali düşük.') : (isStrong ? 'Güçlü satış sinyali; aşırı alım bölgesinden dönüş başladı.' : 'Hafif satış sinyali; kısa vadeli tepe oluşumu gözlemleniyor.');
+    case 'bb': return isBuy ? 'Fiyat alt banda yaklaştı/değdi; tepki alımı gelebilir.' : 'Fiyat üst banda yaklaştı/değdi; dirençle karşılaşabilir.';
+    default: return isBuy ? (isStrong ? 'Güçlü bir yükseliş trendi teyidi.' : 'Yükseliş yönünde ılımlı bir sinyal.') : (isStrong ? 'Güçlü bir düşüş trendi teyidi.' : 'Düşüş yönünde ılımlı bir sinyal.');
+  }
+}
+
+function generateOverallEvaluation(signals: Array<{ indicator: string; signal: string }>, overallSignal: string, overallScore: number): string {
+  const buys = signals.filter(s => s.signal.includes('BUY')).map(s => s.indicator.toUpperCase());
+  const sells = signals.filter(s => s.signal.includes('SELL')).map(s => s.indicator.toUpperCase());
+
+  if (buys.length > sells.length) {
+    if (overallSignal === 'STRONG BUY') {
+      return `${buys.slice(0, 2).join(' ve ')} güçlü bir yükseliş sinyali üretirken, diğer indikatörler bu hareketi destekliyor. Genel trend pozitif yönde.`;
+    }
+    return `${buys.slice(0, 2).join(' ve ')} alım yönünde sinyaller üretiyor, ancak piyasada temkinli bir iyimserlik hakim. Trendin gücünü doğrulamak için hacim verilerine dikkat edilmeli.`;
+  }
+
+  if (sells.length > buys.length) {
+    if (overallSignal === 'STRONG SELL') {
+      return `${sells.slice(0, 2).join(' ve ')} güçlü bir düşüş sinyali veriyor. Ayı piyasası baskısı belirginleşmiş durumda.`;
+    }
+    return `${sells.slice(0, 2).join(' ve ')} satış yönünde sinyaller üretiyor. Trend zayıflığı gözlemleniyor, olası destek seviyeleri takip edilmeli.`;
+  }
+
+  return `İndikatörler arasında net bir uzlaşma bulunmuyor. Piyasa yatay veya kararsız bir seyir izliyor. İşlem yapmadan önce ek sinyallerin (hacim, formasyon) onaylanması önerilir.`;
 }
 
 // ========================================================================
@@ -226,15 +238,16 @@ export const getTools = (userId?: string | null) => ({
     description: '[TA_TOOLS] Calculates current technical indicator values and BUY/SELL signals for a stock. STRICT BOUNDARY: ONLY use when user asks "what is the current RSI/MACD value?" or "what signal does X give now?". NEVER use when user asks about optimization, "best value", "win rate", "backtest", or "which parameter" — those belong to RESEARCH_TOOLS (runBacktest, optimizeParameter, findBestIndicator, rankIndicators). If unsure whether user wants current analysis or optimization, ASK the user to clarify.',
     inputSchema: z.object({
       symbol: requiredSymbol,
-      interval: intervalSchema.describe('Time interval: 1d (daily) or 4h (4-hour)'),
+      interval: intervalSchema,
       indicators: indicatorsListSchema.describe('List of indicators to calculate'),
       years: z.number().min(1).max(10).default(1).describe('Number of years of historical data (default 1)'),
     }),
     execute: async ({ symbol, interval, indicators, years }) => {
       try {
-        const days = years * 365;
+        // SPRINT 3: inline clamp (timeframe-limits.ts silindi, sadece 4h/1d — 10 yıl cap)
+        const days = Math.min(years * 365, 3650);
         const candles = await withTimeout(
-          interval === '4h' ? get4HourCandles(symbol, days) : getDailyCandlesForAI(symbol, days),
+          getCandlesForInterval(symbol, interval, days),
           LIGHT_TIMEOUT_MS, `getCandles(${symbol})`
         );
 
@@ -251,42 +264,6 @@ export const getTools = (userId?: string | null) => ({
         const activeSet = new Set(mappedIndicators);
         const computed = computeIndicators(candles, activeSet, DEFAULT_PARAMS);
         const { signals, overall } = generateAllSignals(computed, candles);
-
-function getSignalDescription(indicator: string, signal: string): string {
-  const isBuy = signal.includes('BUY');
-  const isStrong = signal.includes('STRONG');
-  const isNeutral = signal === 'NEUTRAL';
-  if (isNeutral) return 'Nötr sinyal; belirgin bir trend gözlemlenmiyor.';
-  
-  switch(indicator.toLowerCase()) {
-    case 'macd': return isBuy ? (isStrong ? 'Güçlü alım sinyali; MACD çizgisi sinyal çizgisini güçlü şekilde yukarı kesti.' : 'Hafif alım sinyali; kısa vadeli momentum toparlanıyor.') : (isStrong ? 'Güçlü satış sinyali; MACD çizgisi sinyal çizgisini sert şekilde aşağı kesti.' : 'Hafif satış sinyali; kısa vadeli momentum zayıflıyor.');
-    case 'rsi': return isBuy ? (isStrong ? 'Aşırı satım bölgesinden dönüş; güçlü alım fırsatı.' : 'Hafif alım sinyali; momentum zayıf ancak yükseliş eğilimi sürüyor.') : (isStrong ? 'Aşırı alım bölgesinden dönüş; güçlü satış baskısı.' : 'Hafif satış sinyali; fiyat zirvelerden geriliyor.');
-    case 'stochrsi': return isBuy ? (isStrong ? 'Güçlü alım sinyali; fiyatın aşırı satım bölgesinden çıkma ihtimali yüksek.' : 'Hafif alım sinyali; fiyatın aşırı satım bölgesine girme ihtimali düşük.') : (isStrong ? 'Güçlü satış sinyali; aşırı alım bölgesinden dönüş başladı.' : 'Hafif satış sinyali; kısa vadeli tepe oluşumu gözlemleniyor.');
-    case 'bb': return isBuy ? 'Fiyat alt banda yaklaştı/değdi; tepki alımı gelebilir.' : 'Fiyat üst banda yaklaştı/değdi; dirençle karşılaşabilir.';
-    default: return isBuy ? (isStrong ? 'Güçlü bir yükseliş trendi teyidi.' : 'Yükseliş yönünde ılımlı bir sinyal.') : (isStrong ? 'Güçlü bir düşüş trendi teyidi.' : 'Düşüş yönünde ılımlı bir sinyal.');
-  }
-}
-
-function generateOverallEvaluation(signals: Array<{indicator: string, signal: string}>, overallSignal: string, overallScore: number): string {
-  const buys = signals.filter(s => s.signal.includes('BUY')).map(s => s.indicator.toUpperCase());
-  const sells = signals.filter(s => s.signal.includes('SELL')).map(s => s.indicator.toUpperCase());
-  
-  if (buys.length > sells.length) {
-    if (overallSignal === 'STRONG BUY') {
-      return `${buys.slice(0,2).join(' ve ')} güçlü bir yükseliş sinyali üretirken, diğer indikatörler bu hareketi destekliyor. Genel trend pozitif yönde.`;
-    }
-    return `${buys.slice(0,2).join(' ve ')} alım yönünde sinyaller üretiyor, ancak piyasada temkinli bir iyimserlik hakim. Trendin gücünü doğrulamak için hacim verilerine dikkat edilmeli.`;
-  }
-  
-  if (sells.length > buys.length) {
-    if (overallSignal === 'STRONG SELL') {
-      return `${sells.slice(0,2).join(' ve ')} güçlü bir düşüş sinyali veriyor. Ayı piyasası baskısı belirginleşmiş durumda.`;
-    }
-    return `${sells.slice(0,2).join(' ve ')} satış yönünde sinyaller üretiyor. Trend zayıflığı gözlemleniyor, olası destek seviyeleri takip edilmeli.`;
-  }
-  
-  return `İndikatörler arasında net bir uzlaşma bulunmuyor. Piyasa yatay veya kararsız bir seyir izliyor. İşlem yapmadan önce ek sinyallerin (hacim, formasyon) onaylanması önerilir.`;
-}
 
         const summary = mappedIndicators.map((ind) => ({
           indicator: ind,
@@ -507,9 +484,10 @@ function generateOverallEvaluation(signals: Array<{indicator: string, signal: st
     }),
     execute: async ({ symbol, indicator, interval, lookForward, years }) => {
       try {
-        const days = years * 365;
+        // SPRINT 3: inline clamp
+        const days = Math.min(years * 365, 3650);
         const candles: Candle[] = await withTimeout(
-          interval === '4h' ? get4HourCandles(symbol, days) : getDailyCandlesForAI(symbol, days),
+          getCandlesForInterval(symbol, interval, days),
           LIGHT_TIMEOUT_MS, `getCandles(${symbol})`
         );
 
@@ -577,19 +555,6 @@ function generateOverallEvaluation(signals: Array<{indicator: string, signal: st
           message: `${symbol} için ${name} optimizasyonunu arka planda başlattım. İşlem yaklaşık 30-45 saniye sürecek.`,
         };
 
-        // ---- Ağır hesaplama (Inngest'e taşındı, şimdilik yorumda) ----
-        // const candles: Candle[] = await withTimeout(
-        //   interval === '4h' ? get4HourCandles(symbol, 3650) : getDailyCandles(symbol, 3650),
-        //   LIGHT_TIMEOUT_MS, `getCandles(${symbol})`
-        // );
-        // if (!candles || candles.length === 0) { ... }
-        // await yieldToMain();
-        // const result = await withTimeout(
-        //   Promise.resolve(findBestParameter(name, candles)),
-        //   HEAVY_TIMEOUT_MS, `optimize(${indicator}, ${symbol})`
-        // );
-        // const paramName = OPTIMIZABLE_INDICATORS[name]?.param ?? '?';
-        // return { success: true, symbol, indicator: name, bestValue: result.bestVal, ... };
       } catch (e) {
         return { success: false, error: `Optimization dispatch failed: ${formatError(e)}` };
       }
@@ -718,7 +683,7 @@ function generateOverallEvaluation(signals: Array<{indicator: string, signal: st
       name: z.string().min(1).max(100).describe('Alert name'),
       symbol: requiredSymbol,
       interval: intervalSchema,
-      frequency: z.enum(['daily', '4h', '1h']).default('daily').describe('Check frequency'),
+      frequency: z.enum(['daily', '4h']).default('daily').describe('Check frequency'),
       conditions: z.array(z.object({
         indicator: z.string().min(1).describe('Indicator name (rsi, macd, mfi, cci, wpr, ao, dmi, wavetrend, stochrsi)'),
         operator: z.enum(['<', '>', 'cross_above', 'cross_below']).describe('Condition operator'),
@@ -792,7 +757,7 @@ function generateOverallEvaluation(signals: Array<{indicator: string, signal: st
     execute: async () => {
       try {
         if (!userId) return { success: false, error: 'Unauthorized: You must be logged in to view your portfolio.' };
-        
+
         const summaryRes = await getPortfolioData(userId);
         const positionsRes = await getOpenPositions(userId);
 
@@ -827,7 +792,7 @@ function generateOverallEvaluation(signals: Array<{indicator: string, signal: st
         const { fetchJSON } = await import('@/lib/actions/finnhub.actions');
         const token = process.env.FINNHUB_API_KEY || '';
         const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${token}`;
-        
+
         let currentPrice = 0;
         if (token) {
           const quote = await fetchJSON<{ c?: number }>(url, 120);
@@ -877,6 +842,106 @@ function generateOverallEvaluation(signals: Array<{indicator: string, signal: st
         return { success: true, strategyId, message: 'Strategy has been successfully paused.' };
       } catch (e) {
         return { success: false, error: `Failed to stop strategy: ${formatError(e)}` };
+      }
+    },
+  }),
+
+  // --- 21. optimizeStrategyParams ---
+  optimizeStrategyParams: tool({
+    description: '[RESEARCH_TOOLS] Optimizes MULTIPLE indicator parameters in a strategy to find the combination with highest backtest win rate. Tests lookForward (5-30) and each indicator\'s primary parameter sequentially. Use when user asks "what are the best params for my RSI+CCI+MACD strategy?" or "optimize my strategy parameters". Requires specific indicator names.',
+    inputSchema: z.object({
+      symbol: requiredSymbol,
+      interval: intervalSchema,
+      indicators: z.array(z.string().min(1)).min(1).max(12).describe('List of indicator keys to optimize in the strategy (e.g. ["rsi", "macd", "cci"])'),
+      years: z.number().min(1).max(10).default(1).describe('Number of years of historical data to use'),
+    }),
+    execute: async ({ symbol, interval, indicators, years }) => {
+      try {
+        // SPRINT 3: inline clamp
+        const days = Math.min(years * 365, 3650);
+        const { getCandlesForInterval } = await import('@/lib/actions/finnhub.actions');
+        const candles: Candle[] = await withTimeout(
+          getCandlesForInterval(symbol, interval, days),
+          LIGHT_TIMEOUT_MS, `getCandles(${symbol})`
+        );
+
+        if (!candles || candles.length === 0) {
+          return { success: false, error: `Insufficient candle data for ${symbol}` };
+        }
+
+        // Compute ALL indicators (needed by strategy optimizer)
+        const activeSet = new Set([
+          'rsi', 'cci', 'wavetrend', 'macd', 'stochrsi', 'dmi', 'mfi', 'smi',
+          'ao', 'wpr', 'di', 'cmf', 'ad', 'netvol', 'madr', 'alma', 'bb'
+        ]);
+        const computed = computeIndicators(candles as any, activeSet, DEFAULT_PARAMS);
+        const allData = mapComputedToAllData(computed);
+
+        await yieldToMain();
+
+        const result = withTimeout(
+          Promise.resolve(optimizeStrategyParams(candles, allData, {
+            indicators,
+            lookForwardRange: [5, 30],
+            convergenceRounds: 1,
+            interval,
+            mode: 'all',
+          })),
+          HEAVY_TIMEOUT_MS, `optimizeStrategyParams(${symbol})`
+        );
+
+        const r = await result;
+
+        return {
+          success: true,
+          symbol,
+          interval,
+          bestParams: r.bestParams,
+          bestWinRate: Math.round(r.bestWinRate * 100) / 100,
+          iterations: r.iterations,
+          roundResults: r.roundResults,
+        };
+      } catch (e) {
+        return { success: false, error: `Strategy parameter optimization failed: ${formatError(e)}` };
+      }
+    },
+  }),
+
+  // --- 22. discoverBestStrategy ---
+  discoverBestStrategy: tool({
+    description: '[RESEARCH_TOOLS] Runs the Deep Discovery Engine (5-phase pipeline: Exhaustive Search → Surrogate Optimization → Diversity Ranking → Cross-Validation) to find the best performing indicator combinations for a stock. Tests ALL combinations of 17 indicators using parallel worker threads, surrogate-optimizes parameters, diversity-ranks, and cross-validates. Results auto-save to Archive. Use when user asks "find the best strategy for AAPL", "discover optimal indicators for TSLA", or "what combination of indicators works best?".',
+    inputSchema: z.object({
+      symbol: requiredSymbol,
+      interval: intervalSchema,
+      years: z.number().min(1).max(10).default(1).describe('Number of years of historical data to use (1-10, based on available data for interval)'),
+    }),
+    execute: async ({ symbol, interval, years }) => {
+      try {
+        if (!userId) return { success: false, error: 'Unauthorized: You must be logged in to run discovery.' };
+
+        const jobId = randomUUID();
+
+        await inngest.send({
+          name: 'discovery/deep-search.started',
+          data: {
+            jobId,
+            symbol,
+            interval,
+            years,
+            userId,
+          },
+        });
+
+        return {
+          success: true,
+          isBackgroundJob: true,
+          jobId,
+          symbol,
+          interval,
+          message: `Deep Discovery Engine started for ${symbol} (${years} years, 5-phase pipeline). Results will auto-save to the Archive.`,
+        };
+      } catch (e) {
+        return { success: false, error: `Strategy discovery dispatch failed: ${formatError(e)}` };
       }
     },
   }),
