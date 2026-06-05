@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="d9898d0c-8e64-4d85-98b6-b84f481ac8b4" name="Changes" comment="" />
+    <list default="true" id="d9898d0c-8e64-4d85-98b6-b84f481ac8b4" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -59,6 +61,7 @@
     &quot;js.debugger.nextJs.config.created.client&quot;: &quot;true&quot;,
     &quot;js.debugger.nextJs.config.created.server&quot;: &quot;true&quot;,
     &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/emirt/WebstormProjects/stocks_app&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -204,6 +207,10 @@
       <workItem from="1779538972796" duration="826000" />
       <workItem from="1779569730383" duration="3052000" />
       <workItem from="1779798868678" duration="308000" />
+      <workItem from="1780260243590" duration="1830000" />
+      <workItem from="1780263572573" duration="955000" />
+      <workItem from="1780523573512" duration="19000" />
+      <workItem from="1780523637976" duration="2000" />
     </task>
     <servers />
   </component>

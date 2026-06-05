@@ -6,6 +6,19 @@ export type BacktestHistoryItem = {
     price: number;
     futurePrice: number;
     isWin: boolean;
+    // ─── Path-Aware Fields (populated when evaluationMode != 'lookforward') ───
+    /** Maximum Favorable Excursion — best unrealized P&L during the trade (%) */
+    mfe?: number;
+    /** Maximum Adverse Excursion — worst unrealized P&L during the trade (%) */
+    mae?: number;
+    /** Intra-trade max drawdown from peak unrealized P&L (%) */
+    intraTradeDD?: number;
+    /** Exit reason: stop_loss | take_profit | trailing_stop | opposite_signal | time_stop */
+    exitReason?: string;
+    /** Number of bars the position was held */
+    barsHeld?: number;
+    /** Realized return percentage after path-aware simulation */
+    realizedReturn?: number;
 };
 
 import {

@@ -191,3 +191,11 @@ export type ComputedIndicators = {
   fractals?: import('@/lib/indicators/historicalFractals').FractalResult | null;
   sr?: import('@/lib/indicators/supportResistance').SRResult | null;
 };
+
+/**
+ * Evaluation mode for backtest ground truth.
+ * - 'lookforward': Legacy 2-point comparison (entry close vs. future close)
+ * - 'pathaware': Bar-by-bar trade simulation with SL/TP/trailing stops
+ * - 'regime': Path-aware + regime-dependent indicator confidence
+ */
+export type EvaluationMode = 'lookforward' | 'pathaware' | 'regime';
