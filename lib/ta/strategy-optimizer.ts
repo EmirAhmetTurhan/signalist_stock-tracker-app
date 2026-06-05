@@ -18,7 +18,9 @@ import {
     type BBPoint,
     signalToBBA, fuseAll,
 } from './signal-registry';
-import type { StrategyMode, Timeframe, ComputedIndicators, MarketRegime, BBA, RegimeStats, SignalProfile } from './types';
+import type { StrategyMode, Timeframe, ComputedIndicators, MarketRegime, BBA, RegimeStats, SignalProfile, EvaluationMode } from './types';
+import { simulateTrade, type TradeRiskConfig } from './trade-simulator';
+import type { PortfolioSimConfig, PortfolioSimResult } from './portfolio-simulator';
 import { OPTIMIZABLE_INDICATORS, rangeForTimeframe } from './optimizer';
 import type { BacktestHistoryItem } from './backtest';
 import { bayesianOptimize } from './bayesian-optimizer';
@@ -87,6 +89,16 @@ export interface StrategyBacktestConfig {
      *  and rejection reasons. Useful for diagnosing why signals are
      *  being filtered out. */
     debugLog?: boolean;
+    /** Evaluation mode for ground truth.
+     *  - 'lookforward': Legacy 2-point comparison (default)
+     *  - 'pathaware': Bar-by-bar trade simulation with SL/TP/trailing
+     *  - 'regime': Path-aware + regime-dependent indicator confidence */
+    evaluationMode?: EvaluationMode;
+    /** Optional risk config override. If not set, derived from ProfileConfig. */
+    riskConfig?: TradeRiskConfig;
+    /** Portfolio simulation config. When set alongside evaluationMode='pathaware'|'regime',
+     *  a full capital simulation is run after the backtest and attached to the result. */
+    portfolioConfig?: PortfolioSimConfig;
 }
 
 export interface StrategyBacktestResult {
@@ -110,6 +122,32 @@ export interface StrategyBacktestResult {
      *  Contains per-bar indicator signals, DST fusion, gate checks,
      *  and rejection reasons for transparency. */
     log?: BacktestLogEntry[];
+
+    // ─── Path-Aware Metrics (populated when evaluationMode != 'lookforward') ───
+    /** Evaluation mode used for this backtest run */
+    evaluationMode?: EvaluationMode;
+    /** Average Maximum Favorable Excursion across all trades (%) */
+    avgMFE?: number;
+    /** Average Maximum Adverse Excursion across all trades (%) */
+    avgMAE?: number;
+    /** Average bars held per trade */
+    avgBarsHeld?: number;
+    /** Distribution of exit reasons */
+    exitReasonBreakdown?: Record<string, number>;
+
+    // ─── Portfolio Simulation (populated when portfolioConfig is provided) ───
+    /** Full portfolio simulation result */
+    portfolioResult?: PortfolioSimResult;
+    /** Resampled equity curve (100-200 points, safe for serialization) */
+    equityCurve?: { time: string | number; equity: number }[];
+    /** Resampled drawdown curve */
+    drawdownCurve?: { time: string | number; drawdownPct: number }[];
+    /** Final portfolio equity value */
+    finalEquity?: number;
+    /** Compound annual growth rate (%) */
+    cagr?: number;
+    /** Maximum drawdown from portfolio simulation (%) */
+    maxDrawdownPct?: number;
 }
 
 export interface StrategyOptimizationConfig {
@@ -638,6 +676,15 @@ export interface ProfileConfig {
     requireCrossover: boolean;
     /** Lookback period for ATR volatility baseline (bars) */
     volatilityLookback: number;
+    // ─── Path-Aware Trade Risk Parameters ───
+    /** Stop-loss distance in ATR multiples */
+    stopLossAtrMult: number;
+    /** Take-profit as reward:risk ratio (TP = stop distance × R) */
+    takeProfitR: number;
+    /** Whether trailing stop is active */
+    useTrailingStop: boolean;
+    /** Trailing stop distance in ATR multiples from peak */
+    trailAtrMult: number;
 }
 
 /**
@@ -662,6 +709,10 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         cooldownMax: 8,
         requireCrossover: false,
         volatilityLookback: 30,
+        stopLossAtrMult: 1.5,
+        takeProfitR: 1.5,
+        useTrailingStop: true,
+        trailAtrMult: 0.5,
     },
     Balanced: {
         tradeThreshold: 0.40, // FIX (Sprint 1 / B1): 0.55 → 0.40 — orta eşik
@@ -671,6 +722,10 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         cooldownMax: 14,
         requireCrossover: true,
         volatilityLookback: 30,
+        stopLossAtrMult: 2.0,
+        takeProfitR: 2.0,
+        useTrailingStop: false,
+        trailAtrMult: 0,
     },
     Conservative: {
         tradeThreshold: 0.65, // Zaten doğruydu — yüksek eşik, az-öz sinyal
@@ -680,6 +735,10 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         cooldownMax: 20,
         requireCrossover: true,
         volatilityLookback: 30,
+        stopLossAtrMult: 2.5,
+        takeProfitR: 3.0,
+        useTrailingStop: false,
+        trailAtrMult: 0,
     },
 };
 
@@ -1138,11 +1197,44 @@ export function runStrategyBacktest(
             // SPRINT 1 / B6: Bir sonraki bar için son sinyal tipini hatırla
             lastSignalType = signal;
 
-            // Compute trade return (%) for multi-metric tracking
-            const rawReturn = (futurePrice - currentPrice) / currentPrice;
-            const tradeReturn = signal === 'BUY' ? rawReturn : -rawReturn;
+            // ── Compute trade return — path-aware or legacy lookforward ──
+            let tradeReturn: number;
+            let isWin: boolean;
+            let tradeMfe: number | undefined;
+            let tradeMae: number | undefined;
+            let tradeIntraDD: number | undefined;
+            let tradeExitReason: string | undefined;
+            let tradeBarsHeld: number | undefined;
+            let effectiveFuturePrice = futurePrice;
 
-            const isWin = tradeReturn > 0;
+            const evalMode = config.evaluationMode ?? 'lookforward';
+
+            if (evalMode === 'pathaware' || evalMode === 'regime') {
+                // Path-aware: simulate trade bar-by-bar
+                const profileCfg = getProfileConfig(config);
+                const tradeRiskCfg: TradeRiskConfig = config.riskConfig ?? {
+                    stopLossAtrMult: profileCfg.stopLossAtrMult,
+                    takeProfitR: profileCfg.takeProfitR,
+                    useTrailingStop: profileCfg.useTrailingStop,
+                    trailAtrMult: profileCfg.trailAtrMult,
+                    timeStopBars: lookForward,
+                };
+                const simResult = simulateTrade(candles, i, signal, atrValues, tradeRiskCfg);
+                tradeReturn = simResult.realizedReturnPct / 100; // Convert % to ratio for consistency
+                isWin = tradeReturn > 0;
+                tradeMfe = simResult.mfe;
+                tradeMae = simResult.mae;
+                tradeIntraDD = simResult.intraTradeMaxDD;
+                tradeExitReason = simResult.exitReason;
+                tradeBarsHeld = simResult.barsHeld;
+                effectiveFuturePrice = simResult.exitPrice;
+            } else {
+                // Legacy lookforward: 2-point comparison
+                const rawReturn = (futurePrice - currentPrice) / currentPrice;
+                tradeReturn = signal === 'BUY' ? rawReturn : -rawReturn;
+                isWin = tradeReturn > 0;
+            }
+
             if (isWin) wins++;
 
             // ─── Multi-Metric Accumulators ───
@@ -1174,8 +1266,14 @@ export function runStrategyBacktest(
                 time: candles[i].time,
                 signal,
                 price: currentPrice,
-                futurePrice,
+                futurePrice: effectiveFuturePrice,
                 isWin,
+                mfe: tradeMfe,
+                mae: tradeMae,
+                intraTradeDD: tradeIntraDD,
+                exitReason: tradeExitReason,
+                barsHeld: tradeBarsHeld,
+                realizedReturn: (evalMode !== 'lookforward') ? tradeReturn * 100 : undefined,
             });
         }
     }
@@ -1219,6 +1317,79 @@ export function runStrategyBacktest(
         };
     }
 
+    // ─── Path-Aware Aggregate Metrics ───
+    const evalMode = config.evaluationMode ?? 'lookforward';
+    let avgMFE: number | undefined;
+    let avgMAE: number | undefined;
+    let avgBarsHeld: number | undefined;
+    let exitReasonBreakdown: Record<string, number> | undefined;
+
+    if (evalMode !== 'lookforward' && totalSignals > 0) {
+        let sumMFE = 0, sumMAE = 0, sumBars = 0;
+        const exitCounts: Record<string, number> = {};
+        for (const h of history) {
+            if (h.mfe !== undefined) sumMFE += h.mfe;
+            if (h.mae !== undefined) sumMAE += h.mae;
+            if (h.barsHeld !== undefined) sumBars += h.barsHeld;
+            if (h.exitReason) {
+                exitCounts[h.exitReason] = (exitCounts[h.exitReason] || 0) + 1;
+            }
+        }
+        avgMFE = sumMFE / totalSignals;
+        avgMAE = sumMAE / totalSignals;
+        avgBarsHeld = sumBars / totalSignals;
+        exitReasonBreakdown = exitCounts;
+    }
+
+    // ─── Portfolio Simulation ───
+    let portfolioResult: import('./portfolio-simulator').PortfolioSimResult | undefined;
+    let equityCurve: { time: string | number; equity: number }[] | undefined;
+    let drawdownCurve: { time: string | number; drawdownPct: number }[] | undefined;
+    let finalEquity: number | undefined;
+    let cagr: number | undefined;
+    let maxDrawdownPct: number | undefined;
+
+    if (evalMode !== 'lookforward' && config.portfolioConfig) {
+        // Reconstruct signals into PortfolioSignalEntry format
+        const portfolioSignals: import('./portfolio-simulator').PortfolioSignalEntry[] = history
+            .filter((h) => h.exitReason !== undefined && h.realizedReturn !== undefined) // Only trades that actually simulated
+            .map((h) => {
+                // Find the entry bar index by searching candles for the exact time
+                // (In a real production system, you'd track the entry index directly on the history item to avoid O(N^2))
+                const entryIndex = candles.findIndex((c) => c.time === h.time);
+                return {
+                    barIndex: entryIndex !== -1 ? entryIndex : 0,
+                    signal: h.signal,
+                    simulatedTrade: {
+                        entryIndex: entryIndex !== -1 ? entryIndex : 0,
+                        exitIndex: (entryIndex !== -1 && h.barsHeld !== undefined) ? entryIndex + h.barsHeld : 0,
+                        exitReason: h.exitReason as any,
+                        entryPrice: h.price,
+                        exitPrice: h.futurePrice,
+                        realizedReturnPct: h.realizedReturn!,
+                        mfe: h.mfe ?? 0,
+                        mae: h.mae ?? 0,
+                        intraTradeMaxDD: h.intraTradeDD ?? 0,
+                        barsHeld: h.barsHeld ?? 0,
+                    }
+                };
+            })
+            .filter((entry) => entry.barIndex !== -1);
+
+        const runPortfolioSimulation = require('./portfolio-simulator').runPortfolioSimulation;
+        const resampleCurve = require('./portfolio-simulator').resampleCurve;
+
+        portfolioResult = runPortfolioSimulation(candles, portfolioSignals, config.portfolioConfig);
+        
+        // We resample curves here to prevent massive array serialization issues downstream (e.g. Inngest)
+        // 200 points is enough resolution for a chart
+        equityCurve = resampleCurve(portfolioResult.equityCurve, 200);
+        drawdownCurve = resampleCurve(portfolioResult.drawdownCurve, 200);
+        finalEquity = portfolioResult.finalEquity;
+        cagr = portfolioResult.cagr;
+        maxDrawdownPct = portfolioResult.maxDrawdownPct;
+    }
+
     return {
         winRate,
         totalSignals,
@@ -1232,6 +1403,17 @@ export function runStrategyBacktest(
         totalReturn: totalReturnPct,
         regimeBreakdown,
         log: config.debugLog ? debugLog : undefined,
+        evaluationMode: evalMode,
+        avgMFE,
+        avgMAE,
+        avgBarsHeld,
+        exitReasonBreakdown,
+        portfolioResult,
+        equityCurve,
+        drawdownCurve,
+        finalEquity,
+        cagr,
+        maxDrawdownPct,
     };
 }
 
