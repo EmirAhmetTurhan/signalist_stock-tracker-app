@@ -99,7 +99,7 @@ export default function BacktestMonitor({
                         onClick={handleRegenerate}
                         disabled={isOptimizing}
                         className="p-1.5 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-200 disabled:opacity-50 group"
-                        title="Optimize Parameters"
+                        title="Diagnostic Optimization"
                     >
                         <RefreshCw className={cn("w-3.5 h-3.5", isOptimizing && "animate-spin")} />
                     </button>
@@ -131,7 +131,9 @@ export default function BacktestMonitor({
             </div>
 
             <div className="flex flex-col">
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Backtesting</span>
+                <span className="text-[10px] font-semibold text-violet-400/80 uppercase tracking-wide flex items-center gap-1" title="This is a diagnostic sensor, not a trading strategy.">
+                    Diagnostic Score
+                </span>
                 <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[10px] text-gray-300 font-medium bg-gray-800 px-1.5 py-0.5 rounded border border-gray-700">
                         {stats.totalSignals} Days
@@ -150,8 +152,12 @@ export default function BacktestMonitor({
                             <DialogHeader>
                                 <DialogTitle className="flex items-center gap-2 text-gray-200">
                                     <History className="w-5 h-5" />
-                                    {indicatorName} Trade History
+                                    {indicatorName} Diagnostic History
                                 </DialogTitle>
+                                <p className="text-xs text-amber-500/80 mt-1">
+                                    ⚠️ <strong>Warning:</strong> This is an isolated diagnostic sensor, not a full trading strategy.
+                                    The results shown here are for indicator tuning only and do not factor in transaction costs, market regime filtering, or portfolio sizing.
+                                </p>
                             </DialogHeader>
                             <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                                 <table className="w-full text-xs text-left">

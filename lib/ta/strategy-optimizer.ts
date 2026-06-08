@@ -208,10 +208,15 @@ function getIndicatorSignal(
             const cur = arr[i]?.value;
             const prev = arr[i - 1]?.value;
             if (cur === undefined || prev === undefined) return null;
-            const slice = arr.slice(Math.max(0, i - 20), i + 1).map(p => p.value).filter((v): v is number => v !== undefined);
-            if (slice.length < 2) return null;
-            const sma = slice.reduce((a, b) => a + b, 0) / slice.length;
-            return adSignal(cur, sma);
+            let sum = 0;
+            let count = 0;
+            const start = Math.max(0, i - 20);
+            for (let j = start; j <= i; j++) {
+                const v = arr[j]?.value;
+                if (v !== undefined) { sum += v; count++; }
+            }
+            if (count < 2) return null;
+            return adSignal(cur, sum / count);
         }
         case "netvol": {
             const arr = data.nvData ?? [];
@@ -551,6 +556,7 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         takeProfitR: 4.0,       // karın koşmasına izin ver (RR 1:4)
         useTrailingStop: true,
         trailAtrMult: 2.5,      // trendin nefes alması için geniş
+        transactionCostPct: 0.10, // 0.1% per trade (0.05% entry + 0.05% exit)
     },
     // ─── NEW: Swing Trader — 3-10 günlük trade'ler için ───
     SwingTrader: {
@@ -565,6 +571,7 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         takeProfitR: 2.5,
         useTrailingStop: true,
         trailAtrMult: 1.5,
+        transactionCostPct: 0.10,
     },
     // ─── LEGACY: mevcut kodla geriye dönük uyumluluk için korunuyor ───
     Aggressive: {
@@ -579,6 +586,7 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         takeProfitR: 1.5,
         useTrailingStop: true,
         trailAtrMult: 0.5,
+        transactionCostPct: 0.10,
     },
     Balanced: {
         tradeThreshold: 0.40,
@@ -592,6 +600,7 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         takeProfitR: 2.0,
         useTrailingStop: false,
         trailAtrMult: 0,
+        transactionCostPct: 0.10,
     },
     Conservative: {
         tradeThreshold: 0.65,
@@ -1084,6 +1093,8 @@ export function runStrategyBacktest(
             let tradeExitReason: string | undefined;
             let tradeBarsHeld: number | undefined;
             let effectiveFuturePrice = futurePrice;
+            const profileCfg = getProfileConfig(config);
+            const tcPct = (profileCfg.transactionCostPct ?? 0) / 100;
 
     const evalMode = config.evaluationMode ?? 'pathaware';
 
@@ -1098,7 +1109,7 @@ export function runStrategyBacktest(
                     timeStopBars: 30, // trend follower: 30 gün nefes al, SL/TP/trailing'den biri mutlaka tetiklenir
                 };
                 const simResult = simulateTrade(candles, i, signal, atrValues, tradeRiskCfg);
-                tradeReturn = simResult.realizedReturnPct / 100; // Convert % to ratio for consistency
+                tradeReturn = simResult.realizedReturnPct / 100 - tcPct; // Deduct TC
                 isWin = tradeReturn > 0;
                 tradeMfe = simResult.mfe;
                 tradeMae = simResult.mae;
@@ -1109,7 +1120,7 @@ export function runStrategyBacktest(
             } else {
                 // Legacy lookforward: 2-point comparison
                 const rawReturn = (futurePrice - currentPrice) / currentPrice;
-                tradeReturn = signal === 'BUY' ? rawReturn : -rawReturn;
+                tradeReturn = (signal === 'BUY' ? rawReturn : -rawReturn) - tcPct;
                 isWin = tradeReturn > 0;
             }
 

@@ -11,11 +11,11 @@ Bu doküman, sistemin ileri düzey geliştirmeleri (Market Telemetry, MTF, Dinam
 ---
 
 ## 1. Market Telemetry → MCTS Prior Entegrasyonu (Feature 7.1)
-**Risk Seviyesi:** Orta (Prior Çakışması) | **Bağımsız Başlanabilir mi?:** Evet
+**Durum:** ✅ Tamamlandı (Faz 1.5 olarak Deep Discovery'ye eklendi ve DST `indicatorConfidences` üzerinden entegre edildi).
 
-### Yapılacaklar ve Riskler:
-- [ ] **Çift Prior Çakışmasını Çözmek:** MCTS'in UCT formülünde zaten MI ağırlığı kullanılıyor. Telemetry verisini doğrudan çarpmak (`mi_prior × telemetry_score`) risklidir, bir değer küçükse sinyali öldürür. **Çözüm:** Ağırlıklı toplam kullanılmalıdır: `α × mi_prior + (1-α) × telemetry_prior`.
-- [ ] **Döngüsel Confirmation Bias'ı Önlemek:** Telemetry'nin önceliklendirdiği indikatörleri Mcripts daha sık denerse keşif çeşitliliği kaybolur. **Çözüm:** Telemetry prior'unu UCT formülüne (SELECTION) değil, EXPANSION aşamasına (hangi indikatörün önce ekleneceğini belirlemek için) ekleyin.
+### Çözüm Özeti:
+- Telemetry, doğrudan MCTS `prior` değerine çarpılmak yerine, DST fusion motoruna (`runStrategyBacktest`) özel bir `indicatorConfidences` map'i olarak aktarıldı.
+- Böylece çift-prior çakışması veya exploration-exploitation dengesinin bozulması riski ortadan kaldırıldı.
 
 ---
 
@@ -52,9 +52,8 @@ Bu doküman, sistemin ileri düzey geliştirmeleri (Market Telemetry, MTF, Dinam
 ## Özet Öncelik Sıralaması Önerisi
 
 1. **Öncelik:** Walk-Forward Optimizasyonu (Yeni dosya, izole, inngest step mimarisi ile)
-2. **Öncelik:** Telemetry → MCTS Entegrasyonu (İzole değişiklik, ağırlıklı birleştirme)
-3. **Öncelik:** Dinamik Çıkış Stratejileri (`simulateTrade` içinde geriye uyumlu)
-4. **Son Öncelik:** MTF Filtreler (Altyapı değişimi ve lookahead riski çok yüksek, en sona bırakılmalı)
+2. **Öncelik:** Dinamik Çıkış Stratejileri (`simulateTrade` içinde geriye uyumlu)
+3. **Son Öncelik:** MTF Filtreler (Altyapı değişimi ve lookahead riski çok yüksek, en sona bırakılmalı)
 
 ---
 
