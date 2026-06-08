@@ -1,12 +1,16 @@
-// lib/ai/tools.ts — AI Agent'ın kullanabileceği araçlar (20 tools)
-// Her tool: Zod schema (input validasyonu) + execute (iş mantığı)
-// Dört savunma hattı: Zod, try-catch, timeout, event-loop yield
-
-// CPU-bound işlemlerin Node.js Event Loop'unu bloke etmemesi için
-const yieldToMain = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+// lib/ai/tools.ts — AI Agent tools (20 tools)
+// Shared helpers imported from ./tools/helpers.ts
 
 import { tool } from 'ai';
 import { z } from 'zod';
+import {
+  yieldToMain, HEAVY_TIMEOUT_MS, LIGHT_TIMEOUT_MS,
+  withTimeout, formatError, toToolError, safeResult,
+  mapIndicatorData, getSignalDescription, generateOverallEvaluation,
+} from './tools/helpers';
+import type { ToolResult } from './tools/helpers';
+// Re-export for backward compat (used by lib/inngest/functions.ts)
+export { mapIndicatorData } from './tools/helpers';
 import { getDailyCandlesForAI, getDailyCandles, get4HourCandles, getNews } from '@/lib/actions/finnhub.actions';
 import { getCurrentUserWatchlist, addToWatchlist, removeFromWatchlist } from '@/lib/actions/watchlist.actions';
 import { createAlert, deleteAlert, getUserAlerts } from '@/lib/actions/alerts.actions';
@@ -24,188 +28,15 @@ import { inngest } from '@/lib/inngest/client';
 import { stockSymbolSchema } from '@/lib/validations/schemas';
 import type { Candle } from '@/lib/ta/backtest';
 
-// ========================================================================
-// SAVUNMA HATTI 1: Timeout koruması
-// ========================================================================
-
-const HEAVY_TIMEOUT_MS = 45000; // 45 saniye (optimizasyon/backtest/ranking için)
-const LIGHT_TIMEOUT_MS = 30000; // 30 saniye (veri çekme için — Yahoo fallback'e yeterli süre)
-
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`TIMEOUT: ${label} exceeded ${ms / 1000}s limit`)), ms);
-  });
-  try {
-    const result = await Promise.race([promise, timeout]);
-    clearTimeout(timer);
-    return result;
-  } catch (e) {
-    clearTimeout(timer);
-    throw e;
-  }
-}
-
-function formatError(e: unknown): string {
-  if (e instanceof Error) {
-    // Timeout hatalarini ozel formatla
-    if (e.message.startsWith('TIMEOUT:')) return e.message;
-    return e.message.length > 200 ? e.message.slice(0, 200) + '...' : e.message;
-  }
-  return String(e).slice(0, 200);
-}
-
-// Insancil hata yonetimi: teknik hatayi kullanici dostu mesaja + errorCode'a cevirir
-function toToolError(e: unknown, symbol?: string): ToolResult {
-  const errMsg = formatError(e);
-  const lower = errMsg.toLowerCase();
-
-  // Finnhub erisim hatalari
-  if (lower.includes('403') || lower.includes('denied') || lower.includes('access')) {
-    return {
-      success: false,
-      error: errMsg,
-      errorCode: 'EXTERNAL_API_DENIED',
-      userMessage: `Borsa veri saglayicisi ${symbol ? symbol + ' icin ' : ''}erisimi reddetti. API planinizi kontrol edin.`,
-      recoverable: true,
-    };
-  }
-
-  // Rate limit
-  if (lower.includes('429') || lower.includes('rate limit')) {
-    return {
-      success: false,
-      error: errMsg,
-      errorCode: 'EXTERNAL_API_RATE_LIMIT',
-      userMessage: 'API istek limitine ulasildi (60 istek/dakika). Lutfen 1 dakika bekleyip tekrar deneyin.',
-      recoverable: true,
-    };
-  }
-
-  // Timeout
-  if (lower.includes('timeout') || lower.includes('timed out')) {
-    return {
-      success: false,
-      error: errMsg,
-      errorCode: 'EXTERNAL_API_TIMEOUT',
-      userMessage: 'Borsa veri saglayicisi yanit vermedi. Sunucular yogun olabilir.',
-      recoverable: true,
-    };
-  }
-
-  // Yetersiz veri
-  if (lower.includes('insufficient') || lower.includes('candle') || lower.includes('no data')) {
-    return {
-      success: false,
-      error: errMsg,
-      errorCode: 'INSUFFICIENT_DATA',
-      userMessage: `${symbol ? symbol + ' icin y' : 'Y'}eterli gecmis veri bulunamadi.`,
-      recoverable: false,
-    };
-  }
-
-  // Gecersiz sembol
-  if (lower.includes('invalid') && lower.includes('symbol')) {
-    return {
-      success: false,
-      error: errMsg,
-      errorCode: 'INVALID_SYMBOL',
-      userMessage: `Gecersiz hisse sembolu: ${symbol || 'bilinmiyor'}. Sembolu kontrol edip tekrar deneyin.`,
-      recoverable: false,
-    };
-  }
-
-  // Beklenmeyen hata
-  return {
-    success: false,
-    error: errMsg,
-    errorCode: 'INTERNAL_ERROR',
-    userMessage: 'Beklenmeyen bir sistem hatasi olustu. Lutfen daha sonra tekrar deneyin.',
-    recoverable: false,
-  };
-}
-
-// ========================================================================
-// SAVUNMA HATTI 2: Try-catch wrapper
-// ========================================================================
-
-type ToolResult = { success: boolean; error?: string; errorCode?: string; userMessage?: string; recoverable?: boolean;[key: string]: unknown };
-
-function safeResult(fnName: string, result: any): ToolResult {
-  // Eğer zaten { success: ... } formatında döndüyse aynen kullan
-  if (result && typeof result === 'object' && 'success' in result) return result as ToolResult;
-  // Değilse success'e sar
-  return { success: true, data: result };
-}
-
 import { INDICATOR_KEYS, DEFAULT_PARAMS } from '@/lib/constants/indicators';
-// SPRINT 3: timeframe-limits.ts silindi, inline clamp kullanılıyor.
 import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';
 
-const intervalSchema = z.enum(['1d', '4h']).default('1d')
-  .describe('1d=daily, 4h=4-hour');
+const intervalSchema = z.enum(['1d', '4h']).default('1d').describe('1d=daily, 4h=4-hour');
 const indicatorsListSchema = z.array(z.string()).min(1).max(17);
 
-// SAVUNMA HATTI 1: Zorunlu sembol şeması — AI'a açık talimat
 const requiredSymbol = stockSymbolSchema.describe(
   'REQUIRED: Stock symbol (e.g. AAPL, TSLA). If user did not provide a symbol, DO NOT call this tool — first ask the user which stock they want to analyze.'
 );
-
-// ========================================================================
-// TOOL KATEGORİLERİ (Router Agent — 20+ tool'da token patlamasını önler)
-// ========================================================================
-// KATEGORİ A: TA_TOOLS — Teknik Analiz / Hesaplama (analiz, sinyal, fiyat)
-// KATEGORİ B: RESEARCH_TOOLS — Araştırma / Backtest / Optimizasyon (ağır CPU)
-// KATEGORİ C: USER_TOOLS — Kullanıcı Verisi (watchlist, alarm, not)
-
-import type { ComputedIndicators } from '@/lib/ta/types';
-
-export function mapIndicatorData(computed: ComputedIndicators, key: string): unknown | undefined {
-  const map: Record<string, unknown> = {
-    macd: computed.macd, rsi: computed.rsi, stochrsi: computed.stochrsi,
-    wavetrend: computed.wavetrend, dmi: computed.dmi, mfi: computed.mfi,
-    smi: computed.smi, ao: computed.ao, cci: computed.cci, wpr: computed.wpr,
-    di: computed.di, cmf: computed.cmf, ad: computed.ad, netvol: computed.netvol,
-    madr: computed.madr, bb: computed.bb, alma: computed.alma,
-  };
-  return map[key] ?? undefined;
-}
-
-function getSignalDescription(indicator: string, signal: string): string {
-  const isBuy = signal.includes('BUY');
-  const isStrong = signal.includes('STRONG');
-  const isNeutral = signal === 'NEUTRAL';
-  if (isNeutral) return 'Nötr sinyal; belirgin bir trend gözlemlenmiyor.';
-
-  switch (indicator.toLowerCase()) {
-    case 'macd': return isBuy ? (isStrong ? 'Güçlü alım sinyali; MACD çizgisi sinyal çizgisini güçlü şekilde yukarı kesti.' : 'Hafif alım sinyali; kısa vadeli momentum toparlanıyor.') : (isStrong ? 'Güçlü satış sinyali; MACD çizgisi sinyal çizgisini sert şekilde aşağı kesti.' : 'Hafif satış sinyali; kısa vadeli momentum zayıflıyor.');
-    case 'rsi': return isBuy ? (isStrong ? 'Aşırı satım bölgesinden dönüş; güçlü alım fırsatı.' : 'Hafif alım sinyali; momentum zayıf ancak yükseliş eğilimi sürüyor.') : (isStrong ? 'Aşırı alım bölgesinden dönüş; güçlü satış baskısı.' : 'Hafif satış sinyali; fiyat zirvelerden geriliyor.');
-    case 'stochrsi': return isBuy ? (isStrong ? 'Güçlü alım sinyali; fiyatın aşırı satım bölgesinden çıkma ihtimali yüksek.' : 'Hafif alım sinyali; fiyatın aşırı satım bölgesine girme ihtimali düşük.') : (isStrong ? 'Güçlü satış sinyali; aşırı alım bölgesinden dönüş başladı.' : 'Hafif satış sinyali; kısa vadeli tepe oluşumu gözlemleniyor.');
-    case 'bb': return isBuy ? 'Fiyat alt banda yaklaştı/değdi; tepki alımı gelebilir.' : 'Fiyat üst banda yaklaştı/değdi; dirençle karşılaşabilir.';
-    default: return isBuy ? (isStrong ? 'Güçlü bir yükseliş trendi teyidi.' : 'Yükseliş yönünde ılımlı bir sinyal.') : (isStrong ? 'Güçlü bir düşüş trendi teyidi.' : 'Düşüş yönünde ılımlı bir sinyal.');
-  }
-}
-
-function generateOverallEvaluation(signals: Array<{ indicator: string; signal: string }>, overallSignal: string, overallScore: number): string {
-  const buys = signals.filter(s => s.signal.includes('BUY')).map(s => s.indicator.toUpperCase());
-  const sells = signals.filter(s => s.signal.includes('SELL')).map(s => s.indicator.toUpperCase());
-
-  if (buys.length > sells.length) {
-    if (overallSignal === 'STRONG BUY') {
-      return `${buys.slice(0, 2).join(' ve ')} güçlü bir yükseliş sinyali üretirken, diğer indikatörler bu hareketi destekliyor. Genel trend pozitif yönde.`;
-    }
-    return `${buys.slice(0, 2).join(' ve ')} alım yönünde sinyaller üretiyor, ancak piyasada temkinli bir iyimserlik hakim. Trendin gücünü doğrulamak için hacim verilerine dikkat edilmeli.`;
-  }
-
-  if (sells.length > buys.length) {
-    if (overallSignal === 'STRONG SELL') {
-      return `${sells.slice(0, 2).join(' ve ')} güçlü bir düşüş sinyali veriyor. Ayı piyasası baskısı belirginleşmiş durumda.`;
-    }
-    return `${sells.slice(0, 2).join(' ve ')} satış yönünde sinyaller üretiyor. Trend zayıflığı gözlemleniyor, olası destek seviyeleri takip edilmeli.`;
-  }
-
-  return `İndikatörler arasında net bir uzlaşma bulunmuyor. Piyasa yatay veya kararsız bir seyir izliyor. İşlem yapmadan önce ek sinyallerin (hacim, formasyon) onaylanması önerilir.`;
-}
 
 // ========================================================================
 // 16 TOOL (her biri try-catch + timeout ile zırhlanmış)
@@ -542,8 +373,6 @@ export const getTools = (userId?: string | null) => ({
           name: 'ai/optimize-parameter',
           data: { jobId, symbol, indicator: name, interval, years, userId },
         });
-
-        console.log("🛠️ [DEBUG - SUNUCU] Tool çalıştı. Inngest'e atılan jobId:", jobId);
 
         return {
           success: true,

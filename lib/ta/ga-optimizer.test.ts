@@ -123,7 +123,7 @@ describe('decodeMask / encodeMask', () => {
 // ─── geneticOptimize ──────────────────────────────────────────────────────────
 
 describe('geneticOptimize', () => {
-    it('returns population sorted by fitness descending', () => {
+    it('returns population sorted by fitness descending', async () => {
         const candles = makeCandles(200, 'up');
         const data = makeOscAllData(candles, ['rsi', 'macd', 'cci', 'mfi'], 80, 20, 15);
         const topScreen = [
@@ -132,7 +132,7 @@ describe('geneticOptimize', () => {
             { indicators: ['macd', 'mfi'], winRate: 40, totalSignals: 6, bestLookForward: 14 },
         ];
 
-        const result = geneticOptimize(candles, data, topScreen, {
+        const result = await geneticOptimize(candles, data, topScreen, {
             interval: '1d',
             mode: 'all',
             config: {
@@ -149,14 +149,14 @@ describe('geneticOptimize', () => {
         }
     });
 
-    it('all individuals have at least 2 indicators', () => {
+    it('all individuals have at least 2 indicators', async () => {
         const candles = makeCandles(200, 'up');
         const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 15);
         const topScreen = [
             { indicators: ['rsi', 'macd'], winRate: 50, totalSignals: 10, bestLookForward: 14 },
         ];
 
-        const result = geneticOptimize(candles, data, topScreen, {
+        const result = await geneticOptimize(candles, data, topScreen, {
             interval: '1d',
             mode: 'all',
             config: { populationSize: 20, maxGenerations: 5, staleGenerationLimit: 3 },
@@ -168,14 +168,14 @@ describe('geneticOptimize', () => {
         }
     });
 
-    it('fitness improves over generations (best not zero)', () => {
+    it('fitness improves over generations (best not zero)', async () => {
         const candles = makeCandles(200, 'up');
         const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 15);
         const topScreen = [
             { indicators: ['rsi', 'macd'], winRate: 50, totalSignals: 10, bestLookForward: 14 },
         ];
 
-        const result = geneticOptimize(candles, data, topScreen, {
+        const result = await geneticOptimize(candles, data, topScreen, {
             interval: '1d',
             mode: 'all',
             config: { populationSize: 20, maxGenerations: 10, staleGenerationLimit: 5 },
@@ -186,11 +186,11 @@ describe('geneticOptimize', () => {
         expect(result[0].totalSignals).toBeGreaterThan(0);
     });
 
-    it('handles empty topScreen gracefully', () => {
+    it('handles empty topScreen gracefully', async () => {
         const candles = makeCandles(100, 'flat');
         const data = {};
 
-        const result = geneticOptimize(candles, data, [], {
+        const result = await geneticOptimize(candles, data, [], {
             interval: '1d',
             mode: 'all',
             config: { populationSize: 20, maxGenerations: 5, staleGenerationLimit: 3 },
@@ -200,14 +200,14 @@ describe('geneticOptimize', () => {
         expect(result.length).toBe(20);
     });
 
-    it('respects parameter ranges for all individuals', () => {
+    it('respects parameter ranges for all individuals', async () => {
         const candles = makeCandles(200, 'up');
         const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 15);
         const topScreen = [
             { indicators: ['rsi', 'macd'], winRate: 50, totalSignals: 10, bestLookForward: 14 },
         ];
 
-        const result = geneticOptimize(candles, data, topScreen, {
+        const result = await geneticOptimize(candles, data, topScreen, {
             interval: '1d',
             mode: 'all',
             config: { populationSize: 20, maxGenerations: 5, staleGenerationLimit: 3 },

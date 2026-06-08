@@ -75,10 +75,10 @@ const WalletSchema = new Schema<IWallet>({
   timestamps: true,
   // Transform Decimal128 to string in JSON output for API responses
   toJSON: {
-    transform: (_doc, ret) => {
-      if (ret.cashBalance) ret.cashBalance = ret.cashBalance.toString() as any;
-      if (ret.reservedBalance) ret.reservedBalance = ret.reservedBalance.toString() as any;
-      if (ret.initialBalance) ret.initialBalance = ret.initialBalance.toString() as any;
+    transform: (_doc, ret: Record<string, unknown>) => {
+      if (ret.cashBalance) ret.cashBalance = String(ret.cashBalance);
+      if (ret.reservedBalance) ret.reservedBalance = String(ret.reservedBalance);
+      if (ret.initialBalance) ret.initialBalance = String(ret.initialBalance);
       return ret;
     },
   },

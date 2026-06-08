@@ -19,6 +19,7 @@ import {
     ArrowUpDown,
     Loader2,
     X,
+    BarChart3,
 } from "lucide-react";
 import CustomStrategyModal, {
     DeleteConfirmDialog,
@@ -456,6 +457,7 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
             params: discovered.params ? { ...discovered.params } : undefined,
             discoveryWinRate: discovered.winRate,
             discoverySignalCount: discovered.totalSignals ?? 0,
+            isDiscovered: true,
         };
         const existing = loadCustomStrategies();
         saveCustomStrategies([newStrategy, ...existing]);
@@ -1119,6 +1121,27 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
                     <button
                         onClick={() => {
                             setDialogOpen(false);
+                            const params = new URLSearchParams(searchParams.toString());
+                            if (searchParams.get("telemetry") === "1") {
+                                params.delete("telemetry");
+                            } else {
+                                params.set("telemetry", "1");
+                            }
+                            router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+                        }}
+                        disabled={!candles || candles.length === 0}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm
+                            text-violet-400 hover:text-violet-300
+                            bg-violet-500/10 hover:bg-violet-500/20
+                            border border-dashed border-violet-500/30 hover:border-violet-500/50
+                            rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        <BarChart3 className="w-4 h-4" />
+                        <span className="font-medium">Market Telemetry</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            setDialogOpen(false);
                             setTimeout(() => setDiscoveryOpen(true), 200);
                         }}
                         disabled={!candles || candles.length === 0 || !allData}
@@ -1129,7 +1152,7 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
                             rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         <Lightbulb className="w-4 h-4" />
-                        <span className="font-medium">Discover New...</span>
+                        <span className="font-medium">Discover Strategy</span>
                     </button>
                     <button
                         onClick={() => {
@@ -1143,7 +1166,7 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
                             rounded-lg transition-all"
                     >
                         <Plus className="w-4 h-4" />
-                        <span className="font-medium">Create New...</span>
+                        <span className="font-medium">Create Strategy</span>
                     </button>
                 </div>
             </TAGlassDialog>

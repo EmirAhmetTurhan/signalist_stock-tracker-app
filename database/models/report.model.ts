@@ -38,6 +38,13 @@ export interface DiscoveryStrategyResult {
     avgReturn: number;
     totalReturn: number;
   }>;
+  // ─── Path-Aware + Portfolio Fields (Step 8) ───
+  evaluationMode?: 'lookforward' | 'pathaware' | 'regime';
+  mfe?: number;
+  mae?: number;
+  intraTradeDD?: number;
+  equityCurveResampled?: { time: string; equity: number }[];
+  drawdownCurveResampled?: { time: string; drawdownPct: number }[];
 }
 
 // ─── Report Interface ────────────────────────────────────────────────────────────

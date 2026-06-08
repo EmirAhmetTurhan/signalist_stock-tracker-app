@@ -135,3 +135,37 @@ export function toModelMessages(messages: CanonicalMessage[]): any[] {
 
   return coreMessages;
 }
+
+// ─── UI Message Helpers ─────────────────────────────────────────────────────
+// Shared between ChatArea and FloatingChatButton for consistent message rendering.
+
+/**
+ * Normalize AI SDK toolInvocations → parts during streaming.
+ * Handles backward compatibility with AI SDK v3 toolInvocations format.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FlexibleParts = any[] | undefined;
+
+export function normalizeUIParts(
+  parts: FlexibleParts,
+  m: Record<string, unknown>,
+): Record<string, unknown>[] {
+  if (parts && parts.length > 0) return parts as Record<string, unknown>[];
+  const invs = m.toolInvocations;
+  if (Array.isArray(invs)) {
+    return (invs as Array<Record<string, unknown>>).map(inv => ({
+      type: 'tool-invocation' as const,
+      toolInvocation: inv,
+    }));
+  }
+  return [];
+}
+
+export function getMessageText(
+  parts: FlexibleParts,
+  m: Record<string, unknown>,
+): string {
+  if (!parts || parts.length === 0) return (m.content as string) ?? '';
+  const tp = parts.find((p: Record<string, unknown>) => p.type === 'text' && 'text' in p);
+  return (tp as { text?: string } | undefined)?.text ?? '';
+}

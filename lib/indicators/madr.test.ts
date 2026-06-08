@@ -14,12 +14,12 @@ describe('computeMADR', () => {
         expect(computeMADR(candles).length).toBe(30);
     });
 
-    it('returns 0 before SMA warmup', () => {
+    it('returns undefined before SMA warmup', () => {
         const candles = makeCandles(Array.from({ length: 10 }, (_, i) => 100 + i));
         const result = computeMADR(candles, 21);
-        // First 20 values should be 0 (before SMA warmup)
-        for (let i = 0; i < 10; i++) {
-            expect(result[i].value).toBe(0);
+        // All bars before SMA warmup (period-1 = 20) should be undefined
+        for (let i = 0; i < result.length; i++) {
+            expect(result[i].value).toBeUndefined();
         }
     });
 

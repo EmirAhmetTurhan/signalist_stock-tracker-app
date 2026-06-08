@@ -29,6 +29,29 @@ interface YahooChartResponse {
     };
 }
 
+/** Parse Yahoo Finance v8 chart timestamps + quote into CandleDataPoint array. */
+function parseCandleResponse(
+    timestamps: number[],
+    quote: YahooChartQuote,
+): CandleDataPoint[] {
+    const { open: opens, high: highs, low: lows, close: closes, volume: volumes } = quote;
+    const out: CandleDataPoint[] = [];
+    for (let i = 0; i < timestamps.length; i++) {
+        const oRaw = opens?.[i]; const hRaw = highs?.[i]; const lRaw = lows?.[i];
+        const cRaw = closes?.[i]; const vRaw = volumes?.[i];
+        const valid = [oRaw, hRaw, lRaw, cRaw].every(
+            (x) => typeof x === 'number' && Number.isFinite(x) && (x as number) > 0,
+        );
+        if (!valid) continue;
+        const o = oRaw as number, h = hRaw as number, l = lRaw as number, c = cRaw as number;
+        if (!(l <= h)) continue;
+        const item: CandleDataPoint = { time: timestamps[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
+        if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
+        out.push(item);
+    }
+    return out;
+}
+
 export async function fetchJSON<T>(url: string, revalidateSeconds?: number): Promise<T> {
     const res = await fetch(url, {
         ...(revalidateSeconds !== undefined ? { next: { revalidate: revalidateSeconds } } : {}),

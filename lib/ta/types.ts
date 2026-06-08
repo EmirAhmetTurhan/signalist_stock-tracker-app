@@ -1,5 +1,5 @@
-// lib/ta/types.ts — Teknik Analiz için paylaşılan tip tanımları
-// Hem TA sayfası hem de AI Agent tarafından kullanılır
+// lib/ta/types.ts — Shared type definitions for Technical Analysis
+// Used by both TA page and AI Agent
 
 export type SignalLabel = 'STRONG BUY' | 'WEAK BUY' | 'STRONG SELL' | 'WEAK SELL' | 'NEUTRAL';
 
@@ -16,7 +16,7 @@ export type StrategyMode = 'all' | 'majority';
  * - Balanced: default tuning, crossover required, moderate cooldown
  * - Conservative: higher threshold, crossover required, longer cooldown
  */
-export type SignalProfile = 'Aggressive' | 'Balanced' | 'Conservative';
+export type SignalProfile = 'TrendFollower' | 'SwingTrader' | 'Aggressive' | 'Balanced' | 'Conservative';
 
 /**
  * Market regime classification for regime-aware strategy execution.
@@ -78,7 +78,7 @@ export type IndicatorParams = {
   bbColor: string; bbOpacity: number; bbWidth: number;
 };
 
-/** Ham mum verisi */
+/** Raw candle data */
 export type CandleInput = {
   time: number;
   open: number;
@@ -88,13 +88,13 @@ export type CandleInput = {
   volume?: number;
 };
 
-/** İndikatör serisi için temel nokta */
+/** Base point for indicator series */
 export type TimePoint = {
   time: number;
   value?: number;
 };
 
-/** BB hesaplama çıktısı */
+/** Bollinger Bands calculation output */
 export type BBResult = {
   time: string | number;
   basis?: number;
@@ -168,7 +168,7 @@ export type CCISeries = {
   ma: TimePoint[];
 };
 
-/** İndikatör hesaplama orkestratör çıktısı — her indikatör hesaplanırsa doldurulur */
+/** Indicator computation orchestrator output — populated for each computed indicator */
 export type ComputedIndicators = {
   macd?: MACDSeries;
   rsi?: RSISeries;

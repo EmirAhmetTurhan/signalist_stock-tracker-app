@@ -111,8 +111,7 @@ function buildParamSpace(combo: string[], interval?: string): ParamDimension[] {
         { key: 'lookForward', min: 5, max: 30 },
     ];
 
-    // SPRINT 2 / B2: Timeframe-aware lookback range. 4h swing trade için
-    // genişletilmiş [14, 42] arama uzayı kullanılır. 1d/1wk default'u kullanır.
+    // Timeframe-aware lookback range. 4h swing trade için genişletilmiş arama uzayı kullanılır.
     for (const indicator of combo) {
         const range = rangeForTimeframe(indicator, interval);
         if (range[0] > 0 && range[1] > range[0]) {

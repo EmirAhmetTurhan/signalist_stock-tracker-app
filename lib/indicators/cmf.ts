@@ -52,13 +52,9 @@ export function computeCMF(candles: CMFInput[], period = 20): CMFPoint[] {
         }
 
         if (i >= period - 1) {
-            let cmfValue = 0;
-            if (sumVol !== 0) {
-                cmfValue = sumMFV / sumVol;
-            }
             out[i] = {
                 time: candles[i].time,
-                value: cmfValue
+                value: sumVol !== 0 ? sumMFV / sumVol : undefined,
             };
         }
     }

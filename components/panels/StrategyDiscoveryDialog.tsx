@@ -9,6 +9,7 @@ import {
     Sparkles, Loader2, Lightbulb, Play, RotateCcw, ChevronDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import type { Timeframe } from "@/lib/ta/types";
 import DeepDiscoveryProgress from "../ta/DeepDiscoveryProgress";
 import DeepDiscoveryResults from "../ta/DeepDiscoveryResults";
@@ -85,11 +86,18 @@ export default function StrategyDiscoveryDialog({
     const handleDiscover = async () => {
         // Guard: prevent concurrent API calls (synchronous check before async state update)
         if (isRequestingRef.current) return;
-        isRequestingRef.current = true;
 
+        // Guard: if a job is already running, don't clear it — just inform user
+        if (jobId) {
+            toast.info("A discovery job is already in progress. Please wait for it to complete.", {
+                description: `Job ID: ${jobId.slice(0, 12)}...`,
+            });
+            return;
+        }
+
+        isRequestingRef.current = true;
         setIsDiscovering(true);
         setDiscoveryResults(null);
-        setJobId(null);
 
         try {
             const res = await fetch("/api/discovery/deep-search", {
@@ -98,15 +106,33 @@ export default function StrategyDiscoveryDialog({
                 body: JSON.stringify({ symbol, interval, years: selectedYears }),
             });
 
+            const data = await res.json();
+
             if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Failed to start discovery");
+                // 409: Job already running — show existing progress instead of error
+                if (res.status === 409 && data.jobId) {
+                    toast.warning(data.message || "A discovery job is already running for this account.", {
+                        description: "Showing existing job progress.",
+                    });
+                    setJobId(data.jobId);
+                    setIsDiscovering(false);
+                    return;
+                }
+                throw new Error(data.error || data.message || "Failed to start discovery");
             }
 
-            const { jobId: newJobId } = await res.json();
-            setJobId(newJobId);
+            setJobId(data.jobId);
+            // Close dialog after job starts so user can navigate freely
+            setOpen(false);
+            toast.success("Discovery started", {
+                description: `${symbol} için strateji keşfi arka planda başlatıldı. Sonuçlar bildirim olarak gelecek.`,
+            });
         } catch (err) {
+            const message = err instanceof Error ? err.message : "An unexpected error occurred";
             console.error("[StrategyDiscoveryDialog] Discovery failed to start:", err);
+            toast.error("Failed to start discovery", {
+                description: message,
+            });
             setIsDiscovering(false);
         } finally {
             isRequestingRef.current = false;
@@ -115,12 +141,15 @@ export default function StrategyDiscoveryDialog({
 
     const handleJobComplete = (jobData: any) => {
         setIsDiscovering(false);
-        // SAFE: Accept both populated arrays AND empty arrays.
-        // If empty (falsy or []), DeepDiscoveryResults will show an empty state.
-        if (jobData?.discoveryResults) {
-            setDiscoveryResults(jobData.discoveryResults);
-        } else {
-            // API returned no discoveryResults field at all → job ended without result
+        // Always set results (even empty array) to exit the progress view.
+        // If discoveryResults is missing/null/undefined, we fallback to empty array
+        // and DeepDiscoveryResults will render an appropriate empty state.
+        const results = jobData?.discoveryResults;
+        setDiscoveryResults(Array.isArray(results) ? results : []);
+        // Clear jobId so the progress bar disappears and results view renders
+        setJobId(null);
+
+        if (!results || (Array.isArray(results) && results.length === 0)) {
             console.warn("[StrategyDiscoveryDialog] Job completed but no discoveryResults found");
         }
     };
@@ -128,6 +157,8 @@ export default function StrategyDiscoveryDialog({
     const handleJobError = (error: string) => {
         setIsDiscovering(false);
         setJobId(null);
+        // Set empty results to exit progress view — user sees empty state with error
+        setDiscoveryResults([]);
         console.error("Discovery failed:", error);
     };
 

@@ -117,11 +117,11 @@ const TradeSchema = new Schema<ITrade>({
 }, {
   timestamps: true,
   toJSON: {
-    transform: (_doc, ret) => {
-      if (ret.fillPrice) ret.fillPrice = ret.fillPrice.toString() as any;
-      if (ret.notional) ret.notional = ret.notional.toString() as any;
-      if (ret.fees) ret.fees = ret.fees.toString() as any;
-      if (ret.realizedPnl) ret.realizedPnl = ret.realizedPnl.toString() as any;
+    transform: (_doc, ret: Record<string, unknown>) => {
+      if (ret.fillPrice) ret.fillPrice = String(ret.fillPrice);
+      if (ret.notional) ret.notional = String(ret.notional);
+      if (ret.fees) ret.fees = String(ret.fees);
+      if (ret.realizedPnl) ret.realizedPnl = String(ret.realizedPnl);
       return ret;
     },
   },

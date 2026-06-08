@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { calculateWinRate, Candle, BacktestHistoryItem } from "@/lib/ta/backtest";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, History, CheckCircle2, XCircle, TrendingUp, TrendingDown } from "lucide-react";
+import { RefreshCw, History, CheckCircle2, XCircle, TrendingUp, TrendingDown, RotateCcw } from "lucide-react";
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";
 import {
     Dialog,
@@ -94,14 +94,30 @@ export default function BacktestMonitor({
     return (
         <div className="flex items-center gap-3 bg-gray-900/40 border border-gray-800 rounded-lg p-2 pr-4 shadow-sm backdrop-blur-sm ml-auto">
             {OPTIMIZABLE_INDICATORS[indicatorName] && (
-                <button
-                    onClick={handleRegenerate}
-                    disabled={isOptimizing}
-                    className="p-1.5 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-200 disabled:opacity-50 group"
-                    title="Optimize parameters"
-                >
-                    <RefreshCw className={cn("w-3.5 h-3.5", isOptimizing && "animate-spin")} />
-                </button>
+                <div className="flex flex-col items-center gap-0.5">
+                    <button
+                        onClick={handleRegenerate}
+                        disabled={isOptimizing}
+                        className="p-1.5 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-200 disabled:opacity-50 group"
+                        title="Optimize Parameters"
+                    >
+                        <RefreshCw className={cn("w-3.5 h-3.5", isOptimizing && "animate-spin")} />
+                    </button>
+                    <button
+                        onClick={() => {
+                            const paramName = OPTIMIZABLE_INDICATORS[indicatorName]?.param;
+                            if (paramName) {
+                                const params = new URLSearchParams(searchParams.toString());
+                                params.delete(paramName);
+                                router.push(`${window.location.pathname}?${params.toString()}`);
+                            }
+                        }}
+                        className="p-1.5 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-200"
+                        title="Default Parameters — reset to original values"
+                    >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                </div>
             )}
 
             <div className="relative flex-shrink-0" style={{ width: size, height: size }}>

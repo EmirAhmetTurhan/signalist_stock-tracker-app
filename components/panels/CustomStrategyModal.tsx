@@ -19,6 +19,8 @@ export interface CustomStrategy {
     discoveryWinRate?: number;
     /** Signal count from the discovery/optimization result */
     discoverySignalCount?: number;
+    /** Whether this strategy was created via Discovery (true) or manually (false/undefined) */
+    isDiscovered?: boolean;
 }
 
 // ─── Desteklenen Indicators ────────────────────────────────────────────────

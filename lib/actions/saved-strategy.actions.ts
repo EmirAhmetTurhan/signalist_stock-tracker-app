@@ -273,7 +273,7 @@ export async function addDiscoveredStrategy(
             userId,
             name,
             indicators: strategy.combo,
-            mode: 'all',
+            mode: 'majority',
             lookForward: 14,
             discoveredParams: strategy.bestParams ?? null,
             discoveredWinRate: strategy.validatedWinRate ?? strategy.bestWinRate ?? null,
@@ -294,7 +294,7 @@ export async function addDiscoveredStrategy(
         });
 
         revalidatePath('/ta');
-        revalidatePath('/archive/reports/[id]');
+        revalidatePath('/archive/reports/[id]', 'page');
 
         return {
             success: true,

@@ -1,11 +1,13 @@
 import { createSMA } from './_math';
 
-// Standart Bollinger Bands (20,2) — offset shift desteği ile
+// Standart Bollinger Bands (20,2)
+// NOTE: offset parameter accepted for API compatibility but not yet implemented
+// (TradingView-style bar shift requires cross-bar index mapping).
 export function computeBollingerBands(
     candles: { time: number; close: number }[],
     period = 20,
     multiplier = 2,
-    offset = 0
+    _offset = 0
 ) {
     if (!Array.isArray(candles) || candles.length === 0) return [];
 

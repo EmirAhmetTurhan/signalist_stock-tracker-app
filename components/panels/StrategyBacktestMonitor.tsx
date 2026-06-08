@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { AVAILABLE_INDICATORS } from "@/components/panels/CustomStrategyModal";
 import type { StrategyMode, Timeframe } from "@/lib/ta/types";
@@ -11,18 +11,9 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog";
-import { History, CheckCircle2, XCircle, TrendingUp, TrendingDown, Loader2, Zap, RotateCcw } from "lucide-react";
+import { History, CheckCircle2, XCircle, TrendingUp, TrendingDown, Loader2, Zap, RotateCcw, BarChart3 } from "lucide-react";
 import { optimizeStrategyAction } from "@/lib/actions/optimize-strategy.actions";
-import {
-    rsiSignal, cciSignal, waveTrendSignal, macdSignal,
-    stochRsiSignal, dmiSignal, smiSignal, aoSignal,
-    mfiSignal, wprSignal, diSignal, cmfSignal, adSignal,
-    netvolSignal, madrSignal, almaSignal, bbSignal,
-    rsiCross, cciCross, waveTrendCross, macdCross,
-    stochRsiCross, dmiCross, smiCross, aoCross,
-    mfiCross, wprCross, diCross, cmfCross, adCross,
-    netvolCross, madrCross, almaCross, bbCross,
-} from '@/lib/ta/signal-registry';
+import { runBacktestAction } from "@/lib/actions/backtest.actions";
 
 type Candle = { time: string | number; close: number; high: number; low: number };
 type Series = { time: string | number; value?: number }[];
@@ -33,9 +24,13 @@ export type HistoryItem = {
     price: number;
     futurePrice: number;
     isWin: boolean;
+    mfe?: number;
+    mae?: number;
+    exitReason?: string;
+    barsHeld?: number;
+    realizedReturn?: number;
 };
 
-// ─── Tüm indikatör datasını tutan tip ────────────────────────────────────────
 export interface AllIndicatorData {
     rsiData?: { rsi: Series; ma: Series };
     cciData?: { cci: Series; ma: Series };
@@ -44,324 +39,37 @@ export interface AllIndicatorData {
     stochRsiData?: { k: Series; d: Series };
     dmiData?: { plusDI: Series; minusDI: Series; adx: Series };
     smiData?: { smi: Series; signal: Series; histogram?: (Series[number] & { color?: string })[] };
-    // Yeni indikatörler
-    aoData?: Series;                        // Awesome Oscillator
-    mfiData?: { mfi: Series };               // Money Flow Index
-    wprData?: Series;                        // Williams %R
-    diData?: Series;                        // Demand Index
-    cmfData?: Series;                        // Chaikin Money Flow
-    adData?: Series;                        // Accumulation/Distribution
-    nvData?: Series;                        // Net Volume
-    madrData?: Series;                        // MADR
-    almaData?: Series;                        // ALMA
-    bbData?: { time: string | number; basis?: number; upper?: number; lower?: number }[]; // Bollinger Bands
+    aoData?: Series;
+    mfiData?: { mfi: Series };
+    wprData?: Series;
+    diData?: Series;
+    cmfData?: Series;
+    adData?: Series;
+    nvData?: Series;
+    madrData?: Series;
+    almaData?: Series;
+    bbData?: { time: string | number; basis?: number; upper?: number; lower?: number }[];
 }
 
 interface StrategyBacktestMonitorProps {
-    // "RSI_CCI_WT" için built-in | "CUSTOM" için custom
     strategyName: string;
     candles: Candle[];
-    // Built-in strateji datası (geriye dönük uyumluluk)
     rsiData?: AllIndicatorData["rsiData"];
     cciData?: AllIndicatorData["cciData"];
     waveTrendData?: AllIndicatorData["waveTrendData"];
-    // Custom strateji için — seçili indikatör anahtarları + hepsinin datası
     customIndicators?: string[];
     allData?: AllIndicatorData;
     config?: { lookForward: number };
     mode?: StrategyMode;
     interval?: Timeframe;
-    /** Pre-populated optimized params from a discovered/saved strategy (e.g., { rsi_len: 7, cci_len: 14 }) */
     initialOptimizedParams?: Record<string, number>;
-    /** Win rate from the discovery result (displayed when initialOptimizedParams is provided) */
     discoveryWinRate?: number;
-    /** Signal count from the discovery result */
     discoverySignalCount?: number;
+    /** Signal profile for backtest sensitivity. Defaults to 'TrendFollower'
+     *  to match Phase 4.5 full-fidelity backtest in discovery-deep-search. */
+    signalProfile?: 'TrendFollower' | 'SwingTrader' | 'Aggressive' | 'Balanced' | 'Conservative';
 }
 
-// ─── Per-bar sinyal hesaplayıcı (her indikatör için BUY/SELL/null döner) ──────
-function getIndicatorSignal(
-    key: string,
-    i: number,
-    data: AllIndicatorData,
-    candles?: Candle[]
-): "BUY" | "SELL" | null {
-    switch (key) {
-        case "rsi": {
-            if (!data.rsiData) return null;
-            const rsi = data.rsiData.rsi[i]?.value;
-            const rsiMa = data.rsiData.ma[i]?.value;
-            if (rsi === undefined || rsiMa === undefined) return null;
-            return rsiSignal(rsi, rsiMa);
-        }
-        case "cci": {
-            if (!data.cciData) return null;
-            const cci = data.cciData.cci[i]?.value;
-            const ma = data.cciData.ma[i]?.value;
-            if (cci === undefined || ma === undefined) return null;
-            return cciSignal(cci, ma);
-        }
-        case "wavetrend": {
-            if (!data.waveTrendData) return null;
-            const wt1 = data.waveTrendData.wt1[i]?.value;
-            const wt2 = data.waveTrendData.wt2[i]?.value;
-            if (wt1 === undefined || wt2 === undefined) return null;
-            return waveTrendSignal(wt1, wt2);
-        }
-        case "macd": {
-            if (!data.macdData) return null;
-            const macd = data.macdData.macd[i]?.value;
-            const signal = data.macdData.signal[i]?.value;
-            if (macd === undefined || signal === undefined) return null;
-            return macdSignal(macd, signal);
-        }
-        case "stochrsi": {
-            if (!data.stochRsiData) return null;
-            const k = data.stochRsiData.k[i]?.value;
-            const d = data.stochRsiData.d[i]?.value;
-            if (k === undefined || d === undefined) return null;
-            return stochRsiSignal(k, d);
-        }
-        case "dmi": {
-            if (!data.dmiData) return null;
-            const plus = data.dmiData.plusDI[i]?.value;
-            const minus = data.dmiData.minusDI[i]?.value;
-            const adx = data.dmiData.adx[i]?.value;
-            if (plus === undefined || minus === undefined || adx === undefined) return null;
-            return dmiSignal(plus, minus);
-        }
-        case "smi": {
-            if (!data.smiData) return null;
-            const smi = data.smiData.smi[i]?.value;
-            const signal = data.smiData.signal[i]?.value;
-            if (smi === undefined || signal === undefined) return null;
-            return smiSignal(smi, signal);
-        }
-        case "ao": {
-            const arr = data.aoData ?? [];
-            const cur = arr[i]?.value;
-            const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return null;
-            return aoSignal(cur, prev);
-        }
-        case "mfi": {
-            const arr = data.mfiData?.mfi ?? [];
-            const cur = arr[i]?.value;
-            const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return null;
-            return mfiSignal(cur, prev);
-        }
-        case "wpr": {
-            const arr = data.wprData ?? [];
-            const cur = arr[i]?.value;
-            const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return null;
-            return wprSignal(cur, prev);
-        }
-        case "di": {
-            const arr = data.diData ?? [];
-            const cur = arr[i]?.value;
-            if (cur === undefined) return null;
-            return diSignal(cur);
-        }
-        case "cmf": {
-            const arr = data.cmfData ?? [];
-            const cur = arr[i]?.value;
-            if (cur === undefined) return null;
-            return cmfSignal(cur);
-        }
-        case "ad": {
-            const arr = data.adData ?? [];
-            const cur = arr[i]?.value;
-            const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return null;
-            const slice = arr.slice(Math.max(0, i - 20), i + 1).map(p => p.value).filter((v): v is number => v !== undefined);
-            if (slice.length < 2) return null;
-            const sma = slice.reduce((a, b) => a + b, 0) / slice.length;
-            return adSignal(cur, sma);
-        }
-        case "netvol": {
-            const arr = data.nvData ?? [];
-            const cur = arr[i]?.value;
-            if (cur === undefined) return null;
-            return netvolSignal(cur);
-        }
-        case "madr": {
-            const arr = data.madrData ?? [];
-            const cur = arr[i]?.value;
-            if (cur === undefined) return null;
-            return madrSignal(cur);
-        }
-        case "alma": {
-            const arr = data.almaData ?? [];
-            const curA = arr[i]?.value;
-            const prevA = arr[i - 1]?.value;
-            const curC = candles?.[i]?.close;
-            const prevC = candles?.[i - 1]?.close;
-            if (curA === undefined || prevA === undefined || curC === undefined || prevC === undefined) return null;
-            return almaSignal(curA, prevA, curC, prevC);
-        }
-        case "bb": {
-            const arr = data.bbData ?? [];
-            const curBB = arr[i];
-            const prevBB = arr[i - 1];
-            const curC = candles?.[i]?.close;
-            const prevC = candles?.[i - 1]?.close;
-            if (!curBB || !prevBB || curC === undefined || prevC === undefined) return null;
-            if (curBB.lower === undefined || prevBB.lower === undefined || curBB.upper === undefined || prevBB.upper === undefined) return null;
-            return bbSignal(curBB as import('@/lib/ta/signal-registry').BBPoint, prevBB as import('@/lib/ta/signal-registry').BBPoint, curC, prevC);
-        }
-        default:
-            return null;
-    }
-}
-
-// ─── Crossover kontrolü (delegated to signal-registry.ts) ──────────────────────
-function hasFreshCrossover(key: string, i: number, data: AllIndicatorData, candles?: Candle[]): boolean {
-    switch (key) {
-        case "rsi": {
-            if (!data.rsiData) return false;
-            const rsi = data.rsiData.rsi[i]?.value; const rsiMa = data.rsiData.ma[i]?.value;
-            const p1 = data.rsiData.rsi[i - 1]?.value; const p1Ma = data.rsiData.ma[i - 1]?.value;
-            const p3 = data.rsiData.rsi[i - 3]?.value; const p3Ma = data.rsiData.ma[i - 3]?.value;
-            if (rsi === undefined || rsiMa === undefined) return false;
-            if (p1 !== undefined && p1Ma !== undefined && rsiCross(rsi, rsiMa, p1, p1Ma)) return true;
-            if (p3 !== undefined && p3Ma !== undefined && rsiCross(rsi, rsiMa, p3, p3Ma)) return true;
-            return false;
-        }
-        case "cci": {
-            if (!data.cciData) return false;
-            const cci = data.cciData.cci[i]?.value;
-            const p1 = data.cciData.cci[i - 1]?.value;
-            const p3 = data.cciData.cci[i - 3]?.value;
-            if (cci === undefined) return false;
-            if (p1 !== undefined && cciCross(cci, p1)) return true;
-            if (p3 !== undefined && cciCross(cci, p3)) return true;
-            return false;
-        }
-        case "wavetrend": {
-            if (!data.waveTrendData) return false;
-            const wt1 = data.waveTrendData.wt1[i]?.value; const wt2 = data.waveTrendData.wt2[i]?.value;
-            const pw1 = data.waveTrendData.wt1[i - 1]?.value; const pw2 = data.waveTrendData.wt2[i - 1]?.value;
-            const p3w1 = data.waveTrendData.wt1[i - 3]?.value; const p3w2 = data.waveTrendData.wt2[i - 3]?.value;
-            if (wt1 === undefined || wt2 === undefined) return false;
-            if (pw1 !== undefined && pw2 !== undefined && waveTrendCross(wt1, wt2, pw1, pw2)) return true;
-            if (p3w1 !== undefined && p3w2 !== undefined && waveTrendCross(wt1, wt2, p3w1, p3w2)) return true;
-            return false;
-        }
-        case "macd": {
-            if (!data.macdData) return false;
-            const macd = data.macdData.macd[i]?.value; const sig = data.macdData.signal[i]?.value;
-            const pm = data.macdData.macd[i - 1]?.value; const ps = data.macdData.signal[i - 1]?.value;
-            if (macd === undefined || sig === undefined || pm === undefined || ps === undefined) return false;
-            return macdCross(macd, sig, pm, ps);
-        }
-        case "stochrsi": {
-            if (!data.stochRsiData) return false;
-            const k = data.stochRsiData.k[i]?.value; const d = data.stochRsiData.d[i]?.value;
-            const pk = data.stochRsiData.k[i - 1]?.value; const pd = data.stochRsiData.d[i - 1]?.value;
-            if (k === undefined || d === undefined || pk === undefined || pd === undefined) return false;
-            return stochRsiCross(k, d, pk, pd);
-        }
-        case "dmi": {
-            if (!data.dmiData) return false;
-            const plus = data.dmiData.plusDI[i]?.value; const minus = data.dmiData.minusDI[i]?.value;
-            const pPlus = data.dmiData.plusDI[i - 1]?.value; const pMinus = data.dmiData.minusDI[i - 1]?.value;
-            if (plus === undefined || minus === undefined || pPlus === undefined || pMinus === undefined) return false;
-            return dmiCross(plus, minus, pPlus, pMinus);
-        }
-        case "smi": {
-            if (!data.smiData) return false;
-            const smi = data.smiData.smi[i]?.value; const sig = data.smiData.signal[i]?.value;
-            const ps = data.smiData.smi[i - 1]?.value; const pss = data.smiData.signal[i - 1]?.value;
-            if (smi === undefined || sig === undefined || ps === undefined || pss === undefined) return false;
-            return smiCross(smi, sig, ps, pss);
-        }
-        case "ao": {
-            const arr = data.aoData ?? [];
-            const cur = arr[i]?.value; const prev = arr[i - 1]?.value;
-            const p3 = arr[i - 3]?.value;
-            if (cur === undefined || prev === undefined) return false;
-            if (aoCross(cur, prev)) return true;
-            if (p3 !== undefined && aoCross(cur, p3)) return true;
-            return false;
-        }
-        case "mfi": {
-            const arr = data.mfiData?.mfi ?? [];
-            const cur = arr[i]?.value; const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return false;
-            return mfiCross(cur, prev);
-        }
-        case "wpr": {
-            const arr = data.wprData ?? [];
-            const cur = arr[i]?.value; const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return false;
-            return wprCross(cur, prev);
-        }
-        case "di": {
-            const arr = data.diData ?? [];
-            const cur = arr[i]?.value; const prev = arr[i - 1]?.value;
-            const p3 = arr[i - 3]?.value;
-            if (cur === undefined || prev === undefined) return false;
-            if (diCross(cur, prev)) return true;
-            if (p3 !== undefined && diCross(cur, p3)) return true;
-            return false;
-        }
-        case "cmf": {
-            const arr = data.cmfData ?? [];
-            const cur = arr[i]?.value; const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return false;
-            return cmfCross(cur, prev);
-        }
-        case "ad": {
-            const arr = data.adData ?? [];
-            const cur = arr[i]?.value; const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return false;
-            const sliceCur = arr.slice(Math.max(0, i - 20), i + 1).map(p => p.value).filter((v): v is number => v !== undefined);
-            const slicePrev = arr.slice(Math.max(0, i - 21), i).map(p => p.value).filter((v): v is number => v !== undefined);
-            if (sliceCur.length < 2 || slicePrev.length < 2) return false;
-            const smaCur = sliceCur.reduce((a, b) => a + b, 0) / sliceCur.length;
-            const smaPrev = slicePrev.reduce((a, b) => a + b, 0) / slicePrev.length;
-            return adCross(cur, prev, smaCur, smaPrev);
-        }
-        case "netvol": {
-            const arr = data.nvData ?? [];
-            const cur = arr[i]?.value; const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return false;
-            return netvolCross(cur, prev);
-        }
-        case "madr": {
-            const arr = data.madrData ?? [];
-            const cur = arr[i]?.value; const prev = arr[i - 1]?.value;
-            if (cur === undefined || prev === undefined) return false;
-            return madrCross(cur, prev);
-        }
-        case "alma": {
-            const arr = data.almaData ?? [];
-            const curA = arr[i]?.value; const prevA = arr[i - 1]?.value;
-            const curC = candles?.[i]?.close; const prevC = candles?.[i - 1]?.close;
-            if (curA === undefined || prevA === undefined || curC === undefined || prevC === undefined) return false;
-            return almaCross(curA, prevA, curC, prevC);
-        }
-        case "bb": {
-            const arr = data.bbData ?? [];
-            const curBB = arr[i]; const prevBB = arr[i - 1];
-            const curC = candles?.[i]?.close; const prevC = candles?.[i - 1]?.close;
-            if (!curBB || !prevBB || curC === undefined || prevC === undefined
-                || curBB.lower === undefined || prevBB.lower === undefined
-                || curBB.upper === undefined || prevBB.upper === undefined
-                || curBB.basis === undefined || prevBB.basis === undefined) return false;
-            return bbCross(
-                curBB as import('@/lib/ta/signal-registry').BBPoint,
-                prevBB as import('@/lib/ta/signal-registry').BBPoint,
-                curC, prevC
-            );
-        }
-        default: return false;
-    }
-}
-
-// ─── Ana bileşen ──────────────────────────────────────────────────────────────
 export default function StrategyBacktestMonitor({
     strategyName,
     candles,
@@ -370,36 +78,37 @@ export default function StrategyBacktestMonitor({
     waveTrendData,
     customIndicators,
     allData,
-    config = { lookForward: 14 },
-    mode = 'all',
+    config = { lookForward: 5 },
+    mode = 'majority',
     interval = '1d',
     initialOptimizedParams,
     discoveryWinRate,
     discoverySignalCount,
+    signalProfile = 'TrendFollower',
 }: StrategyBacktestMonitorProps) {
-    // Store the original (pre-optimization) backtest win rate so Reset can restore it
-    const originalWinRateRef = useRef(discoveryWinRate ?? 0);
-
     const [stats, setStats] = useState<{
         winRate: number;
         totalSignals: number;
         wins: number;
         history: HistoryItem[];
+        avgBarsHeld?: number;
+        exitReasonBreakdown?: Record<string, number>;
+        equityCurve?: { time: string | number; equity: number }[];
+        finalEquity?: number;
+        cagr?: number;
     }>({
-        winRate: discoveryWinRate ?? 0,
-        totalSignals: discoverySignalCount ?? 0,
-        wins: discoveryWinRate && discoverySignalCount ? Math.round((discoveryWinRate / 100) * discoverySignalCount) : 0,
+        winRate: 0,
+        totalSignals: 0,
+        wins: 0,
         history: [],
     });
-    const [animatedPercent, setAnimatedPercent] = useState(discoveryWinRate ?? 0);
+    const [animatedPercent, setAnimatedPercent] = useState(0);
     const [isOptimizing, setIsOptimizing] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [optimizedParams, setOptimizedParams] = useState<Record<string, number> | null>(initialOptimizedParams ?? null);
-    const [optimizedWinRate, setOptimizedWinRate] = useState<number>(discoveryWinRate ?? 0);
+    const [optimizedWinRate, setOptimizedWinRate] = useState<number>(0);
 
     const isCustom = strategyName === "CUSTOM" && customIndicators && allData;
-    // AI-discovered strategies are already at peak performance from the
-    // Deep Discovery pipeline (GA + DE + localRefine). The optimize button
-    // is disabled for these since re-optimizing is redundant.
     const isAIDiscovered = !!(discoveryWinRate && discoveryWinRate > 0);
 
     const handleOptimize = useCallback(async () => {
@@ -412,8 +121,6 @@ export default function StrategyBacktestMonitor({
                 ? customIndicators
                 : ['rsi', 'cci', 'wavetrend'];
 
-            // ── Sanitize data for server action serialization ────────────
-            // Only include needed indicator data + deep-clone to strip non-serializable values
             const sourceData = isCustom && allData
                 ? allData
                 : { rsiData, cciData, waveTrendData };
@@ -429,13 +136,10 @@ export default function StrategyBacktestMonitor({
             if (result.iterations > 0) {
                 setOptimizedParams(result.bestParams);
                 setOptimizedWinRate(result.bestWinRate);
-                // ✨ Override the main display with the optimized win rate,
-                // so the circle + colors update to reflect the optimized result
                 setAnimatedPercent(result.bestWinRate);
             }
         } catch (err) {
             console.error('[StrategyBacktestMonitor] Optimize failed:', err);
-            // Reset state so the button works on retry after a crash
             setOptimizedParams(null);
             setOptimizedWinRate(0);
         } finally {
@@ -443,7 +147,6 @@ export default function StrategyBacktestMonitor({
         }
     }, [candles, isCustom, customIndicators, rsiData, cciData, waveTrendData, interval, mode]);
 
-    // ── Helper: sanitize AllIndicatorData for safe server-action serialization ──
     function sanitizeAllData(data: AllIndicatorData, indicators: string[]): any {
         const result: any = {};
         for (const key of indicators) {
@@ -467,206 +170,105 @@ export default function StrategyBacktestMonitor({
                 case 'bb': if (data.bbData) result.bbData = data.bbData; break;
             }
         }
-        // Deep-clone to strip any non-serializable values (undefined, Symbols, etc.)
         return JSON.parse(JSON.stringify(result));
     }
 
     const handleResetParams = useCallback(() => {
         if (initialOptimizedParams) {
-            // Discovery-loaded strategy: restore discovery values
             setOptimizedParams(initialOptimizedParams);
-            setOptimizedWinRate(discoveryWinRate ?? 0);
-            setAnimatedPercent(discoveryWinRate ?? 0);
-            setStats({
-                winRate: discoveryWinRate ?? 0,
-                totalSignals: discoverySignalCount ?? 0,
-                wins: discoveryWinRate && discoverySignalCount
-                    ? Math.round((discoveryWinRate / 100) * discoverySignalCount)
-                    : 0,
-                history: [],
-            });
+            setOptimizedWinRate(0);
         } else {
-            // Normal strategy: clear optimized state to show original backtest value
             setOptimizedParams(null);
             setOptimizedWinRate(0);
-            setAnimatedPercent(originalWinRateRef.current);
         }
-    }, [initialOptimizedParams, discoveryWinRate, discoverySignalCount]);
+        // Always animate back to the live backtest result
+        setAnimatedPercent(stats.winRate);
+    }, [initialOptimizedParams, stats.winRate]);
 
-    // When candles/data change, reset optimized state
-    useEffect(() => {
-        setOptimizedParams(null);
-        setOptimizedWinRate(0);
-    }, [candles, customIndicators]);
+    // ── Memoize customIndicators to prevent infinite useEffect re-runs
+    const customIndicatorsKey = useMemo(
+        () => (customIndicators ? JSON.stringify([...customIndicators].sort()) : ''),
+        [customIndicators],
+    );
 
-    // Stabilize config reference to prevent infinite re-run
-    const stableConfig = useRef(config);
-    stableConfig.current = config;
-
+    // ── Server-side backtest using DST fusion + path-aware engine ──
     useEffect(() => {
         if (!candles || candles.length === 0) return;
 
-        // ── Discovered strategies: use archived values for aggregate stats, ──
-        // but still run the client-side backtest to populate the trade history
-        // table. The server-side engine uses DST fusion + dynamic cooldown (ATR-based),
-        // while this client-side engine uses simple voting + static cooldown.
-        // We accept minor row-level discrepancies in exchange for a working
-        // history table. The top-level Win Rate / Signals / Hits numbers
-        // remain consistent with what was saved from the server.
-        const isDiscovered = !!(discoveryWinRate && discoveryWinRate > 0);
+        let cancelled = false;
+        setIsLoading(true);
 
-        let wins = 0;
-        let totalSignals = 0;
-        const history: HistoryItem[] = [];
-        const { lookForward } = stableConfig.current;
+        async function runBacktest() {
+            try {
+                const builtInData = allData ?? { rsiData, cciData, waveTrendData };
 
-        // ── Cooldown: sinyalden sonra beklenecek bar sayısı (interval-aware) ──
-        // SPRINT 3: 1wk kaldırıldı. 4h=15 bars (~3 trading days), default=5 trading days
-        const defaultCooldown = interval === '4h' ? 15 : 5;
-        const COOLDOWN_BARS = defaultCooldown;
-        let lastSignalBar = -COOLDOWN_BARS;
-
-        // Dynamic warmup — longer intervals need fewer candles skipped
-        // SPRINT 3: 1wk kaldırıldı, sadece 1d ve 4h
-        const strategyWarmup: Record<string, number> = {
-            '1d': 55, '4h': 55,
-        };
-        const startIndex = strategyWarmup[interval] ?? 55;
-        const endIndex = candles.length - lookForward;
-
-        for (let i = startIndex; i < endIndex; i++) {
-            const currentPrice = candles[i].close;
-            const futurePrice = candles[i + lookForward].close;
-            let signal: "BUY" | "SELL" | null = null;
-
-            // ── Cooldown kontrolü ──────────────────────────────────────
-            const cooldownOk = (i - lastSignalBar) >= COOLDOWN_BARS;
-
-            // ══════════════════════════════════════════════════════════
-            // BUILT-IN: RSI + CCI + WaveTrend
-            //   • Tüm indikatörler aynı yönü göstermeli
-            //   • En az 1 tanesinde taze crossover olmalı
-            //   • Cooldown beklemesi yapılmalı
-            // ══════════════════════════════════════════════════════════
-            if (strategyName === "RSI_CCI_WT" && rsiData && cciData) {
-                const rsi = rsiData.rsi[i]?.value; const rsiMa = rsiData.ma[i]?.value;
-                const cci = cciData.cci[i]?.value; const cciMa = cciData.ma[i]?.value;
-
-                if (rsi !== undefined && rsiMa !== undefined && cci !== undefined && cciMa !== undefined) {
-
-                    const rsiSig = rsiSignal(rsi, rsiMa);
-                    const cciSig = cciSignal(cci, cciMa);
-                    let wtSig: "BUY" | "SELL" | null = null;
-
-                    let wtAvail = false;
-                    if (waveTrendData) {
-                        const wt1 = waveTrendData.wt1[i]?.value; const wt2 = waveTrendData.wt2[i]?.value;
-                        if (wt1 !== undefined && wt2 !== undefined) {
-                            wtSig = waveTrendSignal(wt1, wt2);
-                            wtAvail = true;
-                        }
+                const result = await runBacktestAction(
+                    candles,
+                    strategyName,
+                    builtInData as any,
+                    {
+                        lookForward: config.lookForward,
+                        interval,
+                        customIndicators: customIndicators,
+                        mode,
+                        signalProfile,
+                        evaluationMode: 'pathaware',
                     }
+                );
 
-                    const totalVoters = wtAvail ? 3 : 2;
-                    const buyVotes = (rsiSig === "BUY" ? 1 : 0) + (cciSig === "BUY" ? 1 : 0) + (wtSig === "BUY" ? 1 : 0);
-                    const sellVotes = (rsiSig === "SELL" ? 1 : 0) + (cciSig === "SELL" ? 1 : 0) + (wtSig === "SELL" ? 1 : 0);
+                if (cancelled) return;
 
-                    // En az 1 indikatörde taze crossover var mı?
-                    let anyFreshCross = false;
-                    if (hasFreshCrossover("rsi", i, { rsiData })) anyFreshCross = true;
-                    if (!anyFreshCross && hasFreshCrossover("cci", i, { cciData })) anyFreshCross = true;
-                    if (!anyFreshCross && wtAvail && hasFreshCrossover("wavetrend", i, { waveTrendData })) anyFreshCross = true;
+                const history: HistoryItem[] = result.history.map(h => ({
+                    time: h.time,
+                    signal: h.signal,
+                    price: h.price,
+                    futurePrice: h.futurePrice,
+                    isWin: h.isWin,
+                    mfe: h.mfe,
+                    mae: h.mae,
+                    exitReason: h.exitReason,
+                    barsHeld: h.barsHeld,
+                    realizedReturn: h.realizedReturn,
+                }));
 
-                    const allAgree = (buyVotes === totalVoters) || (sellVotes === totalVoters);
-
-                    if (allAgree && anyFreshCross && cooldownOk) {
-                        signal = buyVotes === totalVoters ? "BUY" : "SELL";
-                    }
-                }
-            }
-
-            // ══════════════════════════════════════════════════════════
-            // CUSTOM: seçili indikatörler oyluyor
-            //   • mode='all'      → oy birliği (tümü aynı)
-            //   • mode='majority'  → çoğunluk (>50%)
-            //   • En az 1 taze crossover
-            //   • Cooldown beklemesi
-            // ══════════════════════════════════════════════════════════
-            else if (isCustom) {
-                const inds = customIndicators!;
-                const data = allData!;
-
-                let buyVotes = 0, sellVotes = 0, validVoters = 0;
-                let anyFreshCross = false;
-
-                for (const key of inds) {
-                    const sig = getIndicatorSignal(key, i, data, candles);
-                    if (sig === null) continue;   // veri yoksa sayma
-                    validVoters++;
-                    if (sig === "BUY") buyVotes++;
-                    if (sig === "SELL") sellVotes++;
-
-                    // Taze crossover kontrolü (en az 1 yeterli)
-                    if (!anyFreshCross && hasFreshCrossover(key, i, data, candles)) {
-                        anyFreshCross = true;
-                    }
-                }
-
-                if (validVoters >= 2 && anyFreshCross && cooldownOk) {
-                    if (mode === 'majority') {
-                        if (buyVotes > validVoters / 2) signal = "BUY";
-                        else if (sellVotes > validVoters / 2) signal = "SELL";
-                    } else {
-                        if (buyVotes === validVoters) signal = "BUY";
-                        if (sellVotes === validVoters) signal = "SELL";
-                    }
-                }
-            }
-
-            if (signal) {
-                totalSignals++;
-                lastSignalBar = i;   // cooldown için son sinyal bar'ını kaydet
-                const isWin = (signal === "BUY" && futurePrice > currentPrice) || (signal === "SELL" && futurePrice < currentPrice);
-                if (isWin) wins++;
-
-                history.push({
-                    time: candles[i].time,
-                    signal,
-                    price: currentPrice,
-                    futurePrice,
-                    isWin
+                setStats({
+                    winRate: result.winRate,
+                    totalSignals: result.totalSignals,
+                    wins: result.wins,
+                    history,
+                    avgBarsHeld: result.avgBarsHeld,
+                    exitReasonBreakdown: result.exitReasonBreakdown,
+                    equityCurve: result.equityCurve,
+                    finalEquity: result.finalEquity,
+                    cagr: result.cagr,
                 });
+
+                // Animate circle toward the LIVE backtest win rate (not discovery static value)
+                const targetRate = result.winRate;
+                const timer = setTimeout(() => setAnimatedPercent(targetRate), 300);
+                return () => clearTimeout(timer);
+            } catch (err) {
+                console.error('[StrategyBacktestMonitor] Server backtest failed:', err);
+                if (!cancelled) {
+                    setStats(prev => ({ ...prev, history: [] }));
+                }
+            } finally {
+                if (!cancelled) setIsLoading(false);
             }
         }
 
-        const calculatedWinRate = totalSignals > 0 ? (wins / totalSignals) * 100 : 0;
-        // Store the original backtest result so Reset can restore it
-        originalWinRateRef.current = calculatedWinRate;
+        runBacktest();
 
-        if (isDiscovered) {
-            // Discovered strategy: keep aggregate stats consistent with server values,
-            // but use the client-side backtest history for the trade table.
-            const discoveryWins = discoverySignalCount
-                ? Math.round((discoveryWinRate! / 100) * discoverySignalCount)
-                : 0;
-            setStats({
-                winRate: discoveryWinRate!,
-                totalSignals: discoverySignalCount ?? 0,
-                wins: discoveryWins,
-                history, // ← populated from actual backtest, NOT empty!
-            });
-            const timer = setTimeout(() => setAnimatedPercent(discoveryWinRate!), 300);
-            return () => clearTimeout(timer);
-        }
+        return () => { cancelled = true; };
+    }, [strategyName, candles, config.lookForward, interval, mode, customIndicatorsKey]);
 
-        setStats({ winRate: calculatedWinRate, totalSignals, wins, history });
-        const timer = setTimeout(() => setAnimatedPercent(calculatedWinRate), 300);
-        return () => clearTimeout(timer);
-    }, [strategyName, candles, rsiData, cciData, waveTrendData, customIndicators, config.lookForward, discoveryWinRate, discoverySignalCount]);
-
-    // ── UI ────────────────────────────────────────────────────────────────────
-    // ✨ When optimized params are available, use optimized win rate for display
-    const displayRate = optimizedParams ? optimizedWinRate : animatedPercent;
+    // ── UI ────────────────────────────────────────────────────────
+    // displayRate always reflects the LIVE backtest result (stats.winRate).
+    // discoveryWinRate is only used as a fallback before the first backtest completes.
+    // optimizedWinRate is shown in the "Optimized" badge, not in the main circle.
+    const displayRate = stats.totalSignals > 0
+        ? stats.winRate
+        : (discoveryWinRate ?? 0);
 
     const size = 64, strokeWidth = 5;
     const radius = (size - strokeWidth) / 2;
@@ -680,12 +282,18 @@ export default function StrategyBacktestMonitor({
     else if (displayRate >= 48) colorClass = "text-yellow-500";
     else if (displayRate > 0) colorClass = "text-red-500";
 
-    // Hangi indikatörler gösterilecek
     const displayInds = isCustom
         ? customIndicators!.map(k => AVAILABLE_INDICATORS.find(i => i.key === k)?.label ?? k)
         : ["RSI", "CCI", "WT"];
 
-    if (stats.totalSignals === 0) return (
+    if (isLoading && stats.totalSignals === 0) return (
+        <div className="flex items-center gap-2 bg-violet-950/20 border border-violet-800/40 rounded-xl p-3 shadow-sm">
+            <Loader2 className="w-4 h-4 text-violet-400 animate-spin" />
+            <span className="text-xs text-gray-400">Running server backtest...</span>
+        </div>
+    );
+
+    if (!isLoading && stats.totalSignals === 0) return (
         <div className="text-xs text-gray-500 italic">Insufficient signals found</div>
     );
 
@@ -710,8 +318,10 @@ export default function StrategyBacktestMonitor({
                         {stats.totalSignals} Signal
                     </span>
                     <span className="text-[11px] text-gray-400">{stats.wins} Hit</span>
+                    {stats.avgBarsHeld && (
+                        <span className="text-[10px] text-gray-500">~{stats.avgBarsHeld.toFixed(1)} bars avg</span>
+                    )}
 
-                    {/* Optimize Button — disabled for AI-discovered strategies */}
                     <button
                         onClick={isAIDiscovered ? undefined : handleOptimize}
                         disabled={isOptimizing || isAIDiscovered}
@@ -722,7 +332,7 @@ export default function StrategyBacktestMonitor({
                                 : "hover:bg-violet-900/40 text-violet-400 hover:text-violet-200 disabled:opacity-40 disabled:cursor-not-allowed"
                         )}
                         title={isAIDiscovered
-                            ? "This strategy was already optimized by the Deep Discovery engine for maximum performance."
+                            ? "Already optimized by Deep Discovery engine"
                             : "Optimize Strategy Parameters"
                         }
                     >
@@ -739,33 +349,35 @@ export default function StrategyBacktestMonitor({
                                 <History className="w-3.5 h-3.5" />
                             </button>
                         </DialogTrigger>
-                        <DialogContent className="sm:max-w-[700px] bg-gray-950 border-gray-800 text-gray-100">
+                        <DialogContent className="sm:max-w-[800px] bg-gray-950 border-gray-800 text-gray-100">
                             <DialogHeader>
                                 <DialogTitle className="flex items-center gap-2 text-violet-300">
                                     <History className="w-5 h-5" />
-                                    Strateji Trade History
+                                    Trade History (Path-Aware Engine)
                                 </DialogTitle>
                             </DialogHeader>
                             <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                                 <table className="w-full text-xs text-left">
                                     <thead className="sticky top-0 bg-gray-950 text-gray-400 uppercase text-[10px] border-b border-gray-800">
                                         <tr>
-                                            <th className="py-2 px-3">Date</th>
-                                            <th className="py-2 px-3">Signal</th>
-                                            <th className="py-2 px-3 text-right">Price</th>
-                                            <th className="py-2 px-3 text-right">Target ({config.lookForward}G)</th>
-                                            <th className="py-2 px-3 text-center">Result</th>
+                                            <th className="py-2 px-2">Date</th>
+                                            <th className="py-2 px-2">Signal</th>
+                                            <th className="py-2 px-2 text-right">Entry</th>
+                                            <th className="py-2 px-2 text-right">Exit</th>
+                                            <th className="py-2 px-2 text-center">Bars</th>
+                                            <th className="py-2 px-2 text-center">Exit Reason</th>
+                                            <th className="py-2 px-2 text-center">Result</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-900">
                                         {[...stats.history].reverse().map((item, idx) => (
                                             <tr key={idx} className="hover:bg-gray-900/40 transition-colors">
-                                                <td className="py-2 px-3 text-gray-400">
+                                                <td className="py-2 px-2 text-gray-400">
                                                     {typeof item.time === 'number'
                                                         ? new Date(item.time * 1000).toLocaleDateString()
                                                         : item.time}
                                                 </td>
-                                                <td className="py-2 px-3">
+                                                <td className="py-2 px-2">
                                                     <span className={cn(
                                                         "flex items-center gap-1 font-bold",
                                                         item.signal === "BUY" ? "text-emerald-400" : "text-red-400"
@@ -774,9 +386,22 @@ export default function StrategyBacktestMonitor({
                                                         {item.signal}
                                                     </span>
                                                 </td>
-                                                <td className="py-2 px-3 text-right font-medium">{item.price.toFixed(2)}</td>
-                                                <td className="py-2 px-3 text-right text-gray-400">{item.futurePrice.toFixed(2)}</td>
-                                                <td className="py-2 px-3 text-center">
+                                                <td className="py-2 px-2 text-right font-medium">{item.price.toFixed(2)}</td>
+                                                <td className="py-2 px-2 text-right text-gray-400">{item.futurePrice.toFixed(2)}</td>
+                                                <td className="py-2 px-2 text-center text-gray-400">{item.barsHeld ?? '—'}</td>
+                                                <td className="py-2 px-2 text-center">
+                                                    <span className={cn(
+                                                        "text-[10px] px-1 py-0.5 rounded",
+                                                        item.exitReason === 'take_profit' ? "bg-emerald-900/30 text-emerald-400" :
+                                                        item.exitReason === 'stop_loss' ? "bg-red-900/30 text-red-400" :
+                                                        item.exitReason === 'trailing_stop' ? "bg-blue-900/30 text-blue-400" :
+                                                        item.exitReason === 'time_stop' ? "bg-yellow-900/30 text-yellow-400" :
+                                                        "bg-gray-800 text-gray-500"
+                                                    )}>
+                                                        {item.exitReason ? item.exitReason.replace(/_/g, ' ') : 'lookforward'}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2 px-2 text-center">
                                                     {item.isWin ? (
                                                         <span className="inline-flex items-center gap-1 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded text-[10px] font-bold">
                                                             <CheckCircle2 className="w-3 h-3" /> HIT
@@ -796,7 +421,6 @@ export default function StrategyBacktestMonitor({
                     </Dialog>
                 </div>
 
-                {/* Optimized params display + reset */}
                 {optimizedParams && (
                     <div className="flex flex-wrap items-center gap-1 mt-1 bg-violet-900/20 border border-violet-800/30 rounded px-2 py-1">
                         <Zap className="w-3 h-3 text-amber-400 flex-shrink-0" />

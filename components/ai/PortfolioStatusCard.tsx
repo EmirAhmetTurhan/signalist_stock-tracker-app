@@ -3,9 +3,23 @@
 import { DollarSign, Briefcase, TrendingUp } from 'lucide-react';
 import type { ToolCardProps } from './registry';
 
-export default function PortfolioStatusCard({ data, isLast }: ToolCardProps) {
-  const summary = data.summary as any;
-  const positions = data.positions as any[];
+interface PortfolioSummary {
+  cashBalance: number;
+  totalEquity: number;
+}
+
+interface PortfolioPosition {
+  id: string;
+  symbol: string;
+  quantity: number;
+  marketValue: number;
+  unrealizedPnl: number;
+  unrealizedPnlPercent: number;
+}
+
+export default function PortfolioStatusCard({ data }: ToolCardProps) {
+  const summary = data.summary as PortfolioSummary;
+  const positions = (data.positions as PortfolioPosition[]) || [];
 
   if (!summary || !positions) {
     return (

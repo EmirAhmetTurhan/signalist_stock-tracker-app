@@ -630,7 +630,7 @@ function initializePopulation(
  * Run the Genetic Algorithm evolution loop.
  * Returns the final population sorted by fitness (descending).
  */
-export function geneticOptimize(
+export async function geneticOptimize(
     candles: Candle[],
     allData: AllData,
     topScreen: ScreenEntry[],
@@ -639,7 +639,7 @@ export function geneticOptimize(
         mode: StrategyMode;
         config?: Partial<GAConfig>;
     },
-): GAIndividual[] {
+): Promise<GAIndividual[]> {
     const config: GAConfig = { ...DEFAULT_GA_CONFIG, ...options.config };
     const { interval, mode } = options;
 
@@ -667,6 +667,9 @@ export function geneticOptimize(
 
     // ── Evolution loop ──
     for (let gen = 1; gen <= config.maxGenerations; gen++) {
+        // Yield to event loop every generation to prevent main-thread blocking
+        if (gen > 1 && gen % 2 === 0) await new Promise(r => setTimeout(r, 0));
+
         const newPopulation: GAIndividual[] = [];
 
         // 1. Elite preservation

@@ -1,5 +1,3 @@
-'use server';
-
 import { INDICATOR_DETAILS } from "@/lib/constants/indicator-categories";
 import { getCandlesForInterval } from "@/lib/actions/finnhub.actions";
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";
@@ -38,8 +36,11 @@ export async function triggerOptimization(
         return [];
     }
 
-    // SPRINT 3: inline yıl->gün dönüşümü
-    const days = (years ?? 1) * 365;
+    // BUGFIX: match the TA page default of 10 years (3650 days).
+    // Previously defaulted to 1 year (365 days) while the page used 3650,
+    // causing optimized params found on 1yr to perform poorly on the full 10yr dataset.
+    // Cap at 3650 to stay within Finnhub API limits.
+    const days = Math.min((years ?? 10) * 365, 3650);
     const rawCandles = await getCandlesForInterval(symbol, interval, days);
 
     if (!rawCandles || rawCandles.length === 0) {
@@ -61,7 +62,7 @@ export async function triggerOptimization(
                 continue;
             }
 
-            const result = findBestParameter(name, candles);
+            const result = findBestParameter(name, candles, { lookForward: 14, interval });
             if (result && result.bestVal !== -1) {
                 results.push({
                     key: indicator,

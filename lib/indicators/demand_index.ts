@@ -11,7 +11,7 @@ export type DIInput = {
 
 export type DIPoint = {
     time: number;
-    value: number;
+    value?: number; // BUGFIX: allow undefined for warmup bars (prevents false 0 signals)
 };
 
 /**
@@ -68,6 +68,6 @@ export function computeDemandIndex(
 
     return candles.map((c, i) => ({
         time: c.time,
-        value: smoothed[i] ?? 0
+        value: smoothed[i],
     }));
 }

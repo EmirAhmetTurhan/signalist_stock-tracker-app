@@ -1,5 +1,5 @@
-// lib/ai/model-resolver.ts — Single source of truth for AI model resolution
-// Used by both route.ts (smart title) and chat-async.ts (main AI processing)
+// lib/ai/model-resolver.ts — AI model resolution with user API key support
+// Supports: ollama (local), openai, deepseek, groq, google (user key required)
 
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -13,84 +13,68 @@ const ollama = createOpenAICompatible({
   apiKey: 'ollama',
 });
 
-const openrouterFetch: typeof fetch = async (url, init) => {
-  const headers = new Headers(init?.headers);
-  headers.set('HTTP-Referer', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
-  headers.set('X-Title', 'Signalist');
-  return fetch(url, { ...init, headers });
-};
-
-const openrouter = createOpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY || '',
-  fetch: openrouterFetch,
-});
-
-const groq = createGroq({
-  apiKey: process.env.GROQ_API_KEY || '',
-});
-
 export type ResolvedModel = {
   model: ReturnType<typeof ollama>;
   provider: string;
   modelId: string;
 };
 
-/**
- * Resolves a model from a "provider:modelId" string.
- * Handles: ollama, groq, openrouter, groq-key, openai-key, openrouter-key
- * Falls back to local Ollama if env keys are missing.
- */
-export function resolveModel(selectedModel?: string, userApiKey?: string): ResolvedModel {
-  if (selectedModel && selectedModel.includes(':')) {
-    const colonIdx = selectedModel.indexOf(':');
-    const prefix = selectedModel.slice(0, colonIdx);
-    const modelId = selectedModel.slice(colonIdx + 1);
-
-    if (prefix === 'ollama') {
-      return { model: ollama(modelId), provider: 'ollama', modelId };
+function createUserClient(provider: string, apiKey: string, modelId: string): ResolvedModel {
+  switch (provider) {
+    case 'groq': {
+      const client = createGroq({ apiKey });
+      return { model: client(modelId), provider: 'groq-user', modelId };
     }
-
-    if (prefix === 'groq') {
-      if (!process.env.GROQ_API_KEY?.trim()) {
-        console.warn('[AI] Groq requested but GROQ_API_KEY not set. Falling back to Ollama.');
-        return { model: ollama(LOCAL_MODEL), provider: 'ollama-fallback', modelId: LOCAL_MODEL };
-      }
-      return { model: groq(modelId), provider: 'groq', modelId };
+    case 'deepseek': {
+      // DeepSeek uses OpenAI-compatible API
+      const client = createOpenAI({ apiKey, baseURL: 'https://api.deepseek.com/v1' });
+      return { model: client(modelId), provider: 'deepseek-user', modelId };
     }
-
-    if (prefix === 'openrouter') {
-      if (!process.env.OPENROUTER_API_KEY?.trim()) {
-        console.warn('[AI] OpenRouter requested but OPENROUTER_API_KEY not set. Falling back to Ollama.');
-        return { model: ollama(LOCAL_MODEL), provider: 'ollama-fallback', modelId: LOCAL_MODEL };
-      }
-      return { model: openrouter(modelId), provider: 'openrouter', modelId };
+    case 'google': {
+      // Google Gemini via OpenAI-compatible endpoint
+      const client = createOpenAICompatible({
+        name: 'google',
+        baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        apiKey,
+      });
+      return { model: client(modelId), provider: 'google-user', modelId };
     }
-
-    if (prefix === 'groq-key' || prefix === 'openai-key' || prefix === 'openrouter-key') {
-      if (!userApiKey?.trim()) {
-        console.warn('[AI] User API key required but not provided.');
-        return { model: ollama(LOCAL_MODEL), provider: 'ollama-fallback', modelId: LOCAL_MODEL };
-      }
-
-      if (prefix === 'groq-key') {
-        const client = createGroq({ apiKey: userApiKey });
-        return { model: client(modelId), provider: 'groq-user', modelId };
-      }
-      // openai-key and openrouter-key both use OpenAI-compatible API
-      const client = createOpenAI({ apiKey: userApiKey });
+    case 'openai':
+    default: {
+      const client = createOpenAI({ apiKey });
       return { model: client(modelId), provider: 'openai-user', modelId };
     }
   }
+}
 
-  // Legacy: contains "/" without prefix → OpenRouter
-  if (selectedModel && selectedModel.includes('/')) {
-    if (!process.env.OPENROUTER_API_KEY?.trim()) {
-      return { model: ollama(LOCAL_MODEL), provider: 'ollama-fallback', modelId: LOCAL_MODEL };
-    }
-    return { model: openrouter(selectedModel), provider: 'openrouter', modelId: selectedModel };
+/**
+ * Resolves a model from "provider:modelId" format.
+ * Local Ollama needs no key. Cloud providers require user API key from localStorage.
+ * Falls back to local Ollama if requirements not met.
+ */
+export function resolveModel(selectedModel?: string, userApiKey?: string): ResolvedModel {
+  if (!selectedModel || !selectedModel.includes(':')) {
+    return { model: ollama(LOCAL_MODEL), provider: 'ollama', modelId: LOCAL_MODEL };
   }
 
-  // Default: local Ollama
+  const colonIdx = selectedModel.indexOf(':');
+  const prefix = selectedModel.slice(0, colonIdx);
+  const modelId = selectedModel.slice(colonIdx + 1);
+
+  // Local — no key needed
+  if (prefix === 'ollama') {
+    return { model: ollama(modelId), provider: 'ollama', modelId };
+  }
+
+  // Cloud providers — user API key required
+  if (['openai', 'deepseek', 'groq', 'google'].includes(prefix)) {
+    if (!userApiKey?.trim()) {
+      console.warn(`[AI] ${prefix} requested but no API key provided.`);
+      return { model: ollama(LOCAL_MODEL), provider: 'ollama-fallback', modelId: LOCAL_MODEL };
+    }
+    return createUserClient(prefix, userApiKey, modelId);
+  }
+
+  // Fallback
   return { model: ollama(LOCAL_MODEL), provider: 'ollama', modelId: LOCAL_MODEL };
 }

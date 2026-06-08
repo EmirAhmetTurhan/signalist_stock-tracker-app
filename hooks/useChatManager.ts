@@ -8,18 +8,48 @@ import { getConversationMessages, createConversation } from '@/lib/actions/chat-
 import { getJobByJobId } from '@/lib/actions/ai-job.actions';
 import { normalizeMessage } from '@/lib/ai/message-format';
 
-export type UIMessage = {
+// ─── Core message types (no more `any`) ────────────────────────────────────
+
+export interface UIMessagePart {
+  type: string;
+  text?: string;
+  toolCallId?: string;
+  toolName?: string;
+  args?: unknown;
+  result?: unknown;
+  toolInvocation?: unknown;
+  output?: unknown;
+}
+
+export interface UIMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'data' | 'tool';
   content?: string;
-  parts?: Array<{ type: string; text?: string; toolCallId?: string; toolName?: string; args?: any; result?: any; toolInvocation?: any }>;
-};
+  parts?: UIMessagePart[];
+}
+
+export interface JobStep {
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  detail?: string;
+  completedAt?: string;
+}
+
+export interface ToolOutputInput {
+  toolCallId: string;
+  toolName: string;
+  output: unknown;
+}
+
+// ─── Logging helper (dev-only guard) ───────────────────────────────────────
 
 const CLIENT_LOG = (step: string, status: 'OK' | 'ERROR' | 'INFO', detail?: string) => {
-  const ts = new Date().toISOString().slice(11, 23);
-  const tag = status === 'ERROR' ? '[HATA]' : status === 'OK' ? '[OK]' : '[BILGI]';
-  console.log(`%c${ts} ${tag} [CLIENT] ${step}${detail ? ' — ' + detail : ''}`,
-    status === 'ERROR' ? 'color:red' : status === 'OK' ? 'color:lime' : 'color:cyan');
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+    const ts = new Date().toISOString().slice(11, 23);
+    const tag = status === 'ERROR' ? '[ERROR]' : status === 'OK' ? '[OK]' : '[INFO]';
+    console.log(`%c${ts} ${tag} [CLIENT] ${step}${detail ? ' — ' + detail : ''}`,
+      status === 'ERROR' ? 'color:red' : status === 'OK' ? 'color:lime' : 'color:cyan');
+  }
 };
 
 export type ChatManagerOptions = {
@@ -40,14 +70,18 @@ export type ChatManagerReturn = {
   conversationId: string;
   error: string | null;
   isOffline: boolean;
-  hasContent: (m: any) => boolean;
+  hasContent: (m: UIMessage) => boolean;
   handleSubmit: (input: string) => Promise<void>;
-  addToolOutput: (...args: any[]) => void;
+  addToolOutput: (opts: ToolOutputInput) => Promise<void>;
   scrollContainerRef: RefObject<HTMLDivElement | null>;
   messagesEndRef: RefObject<HTMLDivElement | null>;
   isAtBottomRef: RefObject<boolean>;
-  activeJobSteps: any[];
+  activeJobSteps: JobStep[];
 };
+
+// ─── Internal types for DB message normalization ───────────────────────────
+
+// ─── Hook ──────────────────────────────────────────────────────────────────
 
 export function useChatManager({
   roomKey,
@@ -60,13 +94,14 @@ export function useChatManager({
   const [isHydrating, setIsHydrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
-  const [activeJobSteps, setActiveJobSteps] = useState<any[]>([]);
+  const [activeJobSteps, setActiveJobSteps] = useState<JobStep[]>([]);
   const [status, setStatus] = useState<'idle' | 'running' | 'submitted' | 'error' | 'ready' | 'streaming'>('idle');
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
   const creatingRef = useRef(false);
+  const consecutiveErrors = useRef(0);
 
   const activeJobs = useAppStore(state => state.activeJobs);
   const addActiveJob = useAppStore(state => state.addActiveJob);
@@ -91,12 +126,8 @@ export function useChatManager({
     return () => { window.removeEventListener('offline', goOffline); window.removeEventListener('online', goOnline); };
   }, []);
 
-  const mapMessages = useCallback((msgs: any[]) => {
-    // 1. Map raw DB messages into our Canonical UI format
-    // DB messages already contain the merged tool results because they were saved completely by chat-async.ts
-    const mapped = msgs.map((m) => normalizeMessage(m)) as any[];
-
-    // Remove any extra redundant tool messages if they exist (they shouldn't normally anymore)
+  const mapMessages = useCallback((rawMessages: unknown[]): UIMessage[] => {
+    const mapped = rawMessages.map((m) => normalizeMessage(m as Record<string, unknown>)) as unknown as UIMessage[];
     return mapped.filter(msg => msg.role !== 'tool');
   }, []);
 
@@ -104,10 +135,10 @@ export function useChatManager({
     try {
       const res = await getConversationMessages(cid);
       if (res.success && res.messages) {
-        setMessages(mapMessages(res.messages));
+        setMessages(mapMessages(res.messages as unknown[]));
       }
     } catch (e) {
-      console.error('fetchMessages err:', e);
+      CLIENT_LOG('fetchMessages', 'ERROR', e instanceof Error ? e.message : String(e));
     }
   }, [mapMessages]);
 
@@ -130,7 +161,7 @@ export function useChatManager({
       try {
         const res = await getJobByJobId(jobId);
         if (res.success && res.job) {
-          setActiveJobSteps(res.job.steps || []);
+          setActiveJobSteps((res.job.steps as JobStep[]) || []);
           if (res.job.status === 'completed' || res.job.status === 'failed') {
             removeActiveJob(conversationId);
             setStatus(res.job.status === 'failed' ? 'error' : 'ready');
@@ -139,11 +170,23 @@ export function useChatManager({
           }
         }
       } catch (err) {
-        console.error('Polling error', err);
+        consecutiveErrors.current += 1;
+        CLIENT_LOG('Polling', 'ERROR', `${consecutiveErrors.current}/3 — ${err instanceof Error ? err.message : String(err)}`);
+        if (!navigator.onLine) {
+          setError('Connection lost. Will retry when back online.');
+        }
+        if (consecutiveErrors.current >= 3) {
+          removeActiveJob(conversationId);
+          setStatus('error');
+          setError('Job polling failed after 3 retries. The task may still complete on the server.');
+        }
       }
     }, 1500);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      consecutiveErrors.current = 0;
+    };
   }, [jobId, conversationId, removeActiveJob, fetchMessages]);
 
   useEffect(() => {
@@ -175,7 +218,7 @@ export function useChatManager({
   }, []);
 
   const sendMessage = useCallback(async ({ text }: { text: string }) => {
-    let cid = convIdRef.current;
+    const cid = convIdRef.current;
 
     setMessages(prev => [...prev, {
       id: crypto.randomUUID(),
@@ -205,8 +248,8 @@ export function useChatManager({
       if (data.jobId && data.conversationId) {
         addActiveJob(data.conversationId, data.jobId);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       setStatus('error');
     }
   }, [selectedModel, addActiveJob]);
@@ -225,7 +268,9 @@ export function useChatManager({
           setConversationId(cid);
           onConversationCreated?.(roomKey, cid);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        CLIENT_LOG('createConversation', 'ERROR', e instanceof Error ? e.message : String(e));
+      }
       creatingRef.current = false;
     }
 
@@ -233,27 +278,25 @@ export function useChatManager({
     await sendMessage({ text: input });
   }, [isLoading, isOffline, roomKey, onConversationCreated, sendMessage]);
 
-  const hasContent = useCallback((m: any) => {
+  const hasContent = useCallback((m: UIMessage): boolean => {
     if (m.role === 'user') return true;
     if (!m.parts) return false;
-    const hasText = m.parts.some((p: any) => p.type === 'text' && p.text?.trim());
-    const hasTool = m.parts.some((p: any) => p.type === 'tool-call' || p.type === 'tool-result');
-    return hasText || hasTool;
+    const hasText = m.parts.some((p) => p.type === 'text' && Boolean(p.text?.trim()));
+    const hasTool = m.parts.some((p) => p.type === 'tool-call' || p.type === 'tool-result');
+    return Boolean(hasText || hasTool);
   }, []);
 
-  const addToolOutput = useCallback(async ({ toolCallId, toolName, output }: { toolCallId: string; toolName: string; output: any }) => {
-    // 1. Update the local UI state dynamically without a refresh
+  const addToolOutput = useCallback(async ({ toolCallId, toolName, output }: ToolOutputInput) => {
     setMessages(prev => {
       return prev.map(msg => {
         if (msg.role !== 'assistant' || !msg.parts) return msg;
 
-        const hasCall = msg.parts.some((p: any) => p.type === 'tool-call' && p.toolCallId === toolCallId);
+        const hasCall = msg.parts.some((p) => p.type === 'tool-call' && p.toolCallId === toolCallId);
         if (!hasCall) return msg;
 
-        const hasResult = msg.parts.some((p: any) => p.type === 'tool-result' && p.toolCallId === toolCallId);
+        const hasResult = msg.parts.some((p) => p.type === 'tool-result' && p.toolCallId === toolCallId);
         if (hasResult) return msg;
 
-        // Add the result directly into the assistant's parts array for immediate rendering
         return {
           ...msg,
           parts: [
@@ -263,12 +306,7 @@ export function useChatManager({
         };
       });
     });
-
-    // 2. We no longer write to the database here!
-    // Background tasks (like ai/optimize-parameter) update the AIJob report and that is it, 
-    // or if they want to update chat, they should do it server-side.
-    // This prevents dual DB writes causing duplicates.
-  }, [conversationId]);
+  }, []);
 
   return {
     messages,

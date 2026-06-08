@@ -45,7 +45,7 @@ const toOHLCVInput = (c: Candle) => ({ time: c.time as number, high: c.high, low
 export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     "RSI": {
         param: "rsi_len",
-        range: [7, 28],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input: RSIInput[] = candles.map(toCloseInput);
             return computeRSI(input, val, 14);
@@ -60,7 +60,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "MACD": {
         param: "macd_fast",
-        range: [6, 24],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input = candles.map(c => ({ time: c.time as number, close: c.close })) as unknown as MACDInput[];
             return computeMACD(input, val, 26, 9);
@@ -76,7 +76,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "STOCHRSI": {
         param: "stoch_rsi_len",
-        range: [7, 28],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input: StochRsiInput[] = candles.map(toCloseInput);
             return computeStochRSI(input, val, 14, 3, 3);
@@ -91,10 +91,10 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "WAVETREND": {
         param: "wt_avg_len",
-        range: [5, 20],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input = candles.map(toHLCInput) as unknown as WTInput[];
-            return computeWaveTrend(input, val, 21, 4);
+            return computeWaveTrend(input, 21, val, 4);
         },
         formatData: (res: unknown[]) => {
             const typed = res as WTPoint[];
@@ -106,7 +106,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "DMI": {
         param: "dmi_di_len",
-        range: [7, 28],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input = candles.map(toHLCInput) as unknown as DMIInput[];
             return computeDMI(input, val, 14);
@@ -122,7 +122,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "MFI": {
         param: "mfi_period",
-        range: [7, 28],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input = candles.map(toHLCVInput) as unknown as MFIInput[];
             return computeMFI(input, val);
@@ -136,7 +136,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "SMI": {
         param: "smi_long_len",
-        range: [7, 28],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input: SMIInput[] = candles.map(toHLCInput);
             return computeSMI(input, val, 5, 5);
@@ -151,7 +151,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "CCI": {
         param: "cci_len",
-        range: [10, 30],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input: CCIInput[] = candles.map(toHLCInput);
             return computeCCI(input, val, 14);
@@ -166,7 +166,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "WPR": {
         param: "wpr_len",
-        range: [7, 28],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input: WPRInput[] = candles.map(toHLCInput);
             return computeWPR(input, val);
@@ -178,7 +178,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "DI": {
         param: "di_len",
-        range: [7, 28],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input = candles.map(toOHLCVInput) as unknown as DIInput[];
             return computeDemandIndex(input, val);
@@ -190,7 +190,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "CMF": {
         param: "cmf_len",
-        range: [10, 30],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input = candles.map(toHLCVInput) as unknown as CMFInput[];
             return computeCMF(input, val);
@@ -202,7 +202,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "MADR": {
         param: "madr_len",
-        range: [7, 28],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input: MADRInput[] = candles.map(toCloseInput);
             return computeMADR(input, val);
@@ -214,7 +214,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "ALMA": {
         param: "alma_len",
-        range: [5, 18],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) =>
             computeALMA(candles.map(c => ({ time: c.time, close: c.close })), val, 0.85, 6),
         formatData: (res: unknown[]) => {
@@ -224,7 +224,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
     },
     "BOLLINGER": {
         param: "bb_len",
-        range: [10, 30],
+        range: [5, 40],
         compute: (candles: Candle[], val: number) =>
             computeBollingerBands(candles.map(c => ({ time: Number(c.time), close: c.close })), val, 2, 0),
         formatData: (res: unknown[]) => res
@@ -236,18 +236,6 @@ OPTIMIZABLE_INDICATORS['BB'] = OPTIMIZABLE_INDICATORS['BOLLINGER'];
 
 // ─── SPRINT 2 / B2: Timeframe-Aware Lookback Range ────────────────────────
 
-/**
- * Swing trade için 4h timeframe'inde daha geniş lookback arama uzayı döner.
- * Literatür: Swing trade (3-14 gün) için 4h'da 14-bar lookback ~2.3 gün → çok kısa
- * gürültüyü yutar. 21-42 arası (3.5-7 gün) swing trade'in gerçek noise-filter
- * penceresine denk gelir.
- *
- * 1d ve 1wk timeframe'leri default range'i kullanır (zaten geniş).
- *
- * @param indicatorName - 'RSI', 'MACD', 'BB' vs. (büyük harf duyarsız)
- * @param timeframe - '4h' | '1d' | '1wk' (opsiyonel)
- * @returns [min, max] lookback aralığı
- */
 export function rangeForTimeframe(
     indicatorName: string,
     timeframe?: string
@@ -255,34 +243,26 @@ export function rangeForTimeframe(
     const entry = OPTIMIZABLE_INDICATORS[indicatorName.toUpperCase()];
     if (!entry) return [1, 100];
 
-    // 1d ve 1wk için default range yeterli
     if (timeframe !== '4h') {
         return entry.range;
     }
 
-    // SPRINT 2 / B2: 4h swing trade için genişletilmiş lookback uzayı.
-    // Tipik swing trade pencere aralığı: 3-7 gün. 4h'da bu 18-42 buma denk gelir.
-    // Böylece DE optimizer noise-filter yetersizliği nedeniyle overfit etmez.
     const RANGES_4H: Record<string, [number, number]> = {
-        'RSI': [14, 42],         // 2.3 gün → 7 gün
-        'STOCHRSI': [14, 42],
-        'DMI': [14, 42],
-        'MFI': [14, 42],
-        'SMI': [14, 42],
-        'WPR': [14, 42],
-        'DI': [14, 42],
-        'MADR': [14, 42],
-        'CCI': [14, 42],
-        'CMF': [14, 42],
-        'BOLLINGER': [14, 42],
-        'MACD': [10, 30],        // fast period (slow 26, signal 9 sabit)
-        'WAVETREND': [10, 30],   // channel length (n1)
-        'ALMA': [10, 30],
+        'RSI': [14, 42], 'STOCHRSI': [14, 42], 'DMI': [14, 42],
+        'MFI': [14, 42], 'SMI': [14, 42], 'WPR': [14, 42],
+        'DI': [14, 42], 'MADR': [14, 42], 'CCI': [14, 42],
+        'CMF': [14, 42], 'BOLLINGER': [14, 42],
+        'MACD': [10, 30], 'WAVETREND': [10, 30], 'ALMA': [10, 30],
     };
 
     return RANGES_4H[indicatorName.toUpperCase()] ?? entry.range;
 }
 
+/**
+ * Brute-force optimizer: evaluates every parameter value in the indicator's
+ * range on the FULL dataset and picks the one with the highest win rate.
+ * No train/test split — we want the best possible parameter for the data we have.
+ */
 export function findBestParameter(
     indicatorName: string,
     candles: Candle[],
@@ -291,54 +271,32 @@ export function findBestParameter(
     const optimizer = OPTIMIZABLE_INDICATORS[indicatorName];
     if (!optimizer) return null;
 
-    // ── Train/Test Split (70/30) ──────────────────────────────────────
-    const splitIdx = Math.floor(candles.length * 0.7);
-    const trainCandles = candles.slice(0, splitIdx);
-    const testCandles = candles.slice(splitIdx);
-
     let bestVal = -1;
     let bestWinRate = -1;
-    let bestScore = -1;
+    let bestSignals = 0;
 
-    const [start, end] = optimizer.range;
+    const [start, end] = rangeForTimeframe(indicatorName, config.interval);
     for (let val = start; val <= end; val++) {
         const rawData = optimizer.compute(candles, val);
         const formattedData = optimizer.formatData(rawData);
 
-        const trainResult = calculateWinRate(indicatorName, trainCandles, formattedData, { ...config, interval: config.interval });
-        const testResult = calculateWinRate(indicatorName, testCandles, formattedData, { ...config, interval: config.interval });
+        // Evaluate on full dataset — no train/test split
+        const result = calculateWinRate(indicatorName, candles, formattedData, {
+            ...config,
+            interval: config.interval,
+        });
 
-        // Use harmonic mean of train/test as score to avoid overfitting
-        const trainWR = trainResult.winRate;
-        const testWR = testResult.winRate;
-        if (trainWR <= 0 || testWR <= 0) continue;
-
-        const harmonicMean = 2 * (trainWR * testWR) / (trainWR + testWR);
-        const gap = Math.abs(trainWR - testWR);
-        const maxWR = Math.max(trainWR, testWR);
-        const overfitPenalty = maxWR > 0 ? gap / maxWR : 1;
-        const score = harmonicMean * (1 - overfitPenalty * 0.5);
-
-        if (score > bestScore) {
-            bestScore = score;
-            bestWinRate = testResult.winRate; // Report out-of-sample WR
+        // Prefer higher win rate; on tie, prefer more signals (more robust)
+        if (
+            result.winRate > bestWinRate ||
+            (result.winRate === bestWinRate && result.totalSignals > bestSignals)
+        ) {
+            bestWinRate = result.winRate;
+            bestSignals = result.totalSignals;
             bestVal = val;
         }
     }
 
-    // ── Fallback: if train/test split produced no valid parameter (e.g.
-    //     insufficient data in either split), evaluate on the full dataset.
-    if (bestScore === -1) {
-        for (let val = start; val <= end; val++) {
-            const rawData = optimizer.compute(candles, val);
-            const formattedData = optimizer.formatData(rawData);
-            const result = calculateWinRate(indicatorName, candles, formattedData, { ...config, interval: config.interval });
-            if (result.winRate > bestWinRate) {
-                bestWinRate = result.winRate;
-                bestVal = val;
-            }
-        }
-    }
-
+    if (bestVal === -1) return null;
     return { bestVal, bestWinRate };
 }

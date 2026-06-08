@@ -17,12 +17,9 @@ import {
     Sparkles,
     Check,
     Layers,
-    ChevronDown,
-    ArrowUpDown,
     SlidersHorizontal,
     SortAsc,
     LayoutGrid,
-    Star,
 } from "lucide-react";
 
 // ─── Indicator Categories (grouped) ──────────────────────────────────────────
@@ -32,7 +29,7 @@ const groupedIndicators = CATEGORIES.map((cat) => ({
     items: INDICATOR_DETAILS.filter((ind) => ind.category === cat.key),
 })).filter((g) => g.items.length > 0);
 
-type SortMode = "category" | "alphabetical" | "popularity";
+type SortMode = "category" | "alphabetical";
 
 // ─── Bileşen ──────────────────────────────────────────────────────────────────
 
@@ -121,19 +118,11 @@ const TAIndicatorsButton = () => {
         return [...INDICATOR_DETAILS].sort((a, b) => a.label.localeCompare(b.label));
     }, []);
 
-    // All indicators flat-sorted by popularity (descending)
-    const allIndicatorsByPopularity = useMemo(() => {
-        return [...INDICATOR_DETAILS].sort((a, b) => b.popularity - a.popularity);
-    }, []);
-
     // Filtered indicators based on search
     const filteredGroups = useMemo(() => {
         if (!searchQuery.trim()) {
             if (sortMode === "alphabetical") {
                 return [{ key: "all", icon: "📊", label: "All Indicators", items: allIndicatorsSorted }];
-            }
-            if (sortMode === "popularity") {
-                return [{ key: "all", icon: "⭐", label: "By Popularity", items: allIndicatorsByPopularity }];
             }
             return groupedIndicators;
         }
@@ -151,20 +140,13 @@ const TAIndicatorsButton = () => {
                 : [];
         }
 
-        if (sortMode === "popularity") {
-            const filtered = allIndicatorsByPopularity.filter(filterFn);
-            return filtered.length > 0
-                ? [{ key: "all", icon: "⭐", label: "By Popularity", items: filtered }]
-                : [];
-        }
-
         return groupedIndicators
             .map((g) => ({
                 ...g,
                 items: g.items.filter(filterFn),
             }))
             .filter((g) => g.items.length > 0);
-    }, [searchQuery, sortMode, allIndicatorsSorted, allIndicatorsByPopularity]);
+    }, [searchQuery, sortMode, allIndicatorsSorted]);
 
     const selectedCount = selectedIndicators.size;
 
@@ -194,12 +176,7 @@ const TAIndicatorsButton = () => {
                 icon={<Layers className="w-4 h-4 text-yellow-400" />}
                 width="max-w-lg"
                 footer={
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-400">
-                            {selectedCount > 0
-                                ? `${selectedCount} indicator${selectedCount > 1 ? "s" : ""} selected`
-                                : "Select indicators to analyze"}
-                        </span>
+                    <div className="flex items-center justify-end w-full">
                         <div className="flex items-center gap-2">
                             {selectedCount > 0 && (
                                 <Button
@@ -214,31 +191,20 @@ const TAIndicatorsButton = () => {
                             <Button
                                 variant="secondary"
                                 size="sm"
-                                className={cn(
-                                    "text-xs font-medium transition-all",
-                                    selectedCount > 0
-                                        ? "bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
-                                        : "bg-gray-800 border border-gray-700 text-gray-600 cursor-not-allowed"
-                                )}
-                                disabled={selectedCount === 0}
+                                className="text-xs font-medium transition-all bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
                                 onClick={() => applySelection(false)}
                             >
                                 <Check className="w-3.5 h-3.5 mr-1" />
                                 Apply
                             </Button>
-                            {selectedCount > 0 && (
-                                <Button
-                                    size="sm"
-                                    className={cn(
-                                        "text-xs font-medium transition-all",
-                                        "bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
-                                    )}
-                                    onClick={() => applySelection(true)}
-                                >
-                                    <Sparkles className="w-3.5 h-3.5 mr-1" />
-                                    Apply & Optimize
-                                </Button>
-                            )}
+                            <Button
+                                size="sm"
+                                className="text-xs font-medium transition-all bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/20"
+                                onClick={() => applySelection(true)}
+                            >
+                                <Sparkles className="w-3.5 h-3.5 mr-1" />
+                                Apply & Optimize
+                            </Button>
                         </div>
                     </div>
                 }
@@ -311,19 +277,6 @@ const TAIndicatorsButton = () => {
                                     <span>Alphabetical A–Z</span>
                                     {sortMode === "alphabetical" && <Check className="w-3 h-3 ml-auto" />}
                                 </button>
-                                <button
-                                    onClick={() => { setSortMode("popularity"); setShowFilters(false); }}
-                                    className={cn(
-                                        "w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors text-left",
-                                        sortMode === "popularity"
-                                            ? "text-yellow-400 bg-yellow-500/10"
-                                            : "text-gray-400 hover:bg-white/5"
-                                    )}
-                                >
-                                    <Star className="w-3 h-3 shrink-0" />
-                                    <span>By Popularity</span>
-                                    {sortMode === "popularity" && <Check className="w-3 h-3 ml-auto" />}
-                                </button>
                             </div>
                         )}
                     </div>
@@ -342,17 +295,6 @@ const TAIndicatorsButton = () => {
                                     </span>
                                     <span className="text-[10px] text-gray-500 ml-auto">
                                         {group.items.length}
-                                    </span>
-                                </div>
-                            )}
-                            {sortMode === "popularity" && (
-                                <div className="flex items-center gap-1.5 mb-1.5">
-                                    <Star className="w-3 h-3 text-yellow-500" />
-                                    <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">
-                                        Popularity
-                                    </span>
-                                    <span className="text-[10px] text-gray-500 ml-auto">
-                                        {group.items.length} indicators
                                     </span>
                                 </div>
                             )}
@@ -405,27 +347,6 @@ const TAIndicatorsButton = () => {
                                                     {ind.description}
                                                 </div>
                                             </div>
-
-                                            {/* Popularity score — shown only in popularity mode */}
-                                            {sortMode === "popularity" && (
-                                                <div className="flex items-center gap-1.5 shrink-0 mr-1">
-                                                    <div className="w-10 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                                                        <div
-                                                            className="h-full rounded-full transition-all"
-                                                            style={{
-                                                                width: `${ind.popularity}%`,
-                                                                backgroundColor:
-                                                                    ind.popularity >= 80 ? '#22c55e' :
-                                                                        ind.popularity >= 60 ? '#eab308' :
-                                                                            ind.popularity >= 40 ? '#f97316' : '#ef4444'
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <span className="text-[10px] font-medium text-gray-400 w-5 text-right">
-                                                        {ind.popularity}
-                                                    </span>
-                                                </div>
-                                            )}
 
                                             {/* Checkbox — amber */}
                                             <div

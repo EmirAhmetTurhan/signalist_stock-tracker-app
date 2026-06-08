@@ -20,37 +20,42 @@ const NavItems = memo(function NavItems({initialStocks}: { initialStocks: StockW
         return pathname.startsWith(path);
     }
     return (
-        <ul className="flex flex-col sm:flex-row p-2 gap-3 sm:gap-10 font-medium">
-            {NAV_ITEMS.map(({href, label}) => {
-                if (href === '/search') return (
-                    <li key="search-trigger">
-                        <SearchCommand
-                            renderAs="text"
-                            label="Search"
-                            initialStocks={initialStocks}
-                        />
-                    </li>
-                )
+        <nav aria-label="Main navigation">
+            <ul className="flex flex-col sm:flex-row p-2 gap-3 sm:gap-10 font-medium" role="list">
+                {NAV_ITEMS.map(({href, label}) => {
+                    if (href === '/search') return (
+                        <li key="search-trigger" role="listitem">
+                            <SearchCommand
+                                renderAs="text"
+                                label="Search"
+                                initialStocks={initialStocks}
+                            />
+                        </li>
+                    )
 
-                // If user is on a stock details page, pass current symbol to T/A tab
-                let effectiveHref = href;
-                if (href === '/ta') {
-                    const match = pathname.match(/\/stocks\/([^/]+)/i);
-                    if (match?.[1]) {
-                        const sym = decodeURIComponent(match[1]).toUpperCase();
-                        effectiveHref = `/ta?symbol=${encodeURIComponent(sym)}`;
+                    let effectiveHref = href;
+                    if (href === '/ta') {
+                        const match = pathname.match(/\/stocks\/([^/]+)/i);
+                        if (match?.[1]) {
+                            const sym = decodeURIComponent(match[1]).toUpperCase();
+                            effectiveHref = `/ta?symbol=${encodeURIComponent(sym)}`;
+                        }
                     }
-                }
 
-                return <li key={href}>
-                    <Link href={effectiveHref} className={`hover:text-yellow-500 transition-colors ${
-                        isActive(href) ? 'text-gray-100' : ''
-                    }`}>
-                        {label}
-                    </Link>
-                </li>
-            })}
-        </ul>
+                    const active = isActive(href);
+                    return <li key={href} role="listitem">
+                        <Link
+                            href={effectiveHref}
+                            className={`hover:text-yellow-500 transition-colors ${active ? 'text-gray-100' : ''}`}
+                            aria-current={active ? 'page' : undefined}
+                            aria-label={`${label} page`}
+                        >
+                            {label}
+                        </Link>
+                    </li>
+                })}
+            </ul>
+        </nav>
     )
 });
 export default NavItems

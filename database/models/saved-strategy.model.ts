@@ -31,6 +31,11 @@ export interface ISavedStrategy extends Document {
         totalReturn: number;
     }>;
 
+    // ─── Path-Aware Evaluation (Step 9) ───
+    /** Evaluation mode used when this strategy was discovered or last re-evaluated.
+     *  undefined → legacy strategy (no path-aware evaluation yet) */
+    discoveredEvaluationMode?: 'lookforward' | 'pathaware' | 'regime';
+
     // ★ UI/UX fields for the redesigned TAStrategiesButton dialog
     /** Whether the strategy is pinned/favorited — pinned items sort first */
     pinned: boolean;
@@ -64,6 +69,8 @@ const SavedStrategySchema = new Schema<ISavedStrategy>({
     discoveredMaxDrawdown: { type: Number, default: null },
     discoveredTotalReturn: { type: Number, default: null },
     discoveredRegimeBreakdown: { type: Schema.Types.Mixed, default: null },
+
+    discoveredEvaluationMode: { type: String, enum: ['lookforward', 'pathaware', 'regime', null], default: null },
 
     pinned: { type: Boolean, default: false },
     sourceReportId: { type: String, default: null },

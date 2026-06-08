@@ -7,7 +7,7 @@ export type MADRInput = {
 
 export type MADRPoint = {
     time: number;
-    value: number;
+    value?: number; // BUGFIX: allow undefined for warmup bars
 };
 
 export function computeMADR(candles: MADRInput[], period = 21): MADRPoint[] {
@@ -19,9 +19,9 @@ export function computeMADR(candles: MADRInput[], period = 21): MADRPoint[] {
     return candles.map((c, i) => {
         const sma = smaValues[i];
         const close = closes[i];
-        const value = typeof sma === 'number' && sma !== 0
-            ? ((close - sma) / sma) * 100
-            : 0;
-        return { time: c.time, value };
+        if (typeof sma !== 'number' || sma === 0) {
+            return { time: c.time, value: undefined };
+        }
+        return { time: c.time, value: ((close - sma) / sma) * 100 };
     });
 }

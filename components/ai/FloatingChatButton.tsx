@@ -10,6 +10,7 @@ import ToolProgress from '@/components/ai/ToolProgress';
 import ModelSelector from '@/components/ai/ModelSelector';
 import { ThinkingSkeleton } from '@/components/ai/ThinkingSkeleton';
 import { useChatManager } from '@/hooks/useChatManager';
+import { normalizeUIParts, getMessageText } from '@/lib/ai/message-format';
 
 const SIZE_KEY = 'signalist-chat-size';
 const MSG_KEY = 'signalist-chat-messages';
@@ -36,7 +37,7 @@ function loadMessages() {
   try { const raw = localStorage.getItem(MSG_KEY); if (raw) return JSON.parse(raw); } catch { /* ignore */ }
   return [];
 }
-function saveMessages(msgs: any[]) {
+function saveMessages(msgs: unknown[]) {
   try { localStorage.setItem(MSG_KEY, JSON.stringify(msgs.slice(-50))); } catch { /* ignore */ }
 }
 
@@ -259,17 +260,10 @@ export default function FloatingChatButton() {
             )}
             {messages.map((m, index) => {
               if (!hasContent(m)) return null;
-              
-              // Normalize parts from toolInvocations during streaming (AI SDK v3 support)
-              const effectiveParts = m.parts || ((m as any).toolInvocations ? (m as any).toolInvocations.map((inv: any) => ({
-                type: 'tool-invocation',
-                toolInvocation: inv
-              })) : []);
-              
-              const mWithParts = { ...m, parts: effectiveParts };
 
-              const textPart = effectiveParts.find((p: any) => p.type === 'text' && 'text' in p);
-              const text = (textPart as any)?.text ?? (m as any).content ?? '';
+              const effectiveParts = normalizeUIParts(m.parts, m as unknown as Record<string, unknown>);
+              const mWithParts = { ...m, parts: effectiveParts };
+              const text = getMessageText(effectiveParts, m as unknown as Record<string, unknown>);
 
               return (
                 <div key={m.id} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : ''}`}>
@@ -279,7 +273,7 @@ export default function FloatingChatButton() {
                       <>
                         <ToolProgress parts={effectiveParts} isLoading={isLoading} />
                         {text && <MarkdownRenderer content={text} />}
-                        <GenerativeUI message={mWithParts as any} convId={conversationId || undefined} isLast={index === messages.length - 1} onToolOutput={({ toolCallId, toolName, output }) => addToolOutput({ toolCallId, tool: toolName, output })} onFollowUp={(text: string) => sendMessage({ text })} />
+                        <GenerativeUI message={mWithParts as unknown as { id: string; role: string; parts?: unknown[] }} convId={conversationId || undefined} isLast={index === messages.length - 1} onToolOutput={({ toolCallId, toolName, output }) => addToolOutput({ toolCallId, toolName, output })} onFollowUp={(text: string) => sendMessage({ text })} />
                       </>
                     )}
                   </div>

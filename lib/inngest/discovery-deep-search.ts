@@ -20,8 +20,8 @@ import type { Candle } from '@/lib/ta/backtest';
 import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';
 import { computeIndicators } from '@/lib/ta/compute';
 import { DEFAULT_PARAMS } from '@/lib/constants/indicators';
-import { mapComputedToAllData } from '@/lib/ta/strategy-optimizer';
-import type { AllData, DiscoveredStrategy } from '@/lib/ta/strategy-optimizer';
+import { mapComputedToAllData, runStrategyBacktest } from '@/lib/ta/strategy-optimizer';
+import type { AllData, DiscoveredStrategy, StrategyBacktestResult } from '@/lib/ta/strategy-optimizer';
 import type { SignalProfile } from '@/lib/ta/types';
 import { DISCOVERY_POOL } from '@/lib/ta/indicator-registry';
 import {
@@ -45,20 +45,36 @@ const PORTFOLIO_TARGET_SIZE = 5;
 /** Max portfolio build attempts before falling back to smaller set. */
 const MAX_PORTFOLIO_BUILD_ATTEMPTS = 3;
 
-/** Maximum MCTS iterations. */
-const DEFAULT_MCTS_ITERATIONS = 200;
+/** Maximum MCTS iterations. Balanced for discovery quality vs CPU usage. */
+const DEFAULT_MCTS_ITERATIONS = 100;
 
 /** MCTS max nodes. */
-const DEFAULT_MCTS_MAX_NODES = 500;
+const DEFAULT_MCTS_MAX_NODES = 300;
 
 /** MCTS max combo depth (number of indicators per strategy). */
-const DEFAULT_MCTS_MAX_DEPTH = 5;
+const DEFAULT_MCTS_MAX_DEPTH = 4;
 
 /** Default look-forward bars. */
 const DEFAULT_LOOK_FORWARD = 14;
 
 /** Max candles to use for Hyperband evaluation. */
 const DEFAULT_MAX_CANDLES = 500;
+
+/** Serialized candidate shape after Inngest step serialization. */
+interface SerializedCandidate {
+    indicators: string[];
+    params: Record<string, number>;
+    winRate: number;
+    totalSignals: number;
+    rank: number;
+    profitFactor?: number;
+    sharpeRatio?: number;
+    avgWin?: number;
+    avgLoss?: number;
+    maxDrawdown?: number;
+    totalReturn?: number;
+    regimeBreakdown?: Record<string, { winRate: number; totalSignals: number; wins: number; avgReturn: number; totalReturn: number }>;
+}
 
 // ─── Helper: Update job progress in DB ──────────────────────────────────────────
 
@@ -70,7 +86,8 @@ async function updateJobProgress(
     detail: string,
 ) {
     try {
-        await connectToDatabase();
+        // connectToDatabase is called once at the start of Phase 1;
+        // subsequent calls reuse the existing connection.
         const progress = total > 0 ? Math.round((current / total) * 100) : 0;
         await AIJob.updateOne(
             { jobId },
@@ -276,7 +293,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                 await updateJobProgress(jobId, 2, 1, 2, 'Running MCTS search...');
 
                 // ── Step 2a.2: MCTS Search ──
-                const mctsResult = mctsSearch(evalCandles, allData, {
+                const mctsResult = await mctsSearch(evalCandles, allData, {
                     priorWeights,
                     lookForward,
                     interval: safeInterval,
@@ -355,7 +372,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                 );
 
                 // Execute bracket at 25% density (no DE at this level)
-                const bracketResults = executeBracket(
+                const bracketResults = await executeBracket(
                     allCombos,
                     0,      // bracketLevel
                     density,
@@ -427,7 +444,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                 );
 
                 // Execute bracket at 50% density (no DE at this level)
-                const bracketResults = executeBracket(
+                const bracketResults = await executeBracket(
                     inputCombos,
                     1,      // bracketLevel
                     density,
@@ -499,7 +516,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                 );
 
                 // Execute bracket at 100% density WITH DE parameter optimization
-                const bracketResults = executeBracket(
+                const bracketResults = await executeBracket(
                     inputCombos,
                     2,      // bracketLevel
                     density,
@@ -656,12 +673,177 @@ export const deepDiscoveryJob = inngest.createFunction(
             });
 
             // ═══════════════════════════════════════════════════════════
+            // Phase 4.5: Full-Fidelity Backtest (Unmasked)
+            // Hyperband even at 100% density evaluates against at most
+            // DEFAULT_MAX_CANDLES (500) candles. The TA page backtest uses
+            // ALL available candles. This step runs an unmasked, full-data
+            // backtest on the top candidates so the archive report matches
+            // what users will see on the TA page.
+            // ═══════════════════════════════════════════════════════════
+            const phase45Result = await step.run('phase-45-full-backtest', async () => {
+                const start = Date.now();
+                const { candles: allCandles, allData } = phase1Data;
+                const lookForward = DEFAULT_LOOK_FORWARD;
+
+                const topCandidates = (phase4Result.allCandidates as SerializedCandidate[]).slice(0, 10);
+
+                await updateJobProgress(
+                    jobId, 4, 0, topCandidates.length,
+                    `Full-fidelity backtest: evaluating top ${topCandidates.length} strategies on all ${allCandles.length} candles...`,
+                );
+
+                // Run unmasked backtest on each top candidate using ALL candles
+                const fullResults: Array<{
+                    indicators: string[];
+                    params: Record<string, number>;
+                    winRate: number;
+                    totalSignals: number;
+                    wins: number;
+                    profitFactor: number;
+                    sharpeRatio: number;
+                    avgWin: number;
+                    avgLoss: number;
+                    maxDrawdown: number;
+                    totalReturn: number;
+                    regimeBreakdown: StrategyBacktestResult['regimeBreakdown'];
+                }> = [];
+
+                for (let idx = 0; idx < topCandidates.length; idx++) {
+                    const candidate = topCandidates[idx];
+
+                    try {
+                        const btResult = await runStrategyBacktest(
+                            allCandles as any,
+                            'CUSTOM',
+                            allData,
+                            {
+                                lookForward,
+                                interval: safeInterval,
+                                signalProfile: signalProfile ?? 'TrendFollower',
+                                evaluationMode: 'pathaware',
+                            },
+                            {
+                                customIndicators: candidate.indicators,
+                                mode: 'majority',
+                                interval: safeInterval,
+                            },
+                        );
+
+                        fullResults.push({
+                            indicators: candidate.indicators,
+                            params: candidate.params,
+                            winRate: btResult.winRate,
+                            totalSignals: btResult.totalSignals,
+                            wins: btResult.wins,
+                            profitFactor: btResult.profitFactor ?? 0,
+                            sharpeRatio: btResult.sharpeRatio ?? 0,
+                            avgWin: btResult.avgWin ?? 0,
+                            avgLoss: btResult.avgLoss ?? 0,
+                            maxDrawdown: btResult.maxDrawdown ?? 0,
+                            totalReturn: btResult.totalReturn ?? 0,
+                            regimeBreakdown: btResult.regimeBreakdown,
+                        });
+
+                        await updateJobProgress(
+                            jobId, 4, idx + 1, topCandidates.length,
+                            `Full backtest ${idx + 1}/${topCandidates.length}: ${candidate.indicators.join('+')} → ${btResult.winRate.toFixed(1)}% (${btResult.totalSignals} signals)`,
+                        );
+                    } catch (btError) {
+                        console.warn(`[DeepDiscovery] Full backtest failed for ${candidate.indicators.join('+')}:`, btError);
+                        // Fall back to Hyperband result
+                        fullResults.push({
+                            indicators: candidate.indicators,
+                            params: candidate.params,
+                            winRate: candidate.winRate,
+                            totalSignals: candidate.totalSignals,
+                            wins: Math.round((candidate.winRate / 100) * candidate.totalSignals),
+                            profitFactor: candidate.profitFactor ?? 0,
+                            sharpeRatio: candidate.sharpeRatio ?? 0,
+                            avgWin: candidate.avgWin ?? 0,
+                            avgLoss: candidate.avgLoss ?? 0,
+                            maxDrawdown: candidate.maxDrawdown ?? 0,
+                            totalReturn: candidate.totalReturn ?? 0,
+                            regimeBreakdown: candidate.regimeBreakdown as any,
+                        });
+                    }
+                }
+
+                executionTimes.phase45 = Date.now() - start;
+
+                // ── Merge full-fidelity results back into allCandidates ──
+                const fullResultMap = new Map(
+                    fullResults.map(r => [r.indicators.sort().join(','), r]),
+                );
+
+                const updatedCandidates = (phase4Result.allCandidates as SerializedCandidate[]).map((candidate) => {
+                    const key = candidate.indicators.sort().join(',');
+                    const full = fullResultMap.get(key);
+                    if (full) {
+                        return {
+                            ...candidate,
+                            winRate: full.winRate,
+                            totalSignals: full.totalSignals,
+                            profitFactor: full.profitFactor,
+                            sharpeRatio: full.sharpeRatio,
+                            avgWin: full.avgWin,
+                            avgLoss: full.avgLoss,
+                            maxDrawdown: full.maxDrawdown,
+                            totalReturn: full.totalReturn,
+                            regimeBreakdown: full.regimeBreakdown,
+                        };
+                    }
+                    return candidate;
+                });
+
+                // Re-rank by full-fidelity score
+                updatedCandidates.sort((a, b) => {
+                    const scoreA = a.winRate * Math.sqrt(Math.max(a.totalSignals, 1));
+                    const scoreB = b.winRate * Math.sqrt(Math.max(b.totalSignals, 1));
+                    return scoreB - scoreA;
+                });
+                updatedCandidates.forEach((ds, idx) => {
+                    ds.rank = idx + 1;
+                });
+
+                await updateJobProgress(
+                    jobId, 4, topCandidates.length, topCandidates.length,
+                    `Full backtest complete: top result ${updatedCandidates[0]?.winRate.toFixed(1)}% (${updatedCandidates[0]?.totalSignals} signals)`,
+                );
+
+                // ── Checkpoint: Save full-fidelity results to MongoDB ──
+                await connectToDatabase();
+                await AIJob.updateOne(
+                    { jobId },
+                    {
+                        $set: {
+                            'intermediateResults.fullFidelityBacktests': fullResults.map(r => ({
+                                indicators: r.indicators,
+                                winRate: r.winRate,
+                                totalSignals: r.totalSignals,
+                                sharpeRatio: r.sharpeRatio,
+                                profitFactor: r.profitFactor,
+                            })),
+                            'intermediateResults.fullFidelityComplete': true,
+                        },
+                    },
+                );
+
+                return {
+                    allCandidates: updatedCandidates,
+                    fullResults,
+                };
+            });
+
+            // ═══════════════════════════════════════════════════════════
             // Phase 5: Mark Job Completed + Save Report
             // ═══════════════════════════════════════════════════════════
             await step.run('phase-5-save-report', async () => {
                 await connectToDatabase();
 
-                const { portfolio, allCandidates } = phase4Result;
+                const { portfolio } = phase4Result;
+                // Use full-fidelity backtest results from Phase 4.5 instead of
+                // Hyperband-masked values — ensures archive reports match TA page backtests.
+                const allCandidates = phase45Result.allCandidates as SerializedCandidate[];
 
                 // Total duration across all phases
                 const discoveryDuration = Object.values(executionTimes).reduce(
@@ -758,9 +940,9 @@ export const deepDiscoveryJob = inngest.createFunction(
                 success: true,
                 jobId,
                 symbol,
-                resultsCount: phase4Result.allCandidates.length,
+                resultsCount: phase45Result.allCandidates.length,
                 portfolioSize: phase4Result.portfolio.strategies.length,
-                bestWinRate: phase4Result.allCandidates[0]?.winRate ?? 0,
+                bestWinRate: phase45Result.allCandidates[0]?.winRate ?? 0,
                 executionTimes,
             };
         } catch (e) {

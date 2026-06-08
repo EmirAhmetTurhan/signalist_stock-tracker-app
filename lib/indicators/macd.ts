@@ -22,6 +22,8 @@ export function computeMACD(
   signalPeriod = 9
 ): MACDOutput[] {
   if (!Array.isArray(candles) || candles.length === 0) return [];
+  // Guard: fast must be < slow for correct MACD semantics
+  if (fast >= slow) fast = slow - 1;
   const closes = candles.map((c) => Number(c.close ?? 0));
 
   // MACD, TradingView uyumu için 'value' seed kullanır (ilk değerle başlatma)

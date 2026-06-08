@@ -166,7 +166,7 @@ function evaluateParams(
 // ─── Main Optimizer ─────────────────────────────────────────────────────────────
 
 export interface SurrogateOptimizeOptions {
-    /** Data interval ('1d', '4h', '1wk') */
+    /** Data interval ('1d', '4h') */
     interval: string;
     /** Number of optimization iterations. Default: 50 */
     nIterations?: number;

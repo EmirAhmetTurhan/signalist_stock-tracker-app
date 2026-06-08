@@ -84,18 +84,25 @@ export const RISK_THRESHOLDS = {
 
 /** Final validated strategy after cross-validation (Phase 5). */
 export interface ValidatedStrategy extends DiverseStrategy {
-  /** Average test win rate across K folds (0-100) */
   validatedWinRate: number;
-  /** Overfitting risk score (0-1): 1.0 - (avgTestWR / avgTrainWR) */
   overfittingRisk: number;
-  /** Risk classification */
   riskLevel: RiskLevel;
-  /** Risk badge emoji */
   riskBadge: string;
-  /** Average train win rate (for transparency) */
   avgTrainWinRate: number;
-  /** Per-regime win rate breakdown (Phase 3) */
-  regimeBreakdown?: Record<string, { winRate: number; totalSignals: number; wins: number; avgReturn: number; totalReturn: number }>;
+  regimeBreakdown?: Record<string, {
+    winRate: number;
+    totalSignals: number;
+    wins: number;
+    avgReturn: number;
+    totalReturn: number;
+  }>;
+  // ─── Path-Aware + Portfolio Fields (populated when evaluationMode != 'lookforward') ───
+  evaluationMode?: 'lookforward' | 'pathaware' | 'regime';
+  mfe?: number;
+  mae?: number;
+  intraTradeDD?: number;
+  equityCurveResampled?: { time: string; equity: number }[];
+  drawdownCurveResampled?: { time: string; drawdownPct: number }[];
 }
 
 // ─── Progress Tracking ──────────────────────────────────────────────────────────
@@ -124,7 +131,7 @@ export interface DeepDiscoveryProgress {
 /** Input parameters for starting a deep discovery job. */
 export interface DeepDiscoveryInput {
   symbol: string;
-  interval: '1d' | '4h' | '1wk';
+  interval: '1d' | '4h';
   years: number;
   seed?: number;
 }

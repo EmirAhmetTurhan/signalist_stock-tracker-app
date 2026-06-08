@@ -1,45 +1,36 @@
 'use client';
 import TradingViewWidget from '@/components/charts/TradingViewWidget';
 import WatchlistButton from '@/components/watchlist/WatchlistButton';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '@/store/useAppStore';
 
-const WatchlistTable = ({ watchlist }: WatchlistTableProps) => {
-  const [rows, setRows] = useState<StockWithData[]>(watchlist);
-  const optimisticItems = useAppStore((s) => s.watchlist);
+const WatchlistTable = ({ watchlist: serverWatchlist }: WatchlistTableProps) => {
+  const storeWatchlist = useAppStore((s) => s.watchlist);
+  const setWatchlist = useAppStore((s) => s.setWatchlist);
+  const initialized = useRef(false);
 
-  // Optimistic UI: AI watchlist'e ekleme yaptığında anında göster
+  // Init: server'dan gelen veriyi store'a yaz (sadece bir kez)
   useEffect(() => {
-    if (optimisticItems.length === 0) return;
-    const existingSymbols = new Set(watchlist.map((w) => w.symbol));
-    const newItems = optimisticItems.filter((oi) => !existingSymbols.has(oi.symbol));
-    if (newItems.length === 0) return;
+    if (initialized.current) return;
+    if (serverWatchlist.length > 0 && storeWatchlist.length === 0) {
+      setWatchlist(
+        serverWatchlist.map((w) => ({
+          symbol: w.symbol,
+          company: w.company,
+          addedAt: w.addedAt.toISOString(),
+        })),
+      );
+      initialized.current = true;
+    }
+  }, [serverWatchlist, storeWatchlist.length, setWatchlist]);
 
-    setRows((prev) => {
-      const updated = [...prev];
-      for (const item of newItems) {
-        if (!updated.find((r) => r.symbol === item.symbol)) {
-          updated.push({
-            symbol: item.symbol,
-            name: item.company,
-            price: null,
-            changePercent: null,
-            marketCap: null,
-            pe: null,
-            isInWatchlist: true,
-          } as any);
-        }
-      }
-      return updated;
-    });
-  }, [optimisticItems, watchlist]);
+  const rows = storeWatchlist;
 
   const scriptBase = 'https://s3.tradingview.com/external-embedding/embed-widget-';
-  // Use fixed header and row heights to keep overlay perfectly aligned with TradingView rows
-  const headerHeight = 44; // px – TradingView table header height (approx.)
-  const rowHeight = 44; // px – TradingView table row height (approx.)
-  const widgetHeight = headerHeight + rows.length * rowHeight;
-  const controlsColWidth = 52; // px – fixed width for the right-side controls column
+  const headerHeight = 44;
+  const rowHeight = 44;
+  const widgetHeight = rows.length > 0 ? headerHeight + rows.length * rowHeight : 0;
+  const controlsColWidth = 52;
 
   const quotesConfig = useMemo(() => {
     const symbolsGroup = {
@@ -59,20 +50,10 @@ const WatchlistTable = ({ watchlist }: WatchlistTableProps) => {
     } as Record<string, unknown>;
   }, [rows, widgetHeight]);
 
-  const handleWatchlistChange = (symbol: string, isAdded: boolean) => {
-    if (!isAdded) {
-      // Remove row optimistically
-      setRows((r) => r.filter((x) => x.symbol !== symbol));
-    }
-  };
-
   if (rows.length === 0) return null;
 
-  // Render TradingView table with a separate right-side column for controls (not overlayed)
-  // This keeps buttons off the graphic while staying perfectly aligned with rows.
   return (
     <div className="flex items-stretch gap-2">
-      {/* Left: TradingView Market Quotes widget */}
       <div className="flex-1 min-w-0">
         <TradingViewWidget
           scriptUrl={`${scriptBase}market-quotes.js`}
@@ -82,22 +63,23 @@ const WatchlistTable = ({ watchlist }: WatchlistTableProps) => {
         />
       </div>
 
-      {/* Right: independent column of delete buttons, aligned by fixed row height */}
       <div
         className="flex flex-col items-center select-none"
         style={{ width: `${controlsColWidth}px`, height: `${widgetHeight}px` }}
       >
-        {/* Spacer for the header */}
         <div style={{ height: `${headerHeight}px` }} />
         {rows.map((i) => (
-          <div key={i.symbol} className="flex items-center justify-center" style={{ height: `${rowHeight}px` }}>
+          <div
+            key={i.symbol}
+            className="flex items-center justify-center"
+            style={{ height: `${rowHeight}px` }}
+          >
             <WatchlistButton
               symbol={i.symbol}
               company={i.company}
               isInWatchlist={true}
               type="icon"
               showTrashIcon
-              onWatchlistChange={handleWatchlistChange}
             />
           </div>
         ))}

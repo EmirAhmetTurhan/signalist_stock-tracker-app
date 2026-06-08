@@ -104,3 +104,25 @@ export const PARAM_DEFAULTS_STR: Record<string, string> = Object.fromEntries(
 export const PARAM_DEFAULTS_NUM: Record<string, number> = Object.fromEntries(
     INDICATOR_PARAMS.map((p) => [p.key, p.defaultNum])
 );
+
+/**
+ * Extract all indicator parameters from URL search params into a typed object.
+ * Uses INDICATOR_PARAMS registry as single source of truth.
+ * Applies optional JSON overrides from discovered strategies (p= param).
+ */
+export function extractIndicatorParams(
+    search: Record<string, string | undefined>,
+): Record<string, number | string> {
+    const params: Record<string, number | string> = {};
+    for (const paramDef of INDICATOR_PARAMS) {
+        const raw = search[paramDef.key];
+        if (paramDef.key.endsWith('_color') || paramDef.key.endsWith('_style')) {
+            // String/display params
+            params[paramDef.key] = raw || paramDef.defaultStr;
+        } else {
+            // Numeric params (int or float)
+            params[paramDef.key] = raw !== undefined ? Number(raw) || paramDef.defaultNum : paramDef.defaultNum;
+        }
+    }
+    return params;
+}

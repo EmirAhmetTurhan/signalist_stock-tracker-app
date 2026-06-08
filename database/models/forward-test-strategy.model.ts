@@ -54,7 +54,7 @@ const ForwardTestStrategySchema = new Schema<IForwardTestStrategy>({
   userId: { type: String, required: true, index: true },
   name: { type: String, required: true },
   symbol: { type: String, required: true, uppercase: true, index: true },
-  interval: { type: String, enum: ['1d', '4h', '1wk'], required: true },
+  interval: { type: String, enum: ['1d', '4h'], required: true },
 
   indicatorConfig: { type: Schema.Types.Mixed, required: true },
   entryRule: { type: Schema.Types.Mixed, required: true },

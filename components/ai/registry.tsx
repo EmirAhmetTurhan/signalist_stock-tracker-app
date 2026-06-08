@@ -26,7 +26,7 @@ import {
 
 // --- Wrapper for ClarificationForm ---
 function ClarificationCard({ data, onFollowUp, isLast }: ToolCardProps) {
-  const question = (data.question as string) || "Lütfen eksik bilgiyi belirtin:";
+  const question = (data.question as string) || "Please specify the missing information:";
   const options = (data.options as string[]) || [];
 
   if (!isLast) {

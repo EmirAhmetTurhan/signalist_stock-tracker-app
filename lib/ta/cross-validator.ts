@@ -35,7 +35,7 @@ const K_FOLDS = 5;
  * @param strategies - Top 10 diverse strategies from Phase 4
  * @param candles - Full candle data
  * @param allData - Pre-computed indicator data
- * @param interval - Data interval ('1d', '4h', '1wk')
+ * @param interval - Data interval ('1d', '4h')
  * @returns ValidatedStrategy[] sorted by validatedWinRate descending
  */
 export function crossValidate(

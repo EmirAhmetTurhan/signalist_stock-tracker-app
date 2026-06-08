@@ -17,12 +17,16 @@ describe('computeDemandIndex', () => {
         expect(result.length).toBe(30);
     });
 
-    it('returns defined values for all bars', () => {
+    it('returns defined values after warmup, undefined before', () => {
         const candles = makeCandles(
-            Array.from({ length: 20 }, () => ({ high: 105, low: 95, close: 100, open: 99, volume: 1000 }))
+            Array.from({ length: 30 }, () => ({ high: 105, low: 95, close: 100, open: 99, volume: 1000 }))
         );
-        const result = computeDemandIndex(candles);
-        result.forEach(p => expect(p.value).toBeDefined());
+        const result = computeDemandIndex(candles, 13, 8);
+        // First (length + smooth - 1) ≈ 20 bars may be undefined during warmup
+        const firstDefined = result.findIndex(p => p.value !== undefined);
+        expect(firstDefined).toBeGreaterThan(0);
+        // After warmup, values should be defined
+        result.slice(-5).forEach(p => expect(p.value).toBeDefined());
     });
 
     it('DI > 1 in strong accumulation (bullish) — demand exceeds supply', () => {
@@ -76,9 +80,11 @@ describe('computeDemandIndex', () => {
         );
         const resultA = computeDemandIndex(candles, 5, 3);
         const resultB = computeDemandIndex(candles, 10, 5);
-        // Verify different params produce different values by comparing sums
-        const sumA = resultA.reduce((s, p) => s + p.value, 0);
-        const sumB = resultB.reduce((s, p) => s + p.value, 0);
+        // Only compare bars where both are defined (skip warmup)
+        const definedA = resultA.filter(p => p.value !== undefined) as { time: number; value: number }[];
+        const definedB = resultB.filter(p => p.value !== undefined) as { time: number; value: number }[];
+        const sumA = definedA.slice(-10).reduce((s, p) => s + p.value, 0);
+        const sumB = definedB.slice(-10).reduce((s, p) => s + p.value, 0);
         expect(Math.abs(sumA - sumB)).toBeGreaterThan(0);
     });
 

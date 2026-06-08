@@ -10,7 +10,6 @@ export interface IndicatorInfo {
     color: string;
     icon: string;
     optimizable: boolean;
-    popularity: number; // 1–100, higher = more widely used
 }
 
 export const INDICATOR_DETAILS: IndicatorInfo[] = [
@@ -19,12 +18,11 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         key: 'rsi',
         label: 'RSI',
         full: 'Relative Strength Index',
-        description: 'RSI > MA → BUY (< 62), RSI < MA → SELL (> 38)',
+        description: 'RSI > MA → BUY (oversold < 30), RSI < MA → SELL (overbought > 70)',
         category: 'momentum',
         color: '#22c55e',
         icon: '📈',
         optimizable: true,
-        popularity: 100,
     },
     {
         key: 'macd',
@@ -35,7 +33,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#3b82f6',
         icon: '📊',
         optimizable: true,
-        popularity: 95,
     },
     {
         key: 'stochrsi',
@@ -46,7 +43,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#a855f7',
         icon: '📉',
         optimizable: true,
-        popularity: 82,
     },
     {
         key: 'cci',
@@ -57,7 +53,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#f97316',
         icon: '📐',
         optimizable: true,
-        popularity: 72,
     },
     {
         key: 'wavetrend',
@@ -68,7 +63,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#eab308',
         icon: '🌊',
         optimizable: true,
-        popularity: 68,
     },
     {
         key: 'dmi',
@@ -79,18 +73,16 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#ef4444',
         icon: '🧭',
         optimizable: true,
-        popularity: 78,
     },
     {
         key: 'wpr',
         label: 'WPR',
         full: "Williams %R",
-        description: '< -80 → STRONG BUY, > -20 → STRONG SELL',
+        description: 'WPR < -80 → STRONG BUY, WPR > -20 → STRONG SELL',
         category: 'momentum',
         color: '#f43f5e',
         icon: '📏',
         optimizable: true,
-        popularity: 60,
     },
 
     // ── Oscillator ────────────────────────────────────────────────────────
@@ -103,7 +95,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#06b6d4',
         icon: '🔊',
         optimizable: false,
-        popularity: 55,
     },
     {
         key: 'smi',
@@ -114,7 +105,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#8b5cf6',
         icon: '🌀',
         optimizable: true,
-        popularity: 45,
     },
 
     // ── Volume ────────────────────────────────────────────────────────────
@@ -127,18 +117,16 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#84cc16',
         icon: '💰',
         optimizable: true,
-        popularity: 76,
     },
     {
         key: 'cmf',
         label: 'CMF',
         full: 'Chaikin Money Flow',
-        description: '> 0.05 → STRONG BUY, < -0.05 → STRONG SELL',
+        description: 'CMF > 0.05 → STRONG BUY, CMF < -0.05 → STRONG SELL',
         category: 'volume',
         color: '#65a30d',
         icon: '💵',
         optimizable: true,
-        popularity: 65,
     },
     {
         key: 'ad',
@@ -149,18 +137,16 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#22d3ee',
         icon: '📦',
         optimizable: false,
-        popularity: 62,
     },
     {
         key: 'netvol',
         label: 'Net Volume',
         full: 'Net Volume',
-        description: '> 0 & rising → BUY, < 0 & falling → SELL',
+        description: 'Net Volume > 0 & rising → BUY, Net Volume < 0 & falling → SELL',
         category: 'volume',
         color: '#2dd4bf',
         icon: '📊',
         optimizable: false,
-        popularity: 42,
     },
 
     // ── Trend ─────────────────────────────────────────────────────────────
@@ -173,7 +159,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#ec4899',
         icon: '📉',
         optimizable: false,
-        popularity: 50,
     },
     {
         key: 'bb',
@@ -184,7 +169,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#3b82f6',
         icon: '📦',
         optimizable: false,
-        popularity: 92,
     },
     {
         key: 'madr',
@@ -195,7 +179,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#a78bfa',
         icon: '📈',
         optimizable: true,
-        popularity: 35,
     },
 
     // ── Demand ────────────────────────────────────────────────────────────
@@ -203,12 +186,11 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         key: 'di',
         label: 'DI',
         full: 'Demand Index',
-        description: '> 0 & rising → BUY, < 0 & falling → SELL',
+        description: 'DI > 0 & rising → BUY, DI < 0 & falling → SELL',
         category: 'demand',
         color: '#fb923c',
         icon: '⚡',
         optimizable: true,
-        popularity: 40,
     },
 
     // ── Patterns ──────────────────────────────────────────────────────────
@@ -221,7 +203,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#94a3b8',
         icon: '🕯️',
         optimizable: false,
-        popularity: 88,
     },
     {
         key: 'fractals',
@@ -232,7 +213,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#64748b',
         icon: '🔀',
         optimizable: false,
-        popularity: 30,
     },
     {
         key: 'sr',
@@ -243,7 +223,6 @@ export const INDICATOR_DETAILS: IndicatorInfo[] = [
         color: '#475569',
         icon: '📏',
         optimizable: false,
-        popularity: 85,
     },
 ];
 

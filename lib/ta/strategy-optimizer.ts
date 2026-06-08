@@ -17,8 +17,11 @@ import {
     netvolCross, madrCross, almaCross, bbCross,
     type BBPoint,
     signalToBBA, fuseAll,
+    efficiencyRatio,
+    computePSR,
 } from './signal-registry';
 import type { StrategyMode, Timeframe, ComputedIndicators, MarketRegime, BBA, RegimeStats, SignalProfile, EvaluationMode } from './types';
+import { classifyRegime } from './regime-detector';
 import { simulateTrade, type TradeRiskConfig } from './trade-simulator';
 import type { PortfolioSimConfig, PortfolioSimResult } from './portfolio-simulator';
 import { OPTIMIZABLE_INDICATORS, rangeForTimeframe } from './optimizer';
@@ -27,175 +30,29 @@ import { bayesianOptimize } from './bayesian-optimizer';
 import type { BacktestLogEntry, IndicatorLogEntry, GateLogEntry } from './backtest-log';
 import { assertAllowedTimeframe } from './timeframe-guard';
 
-// ─── Type Definitions ────────────────────────────────────────────────────────
-
-type Series = { time: string | number; value?: number }[];
-
-/** Mirrors AllIndicatorData from StrategyBacktestMonitor.tsx */
-export interface AllData {
-    rsiData?: { rsi: Series; ma: Series; confidence?: number[] };
-    cciData?: { cci: Series; ma: Series };
-    waveTrendData?: {
-        wt1: Series; wt2: Series;
-        crosses?: { time: string | number; cross: 1 | -1 }[];
-        /** SPRINT 1 / B4.1: Per-bar confidence flags — DST fusion tarafından tüketilir. */
-        wt1Confidence?: number[];
-        wt2Confidence?: number[];
-    };
-    macdData?: { macd: Series; signal: Series; histogram: (Series[number] & { color?: string })[] };
-    stochRsiData?: { k: Series; d: Series };
-    dmiData?: { plusDI: Series; minusDI: Series; adx: Series };
-    smiData?: { smi: Series; signal: Series; histogram?: (Series[number] & { color?: string })[] };
-    aoData?: Series;
-    mfiData?: { mfi: Series };
-    wprData?: Series;
-    diData?: Series;
-    cmfData?: Series;
-    adData?: Series;
-    nvData?: Series;
-    madrData?: Series;
-    almaData?: Series;
-    bbData?: { time: string | number; basis?: number; upper?: number; lower?: number }[];
-    /** Market regime data for each bar — populated during backtest for regime-aware logic */
-    regimeData?: { regime: MarketRegime }[];
-}
-
-export interface StrategyBacktestConfig {
-    lookForward: number;
-    interval?: string;
-    mode?: StrategyMode;
-    cooldownBars?: number;
-    /** Signal profile selection. If set, overrides individual tuning params.
-     *  - Aggressive: TRADE_THRESHOLD=0.45, crossover optional, short cooldown
-     *  - Balanced:   TRADE_THRESHOLD=0.55, crossover required, moderate cooldown
-     *  - Conservative: TRADE_THRESHOLD=0.65, crossover required, long cooldown */
-    signalProfile?: SignalProfile;
-    /** When true (default), fresh crossover check is REQUIRED for a signal.
-     *  When false, indicator values alone can trigger signals (no crossover needed).
-     *  Useful for Aggressive mode where you want faster signal generation. */
-    requireCrossover?: boolean;
-    /** Stratified index mask for Hyperband low-fidelity evaluation.
-     *  If set, only signal bars where mask[i] !== 0 will be counted
-     *  toward Sharpe/WR/PF calculations. Indicator computation remains
-     *  on the FULL candle sequence (path-dependent indicators intact).
-     *
-     *  WHY Uint8Array NOT Set<number>:
-     *  - MCTS/DE hot-loops call this 1M+ times. Set.has(i) = ~35ns (hash + bucket).
-     *  - Uint8Array[i] = ~2ns (direct memory read), zero GC, cache-friendly.
-     *  - Pre-allocated in buffer pool, zero-allocation during hot-loop. */
-    signalMask?: Uint8Array;
-    /** When true, runStrategyBacktest will populate a detailed per-bar
-     *  debug log showing indicator signals, DST fusion, gate checks,
-     *  and rejection reasons. Useful for diagnosing why signals are
-     *  being filtered out. */
-    debugLog?: boolean;
-    /** Evaluation mode for ground truth.
-     *  - 'lookforward': Legacy 2-point comparison (default)
-     *  - 'pathaware': Bar-by-bar trade simulation with SL/TP/trailing
-     *  - 'regime': Path-aware + regime-dependent indicator confidence */
-    evaluationMode?: EvaluationMode;
-    /** Optional risk config override. If not set, derived from ProfileConfig. */
-    riskConfig?: TradeRiskConfig;
-    /** Portfolio simulation config. When set alongside evaluationMode='pathaware'|'regime',
-     *  a full capital simulation is run after the backtest and attached to the result. */
-    portfolioConfig?: PortfolioSimConfig;
-}
-
-export interface StrategyBacktestResult {
-    winRate: number;
-    totalSignals: number;
-    wins: number;
-    history: BacktestHistoryItem[];
-
-    // ─── Multi-Metric Performance (Phase 2b+) ───
-    profitFactor: number;        // Gross profit / gross loss
-    sharpeRatio: number;         // Annualized Sharpe (daily returns, risk-free=0)
-    avgWin: number;              // Average winning trade return %
-    avgLoss: number;             // Average losing trade return %
-    maxDrawdown: number;         // Maximum peak-to-trough drawdown %
-    totalReturn: number;         // Net total return %
-
-    // ─── Regime-Based Breakdown (Phase 3) ───
-    regimeBreakdown: Record<MarketRegime, RegimeStats>;
-
-    /** Debug log entries populated only when config.debugLog=true.
-     *  Contains per-bar indicator signals, DST fusion, gate checks,
-     *  and rejection reasons for transparency. */
-    log?: BacktestLogEntry[];
-
-    // ─── Path-Aware Metrics (populated when evaluationMode != 'lookforward') ───
-    /** Evaluation mode used for this backtest run */
-    evaluationMode?: EvaluationMode;
-    /** Average Maximum Favorable Excursion across all trades (%) */
-    avgMFE?: number;
-    /** Average Maximum Adverse Excursion across all trades (%) */
-    avgMAE?: number;
-    /** Average bars held per trade */
-    avgBarsHeld?: number;
-    /** Distribution of exit reasons */
-    exitReasonBreakdown?: Record<string, number>;
-
-    // ─── Portfolio Simulation (populated when portfolioConfig is provided) ───
-    /** Full portfolio simulation result */
-    portfolioResult?: PortfolioSimResult;
-    /** Resampled equity curve (100-200 points, safe for serialization) */
-    equityCurve?: { time: string | number; equity: number }[];
-    /** Resampled drawdown curve */
-    drawdownCurve?: { time: string | number; drawdownPct: number }[];
-    /** Final portfolio equity value */
-    finalEquity?: number;
-    /** Compound annual growth rate (%) */
-    cagr?: number;
-    /** Maximum drawdown from portfolio simulation (%) */
-    maxDrawdownPct?: number;
-}
-
-export interface StrategyOptimizationConfig {
-    indicators: string[];
-    lookForwardRange?: [number, number];
-    paramRanges?: Record<string, [number, number]>;
-    convergenceRounds?: number;
-    interval?: string;
-    mode?: StrategyMode;
-}
-
-export interface RoundResult {
-    param: string;
-    value: number;
-    winRate: number;
-}
-
-export interface StrategyOptimizationResult {
-    bestParams: Record<string, number>;
-    bestWinRate: number;
-    iterations: number;
-    roundResults: RoundResult[];
-}
-
-export interface DiscoveredStrategy {
-    indicators: string[];
-    params: Record<string, number>;
-    winRate: number;
-    totalSignals: number;
-    rank: number;
-
-    // ─── Multi-Metric (Phase 2b+) ───
-    validatedWinRate?: number;
-    profitFactor?: number;
-    sharpeRatio?: number;
-    avgWin?: number;
-    avgLoss?: number;
-    maxDrawdown?: number;
-    totalReturn?: number;
-    regimeBreakdown?: Record<MarketRegime, RegimeStats>;
-}
-
-export interface DiscoveryResult {
-    best: DiscoveredStrategy;
-    all: DiscoveredStrategy[];
-    totalCombinationsTested: number;
-    poolSize: number;
-}
+// Types extracted to ./strategy-optimizer/types.ts — re-exported for backward compat
+export type {
+    AllData,
+    StrategyBacktestConfig,
+    StrategyBacktestResult,
+    StrategyOptimizationConfig,
+    RoundResult,
+    StrategyOptimizationResult,
+    DiscoveredStrategy,
+    DiscoveryResult,
+    ProfileConfig,
+} from './strategy-optimizer/types';
+import type {
+    AllData,
+    StrategyBacktestConfig,
+    StrategyBacktestResult,
+    StrategyOptimizationConfig,
+    RoundResult,
+    StrategyOptimizationResult,
+    DiscoveredStrategy,
+    DiscoveryResult,
+    ProfileConfig,
+} from './strategy-optimizer/types';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -667,26 +524,6 @@ function computeATR(candles: Candle[], period: number = 14): number[] {
 
 // ─── Signal Profile Configuration ──────────────────────────────────────────
 
-export interface ProfileConfig {
-    tradeThreshold: number;
-    baseCooldown: number;
-    gamma: number;
-    cooldownMin: number;
-    cooldownMax: number;
-    requireCrossover: boolean;
-    /** Lookback period for ATR volatility baseline (bars) */
-    volatilityLookback: number;
-    // ─── Path-Aware Trade Risk Parameters ───
-    /** Stop-loss distance in ATR multiples */
-    stopLossAtrMult: number;
-    /** Take-profit as reward:risk ratio (TP = stop distance × R) */
-    takeProfitR: number;
-    /** Whether trailing stop is active */
-    useTrailingStop: boolean;
-    /** Trailing stop distance in ATR multiples from peak */
-    trailAtrMult: number;
-}
-
 /**
  * Profile configuration map.
  * Each profile defines:
@@ -701,8 +538,37 @@ export interface ProfileConfig {
  * - volatilityLookback: window for ATR baseline (lower = more responsive)
  */
 export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
+    // ─── NEW: Trend Follower — büyük trendleri sür, kârın koşmasına izin ver ───
+    TrendFollower: {
+        tradeThreshold: 0.25,   // kaliteli sinyal, 200-350 trade
+        baseCooldown: 5,
+        gamma: 0.7,
+        cooldownMin: 2,
+        cooldownMax: 10,
+        requireCrossover: false,
+        volatilityLookback: 30,
+        stopLossAtrMult: 3.0,   // geniş stop — pullback'lere dayanıklı
+        takeProfitR: 4.0,       // karın koşmasına izin ver (RR 1:4)
+        useTrailingStop: true,
+        trailAtrMult: 2.5,      // trendin nefes alması için geniş
+    },
+    // ─── NEW: Swing Trader — 3-10 günlük trade'ler için ───
+    SwingTrader: {
+        tradeThreshold: 0.30,
+        baseCooldown: 3,
+        gamma: 0.8,
+        cooldownMin: 1,
+        cooldownMax: 6,
+        requireCrossover: false,
+        volatilityLookback: 30,
+        stopLossAtrMult: 2.0,
+        takeProfitR: 2.5,
+        useTrailingStop: true,
+        trailAtrMult: 1.5,
+    },
+    // ─── LEGACY: mevcut kodla geriye dönük uyumluluk için korunuyor ───
     Aggressive: {
-        tradeThreshold: 0.15, // FIX (Sprint 1 / B1): 0.45 → 0.15 — düşük eşik, daha fazla sinyal
+        tradeThreshold: 0.15,
         baseCooldown: 3,
         gamma: 1.0,
         cooldownMin: 1,
@@ -715,7 +581,7 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         trailAtrMult: 0.5,
     },
     Balanced: {
-        tradeThreshold: 0.40, // FIX (Sprint 1 / B1): 0.55 → 0.40 — orta eşik
+        tradeThreshold: 0.40,
         baseCooldown: 5,
         gamma: 0.7,
         cooldownMin: 2,
@@ -728,7 +594,7 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         trailAtrMult: 0,
     },
     Conservative: {
-        tradeThreshold: 0.65, // Zaten doğruydu — yüksek eşik, az-öz sinyal
+        tradeThreshold: 0.65,
         baseCooldown: 7,
         gamma: 0.5,
         cooldownMin: 3,
@@ -747,8 +613,8 @@ export function getProfileConfig(config?: StrategyBacktestConfig): ProfileConfig
     if (config?.signalProfile) {
         return PROFILE_CONFIGS[config.signalProfile];
     }
-    // Default: Balanced
-    return PROFILE_CONFIGS.Balanced;
+    // Default: TrendFollower — büyük trendleri sür, kârın koşmasına izin ver
+    return PROFILE_CONFIGS.TrendFollower;
 }
 
 /**
@@ -778,7 +644,7 @@ function getDynamicCooldown(
     const lookback = profile.volatilityLookback;
 
     // Interval adjustment: longer timeframes need shorter base cooldown (fewer bars)
-    const intervalFactor = interval === '1wk' ? 0.5 : interval === '4h' ? 1.5 : 1.0;
+    const intervalFactor = interval === '4h' ? 1.5 : 1.0;
     const adjustedBase = Math.max(1, Math.round(baseCD * intervalFactor));
 
     // Need enough ATR data
@@ -904,11 +770,15 @@ export function runStrategyBacktest(
     candles: Candle[],
     strategyName: string,
     allData: AllData,
-    config: StrategyBacktestConfig = { lookForward: 14 },
+    config: StrategyBacktestConfig = { lookForward: 5 },
     options: {
         customIndicators?: string[];
         mode?: StrategyMode;
         interval?: string;
+        /** Per-indicator confidence overrides for DST fusion (Step 5).
+         *  When provided, replaces the default 0.6 confidence per indicator.
+         *  Typically populated from indicator-evaluator.ts results. */
+        indicatorConfidences?: Record<string, number>;
     } = {}
 ): StrategyBacktestResult {
     if (!candles || candles.length === 0) {
@@ -965,7 +835,7 @@ export function runStrategyBacktest(
 
     // Dynamic warmup — longer intervals need fewer candles skipped
     const warmupMap: Record<string, number> = {
-        '1d': 55, '4h': 55, '1wk': 25,
+        '1d': 55, '4h': 55,
     };
     const startIndex = warmupMap[interval] ?? 55;
     const endIndex = candles.length - lookForward;
@@ -985,7 +855,7 @@ export function runStrategyBacktest(
         let signal: "BUY" | "SELL" | null = null;
 
         // Detect market regime for this bar (used for dynamic cooldown and Phase 2 voting weights)
-        const regime = detectRegime(candles, i, atrValues);
+        const regime = classifyRegime(candles, i, atrValues);
         regimeData[i] = { regime };
 
         // Dynamic cooldown based on ATR volatility: high vol = shorter wait, low vol = longer wait
@@ -1052,12 +922,20 @@ export function runStrategyBacktest(
             const bbas: BBA[] = [];
             let anyFreshCross = false;
 
+            // Kaufman Efficiency Ratio: degrade trend-following signals during noise
+            const kaufmanER = efficiencyRatio(candles, i, 10);
+
             for (const key of inds) {
                 const sig = getIndicatorSignal(key, i, allData, candles);
                 if (sig === null) continue;
 
                 // Convert signal to belief mass, using detected regime for uncertainty adjustment
-                bbas.push(signalToBBA(sig, 0.6, regime));
+                // Step 5: Use learned per-indicator confidence when available, otherwise default 0.6
+                const baseConfidence = options.indicatorConfidences?.[key] ?? 0.6;
+                // Kaufman ER: scale confidence by fractal efficiency (0-1)
+                // In trending markets (ER→1): full confidence. In noise (ER→0): degraded.
+                const confidence = baseConfidence * (0.3 + 0.7 * kaufmanER);
+                bbas.push(signalToBBA(sig, confidence, regime));
 
                 if (requireCrossover && !anyFreshCross && hasFreshCrossover(key, i, allData, candles)) {
                     anyFreshCross = true;
@@ -1207,7 +1085,7 @@ export function runStrategyBacktest(
             let tradeBarsHeld: number | undefined;
             let effectiveFuturePrice = futurePrice;
 
-            const evalMode = config.evaluationMode ?? 'lookforward';
+    const evalMode = config.evaluationMode ?? 'pathaware';
 
             if (evalMode === 'pathaware' || evalMode === 'regime') {
                 // Path-aware: simulate trade bar-by-bar
@@ -1217,7 +1095,7 @@ export function runStrategyBacktest(
                     takeProfitR: profileCfg.takeProfitR,
                     useTrailingStop: profileCfg.useTrailingStop,
                     trailAtrMult: profileCfg.trailAtrMult,
-                    timeStopBars: lookForward,
+                    timeStopBars: 30, // trend follower: 30 gün nefes al, SL/TP/trailing'den biri mutlaka tetiklenir
                 };
                 const simResult = simulateTrade(candles, i, signal, atrValues, tradeRiskCfg);
                 tradeReturn = simResult.realizedReturnPct / 100; // Convert % to ratio for consistency
@@ -1285,6 +1163,7 @@ export function runStrategyBacktest(
 
     // Sharpe Ratio: annualized, using Welford online algorithm for numerical stability
     let sharpeRatio = 0;
+    let tradeMean = 0;
     if (tradeReturns.length >= 2) {
         let mean = 0, m2 = 0;
         for (let t = 0; t < tradeReturns.length; t++) {
@@ -1293,6 +1172,7 @@ export function runStrategyBacktest(
             mean += delta / (t + 1);
             m2 += delta * (x - mean);
         }
+        tradeMean = mean;
         const variance = m2 / (tradeReturns.length - 1);
         const std = Math.sqrt(Math.max(variance, 1e-10));
         sharpeRatio = (mean / std) * Math.sqrt(252);
@@ -1318,13 +1198,13 @@ export function runStrategyBacktest(
     }
 
     // ─── Path-Aware Aggregate Metrics ───
-    const evalMode = config.evaluationMode ?? 'lookforward';
+    const evalModeForMetrics = config.evaluationMode ?? 'pathaware';
     let avgMFE: number | undefined;
     let avgMAE: number | undefined;
     let avgBarsHeld: number | undefined;
     let exitReasonBreakdown: Record<string, number> | undefined;
 
-    if (evalMode !== 'lookforward' && totalSignals > 0) {
+    if (evalModeForMetrics !== 'lookforward' && totalSignals > 0) {
         let sumMFE = 0, sumMAE = 0, sumBars = 0;
         const exitCounts: Record<string, number> = {};
         for (const h of history) {
@@ -1349,7 +1229,7 @@ export function runStrategyBacktest(
     let cagr: number | undefined;
     let maxDrawdownPct: number | undefined;
 
-    if (evalMode !== 'lookforward' && config.portfolioConfig) {
+    if (evalModeForMetrics !== 'lookforward' && config.portfolioConfig) {
         // Reconstruct signals into PortfolioSignalEntry format
         const portfolioSignals: import('./portfolio-simulator').PortfolioSignalEntry[] = history
             .filter((h) => h.exitReason !== undefined && h.realizedReturn !== undefined) // Only trades that actually simulated
@@ -1381,13 +1261,42 @@ export function runStrategyBacktest(
 
         portfolioResult = runPortfolioSimulation(candles, portfolioSignals, config.portfolioConfig);
         
-        // We resample curves here to prevent massive array serialization issues downstream (e.g. Inngest)
-        // 200 points is enough resolution for a chart
-        equityCurve = resampleCurve(portfolioResult.equityCurve, 200);
-        drawdownCurve = resampleCurve(portfolioResult.drawdownCurve, 200);
-        finalEquity = portfolioResult.finalEquity;
-        cagr = portfolioResult.cagr;
-        maxDrawdownPct = portfolioResult.maxDrawdownPct;
+        if (portfolioResult) {
+            // We resample curves here to prevent massive array serialization issues downstream (e.g. Inngest)
+            // 200 points is enough resolution for a chart
+            equityCurve = resampleCurve(portfolioResult.equityCurve, 200);
+            drawdownCurve = resampleCurve(portfolioResult.drawdownCurve, 200);
+            finalEquity = portfolioResult.finalEquity;
+            cagr = portfolioResult.cagr;
+            maxDrawdownPct = portfolioResult.maxDrawdownPct;
+        }
+    }
+
+    // Probabilistic Sharpe Ratio — corrects for non-normality (skew, kurtosis)
+    const psr = tradeReturns.length >= 3
+        ? computePSR(tradeMean, 0, totalSignals, tradeReturns)
+        : undefined;
+
+    // ─── Return Efficiency Metrics ───
+    // Average return per bar: penalizes strategies that hold long for small gains
+    let averageReturnPerBar: number | undefined;
+    let opportunityEfficiency: number | undefined;
+    if (evalModeForMetrics !== 'lookforward' && totalSignals > 0) {
+        let sumReturnPerBar = 0;
+        let sumOE = 0;
+        let oeCount = 0;
+        for (const h of history) {
+            if (h.realizedReturn !== undefined && h.barsHeld !== undefined && h.barsHeld > 0) {
+                sumReturnPerBar += Math.abs(h.realizedReturn) / h.barsHeld;
+            }
+            // Opportunity Efficiency: realized return / MFE (0-1)
+            if (h.realizedReturn !== undefined && h.mfe !== undefined && h.mfe > 0.01) {
+                sumOE += Math.abs(h.realizedReturn) / h.mfe;
+                oeCount++;
+            }
+        }
+        averageReturnPerBar = sumReturnPerBar / totalSignals;
+        opportunityEfficiency = oeCount > 0 ? sumOE / oeCount : undefined;
     }
 
     return {
@@ -1403,7 +1312,7 @@ export function runStrategyBacktest(
         totalReturn: totalReturnPct,
         regimeBreakdown,
         log: config.debugLog ? debugLog : undefined,
-        evaluationMode: evalMode,
+        evaluationMode: evalModeForMetrics,
         avgMFE,
         avgMAE,
         avgBarsHeld,
@@ -1414,6 +1323,9 @@ export function runStrategyBacktest(
         finalEquity,
         cagr,
         maxDrawdownPct,
+        psr,
+        averageReturnPerBar,
+        opportunityEfficiency,
     };
 }
 
@@ -1690,7 +1602,7 @@ const SCREEN_LOOKFORWARD_VALUES = [7, 14, 21];
  * Phase 3: Genetic Algorithm — joint optimization of indicator selection + params
  * Phase 4: Local Refinement — hill-climbing on top 5 GA results
  */
-export function discoverStrategy(
+export async function discoverStrategy(
     candles: Candle[],
     allData: AllData,
     options: {
@@ -1701,7 +1613,7 @@ export function discoverStrategy(
         mode?: StrategyMode;
         topN?: number;
     } = {}
-): DiscoveryResult {
+): Promise<DiscoveryResult> {
     const pool = options.indicatorPool ?? DISCOVERY_POOL;
     const minN = options.minIndicators ?? 2;
     const maxN = options.maxIndicators ?? Math.min(pool.length, MAX_INDICATORS);
@@ -1788,7 +1700,7 @@ export function discoverStrategy(
     // Jointly optimizes indicator selection AND parameters simultaneously.
     // Population: 150 (seeds from topScreen + random + mutated seeds)
     // Evolution: up to 100 generations with early termination after 10 stale generations
-    const gaPopulation = geneticOptimize(candles, allData, topScreen.map(e => ({
+    const gaPopulation = await geneticOptimize(candles, allData, topScreen.map(e => ({
         indicators: e.indicators,
         winRate: e.winRate,
         totalSignals: e.totalSignals,

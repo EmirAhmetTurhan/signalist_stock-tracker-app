@@ -32,7 +32,7 @@ export default function IndicatorSignalsCard({ data, onRunBacktest }: Props) {
   const signals = (data.signals as SignalData[]) || [];
   const overallSignal = (data.overallSignal as string) || 'NEUTRAL';
   const overallScore = typeof data.overallScore === 'number' ? data.overallScore : 0;
-  const evaluationText = (data.evaluationText as string) || 'İndikatörler kararsız bir seyir izliyor.';
+  const evaluationText = (data.evaluationText as string) || 'Indicators are showing mixed signals.';
 
   if (signals.length === 0 && indicators.length === 0) return null;
 
@@ -44,7 +44,7 @@ export default function IndicatorSignalsCard({ data, onRunBacktest }: Props) {
       <div className="flex items-center justify-between px-4 py-3 bg-gray-900/40 border-b border-gray-800">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          <span className="text-sm font-medium text-gray-200">Teknik Göstergeler Hesaplandı</span>
+          <span className="text-sm font-medium text-gray-200">Technical Indicators Computed</span>
         </div>
         <div className="text-xs font-mono text-gray-500">
           {symbol.toUpperCase()} &bull; {headerIndicators}
@@ -53,7 +53,7 @@ export default function IndicatorSignalsCard({ data, onRunBacktest }: Props) {
 
       <div className="p-4 md:p-5 space-y-5">
         <p className="text-sm text-gray-300">
-          <strong className="text-gray-100">{symbol.toUpperCase()}</strong> hissesi için yapılan güncel teknik analiz sonuçları aşağıda detaylandırılmıştır:
+          Current technical analysis results for <strong className="text-gray-100">{symbol.toUpperCase()}</strong> are detailed below:
         </p>
 
         {/* Table */}
@@ -61,9 +61,9 @@ export default function IndicatorSignalsCard({ data, onRunBacktest }: Props) {
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-gray-800/50 text-gray-400 text-xs uppercase font-semibold">
               <tr>
-                <th className="px-4 py-3 border-b border-gray-800 w-1/4">İndikatör</th>
-                <th className="px-4 py-3 border-b border-gray-800 w-1/4">Sinyal</th>
-                <th className="px-4 py-3 border-b border-gray-800 w-1/2">Detay ve Açıklama</th>
+                <th className="px-4 py-3 border-b border-gray-800 w-1/4">Indicator</th>
+                <th className="px-4 py-3 border-b border-gray-800 w-1/4">Signal</th>
+                <th className="px-4 py-3 border-b border-gray-800 w-1/2">Detail</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800/50 text-gray-300">
@@ -90,9 +90,9 @@ export default function IndicatorSignalsCard({ data, onRunBacktest }: Props) {
           
           <div className="flex-1 space-y-2 relative z-10 pl-2">
             <div className="flex items-center gap-3">
-              <h4 className="text-xs font-bold text-yellow-500 uppercase tracking-wider">Genel Değerlendirme</h4>
+              <h4 className="text-xs font-bold text-yellow-500 uppercase tracking-wider">Overall Assessment</h4>
               <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border ${SIGNAL_COLORS[overallSignal] || SIGNAL_COLORS['NEUTRAL']}`}>
-                {overallSignal} ({overallScore} Puan)
+                {overallSignal} (Score: {overallScore})
               </span>
             </div>
             <p className="text-[13px] text-gray-300 leading-relaxed max-w-xl">
@@ -105,7 +105,7 @@ export default function IndicatorSignalsCard({ data, onRunBacktest }: Props) {
               onClick={() => router.push(`/ta?symbol=${encodeURIComponent(symbol)}&ind=${indicators.join(',')}`)}
               className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-yellow-500 hover:bg-yellow-400 text-black transition-all shadow-lg shadow-yellow-500/20 hover:shadow-yellow-500/40 hover:-translate-y-0.5"
             >
-              Sinyalleri Grafiğe Uygula <ArrowRight className="h-4 w-4" />
+              Apply Signals to Chart <ArrowRight className="h-4 w-4" />
             </button>
           </div>
         </div>

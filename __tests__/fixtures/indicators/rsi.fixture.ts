@@ -38,7 +38,9 @@ export const flatPricesRsi: RsiFixture = {
             out.push({
                 time: i + 1,
                 rsi: i >= 13 ? 100 : undefined,
-                ma: i >= 13 && i < 26 ? (100 * (i - 12)) / 14 : i >= 26 ? 100 : undefined,
+                // BUGFIX: SMA now divides by definedCount (not period), so MA = 100
+                // as soon as the first RSI value (100) enters the window.
+                ma: i >= 13 ? 100 : undefined,
                 confidence: 0,
             });
         }
@@ -66,7 +68,8 @@ export const risingPricesRsi: RsiFixture = {
             out.push({
                 time: i + 1,
                 rsi: i >= 13 ? 100 : undefined,
-                ma: i >= 13 && i < 26 ? (100 * (i - 12)) / 14 : i >= 26 ? 100 : undefined,
+                // BUGFIX: SMA now divides by definedCount, so MA = 100 from bar 13
+                ma: i >= 13 ? 100 : undefined,
                 confidence: i >= 14 ? 1 : 0,
             });
         }
@@ -135,8 +138,10 @@ export const oscillatingRsi: RsiFixture = {
         { time: 2, rsi: undefined, ma: undefined, confidence: 0 },
         { time: 3, rsi: undefined, ma: undefined, confidence: 0 },
         { time: 4, rsi: undefined, ma: undefined, confidence: 0 },
-        { time: 5, rsi: 40, ma: 13.333333333333334, confidence: 0 },
-        { time: 6, rsi: 63.07692307692307, ma: 34.35897435897436, confidence: 1 },
+        // BUGFIX: SMA now divides by definedCount — first bar with 1 defined value → 40/1=40
+        { time: 5, rsi: 40, ma: 40, confidence: 0 },
+        // BUGFIX: second bar with 2 defined values → (40+63.0769)/2=51.5385
+        { time: 6, rsi: 63.07692307692307, ma: 51.53846153846154, confidence: 1 },
         { time: 7, rsi: 39.99999999999999, ma: 47.692307692307686, confidence: 1 },
         { time: 8, rsi: 60.87475149105367, ma: 54.65055818932558, confidence: 1 },
         { time: 9, rsi: 40.66401062416998, ma: 47.17958737174121, confidence: 1 },

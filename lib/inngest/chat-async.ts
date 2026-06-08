@@ -11,17 +11,19 @@ import { saveMessage } from '@/lib/actions/chat-history.actions';
 import { resolveModel } from '@/lib/ai/model-resolver';
 import { normalizeMessage, toModelMessages } from '../ai/message-format';
 
-// Helper to normalize response message parts for merging
-function extractPartsFromMsg(msg: Record<string, unknown>): Record<string, unknown>[] {
-  if (msg.parts && Array.isArray(msg.parts)) return msg.parts as Record<string, unknown>[];
-  if (msg.content && Array.isArray(msg.content)) return msg.content as Record<string, unknown>[];
-  if (msg.content && typeof msg.content === 'string') return [{ type: 'text', text: msg.content }];
+// Helper to normalize AI SDK response message parts for DB merging
+function extractPartsFromMsg(msg: { parts?: unknown; content?: unknown }): Record<string, unknown>[] {
+  if (Array.isArray(msg.parts)) return msg.parts as Record<string, unknown>[];
+  if (Array.isArray(msg.content)) return msg.content as Record<string, unknown>[];
+  if (typeof msg.content === 'string') return [{ type: 'text', text: msg.content }];
   return [];
 }
 
+interface ChatEvent { data: { jobId: string; conversationId: string; userId: string; selectedModel?: string; userApiKey?: string } }
+
 export const aiProcessChatMessage = inngest.createFunction(
   { id: 'ai-process-chat-message', retries: 0, timeouts: { finish: '90s' }, triggers: [{ event: 'ai/process-chat-message' }] },
-  async ({ event, step }: { event: any; step: any }) => {
+  async ({ event, step }: { event: ChatEvent; step: { run: (name: string, fn: () => Promise<unknown>) => Promise<unknown> } }) => {
     // We now receive conversationId and fetch messages directly from DB
     const { jobId, conversationId, userId, selectedModel, userApiKey } = event.data;
 
@@ -80,7 +82,7 @@ export const aiProcessChatMessage = inngest.createFunction(
       const toolNames: Record<string, string> = {};
       
       for (const msg of result.response.messages) {
-        const parts = extractPartsFromMsg(msg as any);
+        const parts = extractPartsFromMsg(msg);
         for (const p of parts) {
           if (p.type === 'tool-call' && p.toolCallId && p.toolName) {
             toolNames[p.toolCallId as string] = p.toolName as string;
@@ -90,7 +92,7 @@ export const aiProcessChatMessage = inngest.createFunction(
 
       const mergedParts: Record<string, unknown>[] = [];
       for (const msg of result.response.messages) {
-        const parts = extractPartsFromMsg(msg as any);
+        const parts = extractPartsFromMsg(msg);
         for (const p of parts) {
           // Enrich tool-result with toolName
           if (p.type === 'tool-result' && p.toolCallId && !p.toolName) {
@@ -117,14 +119,15 @@ export const aiProcessChatMessage = inngest.createFunction(
 
       return { success: true };
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
       await connectToDatabase();
       await AIJob.findOneAndUpdate(
         { jobId },
-        { 
-          status: 'failed', 
-          errorMessage: error.message || String(error),
-          $push: { steps: { name: 'Hata oluştu', status: 'failed', detail: error.message || String(error), completedAt: new Date() } }
+        {
+          status: 'failed',
+          errorMessage: msg,
+          $push: { steps: { name: 'Hata oluştu', status: 'failed', detail: msg, completedAt: new Date() } }
         }
       );
       throw error;

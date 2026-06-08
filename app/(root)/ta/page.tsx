@@ -10,23 +10,25 @@ import { headers } from "next/headers";
 import ForwardTestCreator from "@/components/portfolio/ForwardTestCreator";
 import { triggerOptimization } from "@/lib/actions/optimize.actions";
 
-// Canvas tabanlı chart bileşenleri SSR'da çalışamaz — next/dynamic ile lazy-load
-const LightweightCandleChart = dynamicImport(() => import("@/components/charts/LightweightCandleChart"));
-const LightweightMACDChart = dynamicImport(() => import("@/components/charts/LightweightMACDChart"));
-const LightweightStochRSIChart = dynamicImport(() => import("@/components/charts/LightweightStochRSIChart"));
-const LightweightWaveTrendChart = dynamicImport(() => import("@/components/charts/LightweightWaveTrendChart"));
-const LightweightDMIChart = dynamicImport(() => import("@/components/charts/LightweightDMIChart"));
-const LightweightMFIChart = dynamicImport(() => import("@/components/charts/LightweightMFIChart"));
-const LightweightSMIChart = dynamicImport(() => import("@/components/charts/LightweightSMIChart"));
-const LightweightAOChart = dynamicImport(() => import("@/components/charts/LightweightAOChart"));
-const LightweightRSIChart = dynamicImport(() => import("@/components/charts/LightweightRSIChart"));
-const LightweightCCIChart = dynamicImport(() => import("@/components/charts/LightweightCCIChart"));
-const LightweightWPRChart = dynamicImport(() => import("@/components/charts/LightweightWPRChart"));
-const LightweightDIChart = dynamicImport(() => import("@/components/charts/LightweightDIChart"));
-const LightweightCMFChart = dynamicImport(() => import("@/components/charts/LightweightCMFChart"));
-const LightweightADChart = dynamicImport(() => import("@/components/charts/LightweightADChart"));
-const LightweightNetVolumeChart = dynamicImport(() => import("@/components/charts/LightweightNetVolumeChart"));
-const LightweightMADRChart = dynamicImport(() => import("@/components/charts/LightweightMADRChart"));
+// Chart component registry — single dynamic import map replaces 16 individual imports
+const CHART_REGISTRY = {
+  candle: dynamicImport(() => import("@/components/charts/LightweightCandleChart")),
+  macd: dynamicImport(() => import("@/components/charts/LightweightMACDChart")),
+  stochrsi: dynamicImport(() => import("@/components/charts/LightweightStochRSIChart")),
+  wavetrend: dynamicImport(() => import("@/components/charts/LightweightWaveTrendChart")),
+  dmi: dynamicImport(() => import("@/components/charts/LightweightDMIChart")),
+  mfi: dynamicImport(() => import("@/components/charts/LightweightMFIChart")),
+  smi: dynamicImport(() => import("@/components/charts/LightweightSMIChart")),
+  ao: dynamicImport(() => import("@/components/charts/LightweightAOChart")),
+  rsi: dynamicImport(() => import("@/components/charts/LightweightRSIChart")),
+  cci: dynamicImport(() => import("@/components/charts/LightweightCCIChart")),
+  wpr: dynamicImport(() => import("@/components/charts/LightweightWPRChart")),
+  di: dynamicImport(() => import("@/components/charts/LightweightDIChart")),
+  cmf: dynamicImport(() => import("@/components/charts/LightweightCMFChart")),
+  ad: dynamicImport(() => import("@/components/charts/LightweightADChart")),
+  netvol: dynamicImport(() => import("@/components/charts/LightweightNetVolumeChart")),
+  madr: dynamicImport(() => import("@/components/charts/LightweightMADRChart")),
+} as const;
 import TradingViewWidget from "@/components/charts/TradingViewWidget";
 import IndicatorSection from "@/components/ta/IndicatorSection";
 import TAStrategiesButton from "@/components/ta/TAStrategiesButton";
@@ -35,12 +37,13 @@ import CustomStrategyPanel from "@/components/panels/CustomStrategyPanel";
 import CandlePatternPanel from "@/components/panels/CandlePatternPanel";
 import HistoricalFractalsPanel from "@/components/panels/HistoricalFractalsPanel";
 import SRPanel from "@/components/panels/SRPanel";
+import MarketTelemetryPanel from "@/components/ta/MarketTelemetryPanel";
 import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 import { searchStocks, getCandlesForInterval } from "@/lib/actions/finnhub.actions";
 import { CANDLE_CHART_WIDGET_CONFIG } from "@/lib/constants";
 import { computeIndicators, parseActiveIndicators, generateAllSignals } from "@/lib/ta";
 import type { ComputedIndicators } from "@/lib/ta";
-import { INDICATOR_PARAMS } from "@/lib/constants/indicator-params";
+import { extractIndicatorParams } from "@/lib/constants/indicator-params";
 // SPRINT 3: timeframe-limits.ts silindi. Sadece 4h ve 1d destekleniyor
 // (10 yıl = 3650 gün cap). Inline clamp yeterli.
 
@@ -66,6 +69,7 @@ const TAPage = async (props: TAProps) => {
 
     // ── Apply & Optimize: run synchronous optimization and apply results ──────
     const optimizeParam = search.optimize;
+    let optimizedParams: Record<string, string> | null = null;
     if (optimizeParam === '1' && symbol && indParam) {
         const indicators = indParam.split(',').filter(Boolean);
 
@@ -73,97 +77,39 @@ const TAPage = async (props: TAProps) => {
         const results = await triggerOptimization(symbol, indicators, intervalParam, yearsParam);
 
         // Build URL params with optimized values applied
-        const cleanParams = new URLSearchParams();
+        optimizedParams = {};
         for (const [key, value] of Object.entries(search)) {
-            if (key !== 'optimize' && value) {
-                cleanParams.set(key, value);
+            if (value) {
+                optimizedParams[key] = value;
             }
         }
+        // Remove optimize flag from output params
+        delete optimizedParams['optimize'];
 
-        // Write each optimized parameter value to the URL
+        // Write each optimized parameter value
         for (const r of results) {
-            cleanParams.set(r.paramName, r.bestVal.toString());
-        }
-
-        const qs = cleanParams.toString();
-        redirect(`/ta${qs ? `?${qs}` : ''}`);
-    }
-
-    // Extract params from shared registry — single source of truth
-    const params: Record<string, number | string> = {};
-    for (const paramDef of INDICATOR_PARAMS) {
-        const raw = search[paramDef.key];
-        // Numeric params: use defaultNum, string params: use raw value or defaultStr
-        if (paramDef.defaultStr.includes('.')) {
-            // Float param (e.g. alma_offset, bb_stddev)
-            params[paramDef.key] = raw !== undefined ? Number(raw) || paramDef.defaultNum : paramDef.defaultNum;
-        } else if (paramDef.key.endsWith('_color') || paramDef.key.endsWith('_style')) {
-            // String/display params
-            params[paramDef.key] = raw || paramDef.defaultStr;
-        } else {
-            // Integer param
-            params[paramDef.key] = raw !== undefined ? Number(raw) || paramDef.defaultNum : paramDef.defaultNum;
+            optimizedParams[r.paramName] = r.bestVal.toString();
         }
     }
 
-    // ── Apply discovered params from URL (p) ─────────────────────────────────
-    // The "p" param is a JSON string of indicator param overrides, e.g.
-    // {"rsi_len":7,"cci_len":14} — set by TAStrategiesButton when a discovered
-    // strategy with optimized params is applied.
+    // Extract indicator params from URL using shared registry
+    const effectiveSearch = optimizedParams ?? search;
+    const params = extractIndicatorParams(effectiveSearch);
+
+    // Apply discovered strategy param overrides from URL (p= param)
     const pParam = search.p;
     if (pParam) {
         try {
-            const discoveredOverrides = JSON.parse(pParam) as Record<string, number>;
-            for (const [key, value] of Object.entries(discoveredOverrides)) {
+            const overrides = JSON.parse(pParam) as Record<string, number>;
+            for (const [key, value] of Object.entries(overrides)) {
                 if (params[key] !== undefined && typeof value === 'number') {
                     params[key] = value;
                 }
             }
         } catch {
-            // Invalid JSON in p param — silently ignore
             console.warn('[TAPage] Invalid p param:', pParam);
         }
     }
-
-    const macdFast = params.macd_fast as number;
-    const macdSlow = params.macd_slow as number;
-    const macdSig = params.macd_sig as number;
-    const stochRsiLen = params.stoch_rsi_len as number;
-    const stochLen = params.stoch_len as number;
-    const stochK = params.stoch_k as number;
-    const stochD = params.stoch_d as number;
-    const wtAvgLen = params.wt_avg_len as number;
-    const wtChannelLen = params.wt_channel_len as number;
-    const wtMaLen = params.wt_ma_len as number;
-    const dmiDiLen = params.dmi_di_len as number;
-    const dmiAdxSmooth = params.dmi_adx_smooth as number;
-    const mfiPeriod = params.mfi_period as number;
-    const smiLongLen = params.smi_long_len as number;
-    const smiShortLen = params.smi_short_len as number;
-    const smiSigLen = params.smi_sig_len as number;
-    const rsiLen = params.rsi_len as number;
-    const rsiMaLen = params.rsi_ma_len as number;
-    const cciLen = params.cci_len as number;
-    const cciMaLen = params.cci_ma_len as number;
-    const wprLen = params.wpr_len as number;
-    const diLen = params.di_len as number;
-    const diSmooth = params.di_smooth as number;
-    const diK = params.di_k as number;
-    const cmfLen = params.cmf_len as number;
-    const madrLen = params.madr_len as number;
-    const almaLen = params.alma_len as number;
-    const almaOffset = params.alma_offset as number;
-    const almaSigma = params.alma_sigma as number;
-    const almaColor = params.alma_color as string;
-    const almaOpacity = params.alma_opacity as number;
-    const almaWidth = params.alma_width as number;
-    const almaStyle = params.alma_style as number;
-    const bbLen = params.bb_len as number;
-    const bbStdDev = params.bb_stddev as number;
-    const bbOffset = params.bb_offset as number;
-    const bbColor = params.bb_color as string;
-    const bbOpacity = params.bb_opacity as number;
-    const bbWidth = params.bb_width as number;
 
     // SPRINT 3: inline yıl->gün dönüşümü
     const requestedDays = yearsParam ? yearsParam * 365 : undefined;
@@ -184,25 +130,27 @@ const TAPage = async (props: TAProps) => {
         activeIndicators.add('wavetrend');
     }
 
-    // All indicator computation delegated to lib/ta/ service layer
-    const computed: ComputedIndicators = computeIndicators(candles, activeIndicators, {
-        macdFast, macdSlow, macdSig,
-        stochRsiLen, stochLen, stochK, stochD,
-        wtAvgLen, wtChannelLen, wtMaLen,
-        dmiDiLen, dmiAdxSmooth,
-        mfiPeriod,
-        smiLongLen, smiShortLen, smiSigLen,
-        rsiLen, rsiMaLen,
-        cciLen, cciMaLen,
-        wprLen,
-        diLen, diSmooth, diK,
-        cmfLen,
-        madrLen,
-        almaLen, almaOffset, almaSigma,
-        almaColor, almaOpacity, almaWidth, almaStyle,
-        bbLen, bbStdDev, bbOffset,
-        bbColor, bbOpacity, bbWidth,
-    });
+    // Build IndicatorParams from the extracted params object
+    const p = params as Record<string, number | string>;
+    const ip = {
+        macdFast: Number(p.macd_fast), macdSlow: Number(p.macd_slow), macdSig: Number(p.macd_sig),
+        stochRsiLen: Number(p.stoch_rsi_len), stochLen: Number(p.stoch_len), stochK: Number(p.stoch_k), stochD: Number(p.stoch_d),
+        wtAvgLen: Number(p.wt_avg_len), wtChannelLen: Number(p.wt_channel_len), wtMaLen: Number(p.wt_ma_len),
+        dmiDiLen: Number(p.dmi_di_len), dmiAdxSmooth: Number(p.dmi_adx_smooth),
+        mfiPeriod: Number(p.mfi_period),
+        smiLongLen: Number(p.smi_long_len), smiShortLen: Number(p.smi_short_len), smiSigLen: Number(p.smi_sig_len),
+        rsiLen: Number(p.rsi_len), rsiMaLen: Number(p.rsi_ma_len),
+        cciLen: Number(p.cci_len), cciMaLen: Number(p.cci_ma_len),
+        wprLen: Number(p.wpr_len),
+        diLen: Number(p.di_len), diSmooth: Number(p.di_smooth), diK: Number(p.di_k),
+        cmfLen: Number(p.cmf_len),
+        madrLen: Number(p.madr_len),
+        almaLen: Number(p.alma_len), almaOffset: Number(p.alma_offset), almaSigma: Number(p.alma_sigma),
+        almaColor: String(p.alma_color), almaOpacity: Number(p.alma_opacity), almaWidth: Number(p.alma_width), almaStyle: Number(p.alma_style),
+        bbLen: Number(p.bb_len), bbStdDev: Number(p.bb_stddev), bbOffset: Number(p.bb_offset),
+        bbColor: String(p.bb_color), bbOpacity: Number(p.bb_opacity), bbWidth: Number(p.bb_width),
+    };
+    const computed: ComputedIndicators = computeIndicators(candles, activeIndicators, ip);
 
     const { signals: signalLabels, overall } = generateAllSignals(computed, candles);
 
@@ -239,21 +187,21 @@ const TAPage = async (props: TAProps) => {
         chartProps: (data: any) => Record<string, any>;
     }
     const CHART_ITEMS: ChartItem[] = [
-        { key: 'macd', data: macdData, name: `MACD (${macdFast}, ${macdSlow}, ${macdSig})`, btName: 'MACD', Chart: LightweightMACDChart, chartProps: (d) => ({ macd: d.macd, signal: d.signal, histogram: d.histogram }) },
-        { key: 'rsi', data: rsiData, name: `RSI (${rsiLen}, ${rsiMaLen})`, btName: 'RSI', Chart: LightweightRSIChart, chartProps: (d) => ({ rsi: d.rsi, ma: d.ma }) },
-        { key: 'stochrsi', data: stochRsiData, name: `Stoch RSI (${stochRsiLen}, ${stochLen}, ${stochK}, ${stochD})`, btName: 'STOCHRSI', Chart: LightweightStochRSIChart, chartProps: (d) => ({ k: d.k, d: d.d }) },
-        { key: 'wavetrend', data: waveTrendData, name: `WaveTrend (${wtAvgLen}, ${wtChannelLen}, ${wtMaLen})`, btName: 'WAVETREND', Chart: LightweightWaveTrendChart, chartProps: (d) => ({ wt1: d.wt1, wt2: d.wt2, crosses: d.crosses }) },
-        { key: 'dmi', data: dmiData, name: `DMI (${dmiDiLen}, ${dmiAdxSmooth})`, btName: 'DMI', Chart: LightweightDMIChart, chartProps: (d) => ({ plusDI: d.plusDI, minusDI: d.minusDI, adx: d.adx }) },
-        { key: 'mfi', data: mfiData, name: `MFI (${mfiPeriod})`, btName: 'MFI', Chart: LightweightMFIChart, chartProps: (d) => ({ mfi: d.mfi }) },
-        { key: 'smi', data: smiData, name: `SMI (${smiLongLen}, ${smiShortLen}, ${smiSigLen})`, btName: 'SMI', Chart: LightweightSMIChart, chartProps: (d) => ({ smi: d.smi, signal: d.signal, histogram: d.histogram }) },
-        { key: 'ao', data: aoData, name: 'Awesome Oscillator', btName: 'AO', Chart: LightweightAOChart, chartProps: (d) => ({ data: d }) },
-        { key: 'cci', data: cciData, name: `CCI (${cciLen}, ${cciMaLen})`, btName: 'CCI', Chart: LightweightCCIChart, chartProps: (d) => ({ cci: d.cci, ma: d.ma }) },
-        { key: 'wpr', data: wprData, name: `Williams %R (${wprLen})`, btName: 'WPR', Chart: LightweightWPRChart, chartProps: (d) => ({ data: d }) },
-        { key: 'di', data: diData, name: `Demand Index (${diLen}, ${diK}, ${diSmooth})`, btName: 'DI', Chart: LightweightDIChart, chartProps: (d) => ({ data: d }) },
-        { key: 'cmf', data: cmfData, name: `CMF (${cmfLen})`, btName: 'CMF', Chart: LightweightCMFChart, chartProps: (d) => ({ data: d }) },
-        { key: 'ad', data: adData, name: 'A/D', btName: 'AD', Chart: LightweightADChart, chartProps: (d) => ({ data: d }) },
-        { key: 'netvol', data: nvData, name: 'Net Volume', btName: 'NETVOL', Chart: LightweightNetVolumeChart, chartProps: (d) => ({ data: d }) },
-        { key: 'madr', data: madrData, name: `MADR (${madrLen})`, btName: 'MADR', Chart: LightweightMADRChart, chartProps: (d) => ({ data: d }) },
+        { key: 'macd', data: macdData, name: `MACD (${ip.macdFast}, ${ip.macdSlow}, ${ip.macdSig})`, btName: 'MACD', Chart: CHART_REGISTRY.macd, chartProps: (d) => ({ macd: d.macd, signal: d.signal, histogram: d.histogram }) },
+        { key: 'rsi', data: rsiData, name: `RSI (${ip.rsiLen}, ${ip.rsiMaLen})`, btName: 'RSI', Chart: CHART_REGISTRY.rsi, chartProps: (d) => ({ rsi: d.rsi, ma: d.ma }) },
+        { key: 'stochrsi', data: stochRsiData, name: `Stoch RSI (${ip.stochRsiLen}, ${ip.stochLen}, ${ip.stochK}, ${ip.stochD})`, btName: 'STOCHRSI', Chart: CHART_REGISTRY.stochrsi, chartProps: (d) => ({ k: d.k, d: d.d }) },
+        { key: 'wavetrend', data: waveTrendData, name: `WaveTrend (${ip.wtAvgLen}, ${ip.wtChannelLen}, ${ip.wtMaLen})`, btName: 'WAVETREND', Chart: CHART_REGISTRY.wavetrend, chartProps: (d) => ({ wt1: d.wt1, wt2: d.wt2, crosses: d.crosses }) },
+        { key: 'dmi', data: dmiData, name: `DMI (${ip.dmiDiLen}, ${ip.dmiAdxSmooth})`, btName: 'DMI', Chart: CHART_REGISTRY.dmi, chartProps: (d) => ({ plusDI: d.plusDI, minusDI: d.minusDI, adx: d.adx }) },
+        { key: 'mfi', data: mfiData, name: `MFI (${ip.mfiPeriod})`, btName: 'MFI', Chart: CHART_REGISTRY.mfi, chartProps: (d) => ({ mfi: d.mfi }) },
+        { key: 'smi', data: smiData, name: `SMI (${ip.smiLongLen}, ${ip.smiShortLen}, ${ip.smiSigLen})`, btName: 'SMI', Chart: CHART_REGISTRY.smi, chartProps: (d) => ({ smi: d.smi, signal: d.signal, histogram: d.histogram }) },
+        { key: 'ao', data: aoData, name: 'Awesome Oscillator', btName: 'AO', Chart: CHART_REGISTRY.ao, chartProps: (d) => ({ data: d }) },
+        { key: 'cci', data: cciData, name: `CCI (${ip.cciLen}, ${ip.cciMaLen})`, btName: 'CCI', Chart: CHART_REGISTRY.cci, chartProps: (d) => ({ cci: d.cci, ma: d.ma }) },
+        { key: 'wpr', data: wprData, name: `Williams %R (${ip.wprLen})`, btName: 'WPR', Chart: CHART_REGISTRY.wpr, chartProps: (d) => ({ data: d }) },
+        { key: 'di', data: diData, name: `Demand Index (${ip.diLen}, ${ip.diK}, ${ip.diSmooth})`, btName: 'DI', Chart: CHART_REGISTRY.di, chartProps: (d) => ({ data: d }) },
+        { key: 'cmf', data: cmfData, name: `CMF (${ip.cmfLen})`, btName: 'CMF', Chart: CHART_REGISTRY.cmf, chartProps: (d) => ({ data: d }) },
+        { key: 'ad', data: adData, name: 'A/D', btName: 'AD', Chart: CHART_REGISTRY.ad, chartProps: (d) => ({ data: d }) },
+        { key: 'netvol', data: nvData, name: 'Net Volume', btName: 'NETVOL', Chart: CHART_REGISTRY.netvol, chartProps: (d) => ({ data: d }) },
+        { key: 'madr', data: madrData, name: `MADR (${ip.madrLen})`, btName: 'MADR', Chart: CHART_REGISTRY.madr, chartProps: (d) => ({ data: d }) },
     ];
 
     const overallLabel = overall.signalCount > 0 ? overall.label : null;
@@ -278,17 +226,17 @@ const TAPage = async (props: TAProps) => {
                             allData={{
                                 rsiData, cciData, waveTrendData, macdData, stochRsiData,
                                 dmiData, smiData,
-                                aoData: aoData ? (aoData as any) : undefined,
+                                aoData: aoData ?? undefined,
                                 mfiData: mfiData ? { mfi: mfiData.mfi } : undefined,
-                                wprData: wprData ? (wprData as any) : undefined,
-                                diData: diData ? (diData as any) : undefined,
-                                cmfData: cmfData ? (cmfData as any) : undefined,
-                                adData: adData ? (adData as any) : undefined,
-                                nvData: nvData ? (nvData as any) : undefined,
-                                madrData: madrData ? (madrData as any) : undefined,
-                                almaData: almaData ? (almaData as any) : undefined,
+                                wprData: wprData ?? undefined,
+                                diData: diData ?? undefined,
+                                cmfData: cmfData ?? undefined,
+                                adData: adData ?? undefined,
+                                nvData: nvData ?? undefined,
+                                madrData: madrData ?? undefined,
+                                almaData: almaData ?? undefined,
                                 bbData,
-                            } as any}
+                            }}
                             interval={intervalParam}
                             symbol={symbol || ""}
                         />
@@ -314,13 +262,13 @@ const TAPage = async (props: TAProps) => {
                             </div>
 
                             {candles && candles.length > 0 ? (
-                                <LightweightCandleChart
+                                <CHART_REGISTRY.candle
                                     data={candles}
                                     height={560}
                                     almaData={almaData}
-                                    almaStyleConfig={{ color: almaColor, opacity: almaOpacity, width: almaWidth, style: almaStyle }}
+                                    almaStyleConfig={{ color: ip.almaColor, opacity: ip.almaOpacity, width: ip.almaWidth, style: ip.almaStyle }}
                                     bbData={activeIndicators.has("bb") ? bbData : undefined}
-                                    bbStyleConfig={{ color: bbColor, opacity: bbOpacity, width: bbWidth }}
+                                    bbStyleConfig={{ color: ip.bbColor, opacity: ip.bbOpacity, width: ip.bbWidth }}
                                     candlePatterns={activeIndicators.has('patterns') ? candlePatternData : undefined}
                                     fractalProjection={activeIndicators.has('fractals') && fractalResult ? fractalResult.projectedLine : undefined}
                                     srLevels={activeIndicators.has('sr') && srResult ? srResult.levels : undefined}
@@ -410,6 +358,10 @@ const TAPage = async (props: TAProps) => {
                                         />
                                     )}
                                 </div>
+                            )}
+
+                            {search.telemetry === "1" && symbol && (
+                                <MarketTelemetryPanel symbol={symbol || ""} interval={intervalParam} years={yearsParam} />
                             )}
 
                             <CustomStrategyPanel

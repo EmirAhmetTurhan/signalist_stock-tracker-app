@@ -212,8 +212,9 @@ export function generateAllSignals(computedData: ComputedIndicators, candles: { 
     if (values.length >= 22) {
       const cur = values[values.length - 1];
       const prev = values[values.length - 2];
-      const curSMA = values.slice(-21).reduce((a: number, b: number) => a + b, 0) / 21;
-      const prevSMA = values.slice(-22, -1).reduce((a: number, b: number) => a + b, 0) / 21;
+      // SMA of 21 bars BEFORE cur (cur excluded), consistent with backtest.ts AD resolver
+      const curSMA = values.slice(-22, -1).reduce((a: number, b: number) => a + b, 0) / 21;
+      const prevSMA = values.slice(-23, -2).reduce((a: number, b: number) => a + b, 0) / 21;
       addSignal(signals, 'ad', toLabel(adStrength(cur, prev, curSMA, prevSMA)), acc);
     }
   }

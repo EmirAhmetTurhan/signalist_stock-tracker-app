@@ -408,11 +408,11 @@ function selectByPriorWeight(
  *   - Backtest: reuses existing runStrategyBacktest (no new allocations)
  *   - Results array: allocated once, filled incrementally
  */
-export function mctsSearch(
+export async function mctsSearch(
     candles: Candle[],
     allData: AllData,
     options: MCTSOptions = {},
-): MCTSResult {
+): Promise<MCTSResult> {
     const sims = options.simulations ?? 200;
     const maxDepth = options.maxDepth ?? MAX_DEPTH;
     const lookForward = options.lookForward ?? 14;
@@ -447,6 +447,7 @@ export function mctsSearch(
     // Main MCTS loop
     let sim = 0;
     for (sim = 0; sim < sims; sim++) {
+        if (sim > 0 && sim % 20 === 0) await new Promise(r => setTimeout(r, 0));
         if (signal?.aborted) break;
 
         // ── 1. SELECTION ──

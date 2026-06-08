@@ -10,7 +10,11 @@ export default function TradeConfirmationCard({ data, isLast }: ToolCardProps) {
   const [status, setStatus] = useState<'pending' | 'loading' | 'success' | 'error'>('pending');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const { symbol, side, quantity, currentPrice, tradeToken } = data as any;
+  const symbol = data.symbol as string;
+  const side = data.side as string;
+  const quantity = data.quantity as number;
+  const currentPrice = data.currentPrice as number;
+  const tradeToken = data.tradeToken as string;
 
   if (!tradeToken) return null;
 
@@ -29,13 +33,13 @@ export default function TradeConfirmationCard({ data, isLast }: ToolCardProps) {
         toast.success(`Trade Executed: ${side} ${quantity} ${symbol}`);
       } else {
         setStatus('error');
-        setErrorMsg(result.userMessage || result.error || 'İşlem başarısız oldu.');
-        toast.error(result.userMessage || 'Hata oluştu.');
+        setErrorMsg(result.userMessage || result.error || 'Trade execution failed.');
+        toast.error(result.userMessage || 'An error occurred.');
       }
     } catch (err: any) {
       setStatus('error');
-      setErrorMsg('Beklenmeyen bir hata oluştu.');
-      toast.error('İşlem tamamlanamadı.');
+      setErrorMsg('An unexpected error occurred.');
+      toast.error('Trade could not be completed.');
     }
   };
 
@@ -88,13 +92,13 @@ export default function TradeConfirmationCard({ data, isLast }: ToolCardProps) {
         
         {status === 'pending' && !isLast && (
           <div className="text-sm text-amber-500/80 text-center italic">
-            Bu teklif süresi dolduğu veya yeni bir mesaj yazıldığı için artık geçerli değil.
+            This proposal is no longer valid because it has expired or a new message was sent.
           </div>
         )}
 
         {status === 'loading' && (
           <div className="flex items-center justify-center py-2 text-gray-400 gap-2 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin" /> İşleniyor...
+            <Loader2 className="w-4 h-4 animate-spin" /> Processing...
           </div>
         )}
 

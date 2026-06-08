@@ -126,7 +126,7 @@ export default function TATimeframes() {
                         <BarChart3 className="w-3.5 h-3.5 mr-1.5" />
                         Apply — {selectedInterval === "1d" ? "1 Day" : INTERVAL_OPTIONS.find(o => o.value === selectedInterval)?.label ?? selectedInterval}
                         {" · "}
-                        {selectedYears >= 10 ? "Max" : `${selectedYears} yr${selectedYears === 1 ? "" : "s"}`}
+                        {selectedYears >= 10 ? "Max" : `${selectedYears} Year${selectedYears === 1 ? "" : "s"}`}
                     </Button>
                 }
             >
@@ -163,9 +163,6 @@ export default function TATimeframes() {
                                     >
                                         {opt.shortLabel}
                                     </span>
-                                    <span className="text-[9px] text-gray-500 leading-tight text-center">
-                                        {limit?.label?.replace("years", "yr") ?? "10yr"}
-                                    </span>
                                 </button>
                             );
                         })}
@@ -182,9 +179,9 @@ export default function TATimeframes() {
                             </span>
                         </div>
                         <span className="text-xs font-medium text-gray-300">
-                            {selectedYears >= 10
-                                ? limitInfo?.label ?? "10 years"
-                                : `${selectedYears} yr${selectedYears === 1 ? "" : "s"}`}
+                             {selectedYears >= 10
+                                 ? limitInfo?.label ?? "10 Years"
+                                 : `${selectedYears} Year${selectedYears === 1 ? "" : "s"}`}
                         </span>
                     </div>
 
@@ -207,42 +204,22 @@ export default function TATimeframes() {
                                 [&::-webkit-slider-thumb]:cursor-pointer
                                 [&::-webkit-slider-thumb]:shadow-[0_0_6px_rgba(6,182,212,0.5)]"
                         />
-                        <div className="flex justify-between text-[10px] text-gray-500 mt-1">
-                            <span>0.5 yr</span>
-                            <span>{maxYears} yr</span>
+                    <div className="flex justify-between text-[10px] text-gray-500 mt-1">
+                            <span>0.5 Year</span>
+                            <span>{maxYears} Years</span>
                         </div>
-                    </div>
-
-                    {/* Preset chips */}
-                    <div className="flex flex-wrap gap-1.5 mb-2">
-                        {DATA_DEPTH_PRESETS.filter((p) => p <= maxYears).map(
-                            (preset) => (
-                                <button
-                                    key={preset}
-                                    onClick={() => setSelectedYears(preset)}
-                                    className={cn(
-                                        "px-2 py-1 text-xs rounded-md transition-colors",
-                                        selectedYears === preset
-                                            ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/30"
-                                            : "bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700/50"
-                                    )}
-                                >
-                                    {preset >= 1 ? `${preset}y` : `${preset}y`}
-                                </button>
-                            )
-                        )}
                     </div>
 
                     {/* Info row */}
                     <div className="flex items-center gap-3 text-[10px] text-gray-400 bg-gray-800/50 rounded-lg px-2.5 py-1.5 border border-gray-700/50">
                         <div className="flex items-center gap-1">
                             <BarChart3 className="w-3 h-3" />
-                            <span>~{estPoints.toLocaleString()} pts</span>
+                            <span>~{estPoints.toLocaleString()} points</span>
                         </div>
                         <span className="text-gray-600">·</span>
                         <div className="flex items-center gap-1">
                             <Info className="w-3 h-3" />
-                            <span>Max {limitInfo?.label ?? "10 years"}</span>
+                            <span>Max {limitInfo?.label ?? "10 Years"}</span>
                         </div>
                     </div>
                 </div>

@@ -17,7 +17,7 @@ function AnalysisErrorCard({ symbol, indicator, errorMessage }: { symbol: string
         <div className="flex items-start gap-2">
           <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0 mt-0.5" />
           <p className="text-xs text-red-300 leading-relaxed">
-            {errorMessage || `Bilinmeyen bir hata olustu. ${indicator} optimizasyonu ${symbol} icin tamamlanamadi.`}
+            {errorMessage || `An unknown error occurred. ${indicator} optimization for ${symbol} could not be completed.`}
           </p>
         </div>
       </div>
@@ -27,7 +27,7 @@ function AnalysisErrorCard({ symbol, indicator, errorMessage }: { symbol: string
   );
 }
 
-// Statik tamamlanmis analiz karti (polling yapmaz, veri zaten hazir)
+// Static completed analysis card (no polling, data is already ready)
 export function AnalysisResultCard({ symbol, indicator, winRate, bestValue }: { symbol: string; indicator: string; winRate: number; bestValue: number }) {
   const router = useRouter();
 
@@ -108,8 +108,8 @@ type LiveAnalysisCardProps = {
 
 export default function LiveAnalysisCard({ jobId, symbol, indicator, toolCallId, toolName = 'optimizeParameter', convId, onToolOutput }: LiveAnalysisCardProps) {
   const router = useRouter();
-  // Baslangic durumu null — ilk poll tamamlanana kadar processing gosterme (hydration sirasinda
-  // zaten tamamlanmis isler icin anlik "Processing..." flasini engeller)
+  // Initial status is null — avoids showing "Processing..." flash during hydration
+  // for jobs that already completed
   const [status, setStatus] = useState<'processing' | 'completed' | 'failed' | null>(null);
   const [winRate, setWinRate] = useState<number | null>(null);
   const [bestValue, setBestValue] = useState<number | null>(null);
@@ -138,9 +138,9 @@ export default function LiveAnalysisCard({ jobId, symbol, indicator, toolCallId,
               useAppStore.getState().removeActiveJob(convId);
             }
 
-            // Sonucu AI SDK context'ine enjekte et.
-            // injectedRef sayesinde bu bir kere yapilir — sonraki render'larda
-            // GenerativeUI completedOpt uzerinden AnalysisResultCard'i render eder.
+            // Inject result into AI SDK context.
+            // injectedRef ensures this runs only once — subsequent renders
+            // will show AnalysisResultCard via GenerativeUI completedOpt.
             if (!injectedRef.current && toolCallId && onToolOutput) {
               injectedRef.current = true;
               onToolOutput({
@@ -178,12 +178,12 @@ export default function LiveAnalysisCard({ jobId, symbol, indicator, toolCallId,
   // ---- Render ----
 
   if (status === 'completed') {
-    // addToolOutput basarili olduysa GenerativeUI completedOpt uzerinden
-    // AnalysisResultCard veya RankingCard render eder. Burada render etme — cift kart olusmasin.
+    // If addToolOutput succeeded, GenerativeUI renders AnalysisResultCard
+    // or RankingCard via completedOpt. Don't render here — avoids duplicate cards.
     if (injectedRef.current) return null;
     if (indicator === 'FIND_BEST' || indicator === 'RANK') return null;
-    // Fallback: onToolOutput saglanmadiysa veya toolCallId yoksa
-    // (hydration sirasinda, addToolOutput henuz cagrilamadiysa)
+    // Fallback: if onToolOutput is not provided or toolCallId is missing
+    // (during hydration, addToolOutput hasn't been called yet)
     if (winRate !== null && bestValue !== null) {
       return <AnalysisResultCard symbol={symbol} indicator={indicator} winRate={winRate} bestValue={bestValue} />;
     }
@@ -193,8 +193,8 @@ export default function LiveAnalysisCard({ jobId, symbol, indicator, toolCallId,
     return <AnalysisErrorCard symbol={symbol} indicator={indicator} errorMessage={errorMessage} />;
   }
 
-  // Ilk poll henuz tamamlanmadiysa (status null) — loading gosterme, bos don.
-  // Bu sayede hydration'da zaten tamamlanmis isler icin anlik "Processing..." flasi olusmaz.
+  // If the first poll hasn't completed yet (status null) — return null, don't show loading.
+  // This prevents a flash of "Processing..." during hydration for already-completed jobs.
   if (status === null) return null;
 
   // status === 'processing'

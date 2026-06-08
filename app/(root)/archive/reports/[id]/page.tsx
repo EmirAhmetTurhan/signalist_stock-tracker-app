@@ -39,9 +39,10 @@ export default function ReportDetailPage() {
     const [report, setReport] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    // ── Add to My Strategies state (moved outside conditional to respect Rules of Hooks) ──
-    const [addingIds, setAddingIds] = useState<Set<number>>(new Set());
-    const [addingAll, setAddingAll] = useState(false);
+    // ── Add to My Strategies state ──
+    const [savingIds, setSavingIds] = useState<Set<number>>(new Set());       // "Save to Library" loading
+    const [navigatingIds, setNavigatingIds] = useState<Set<number>>(new Set()); // "Save & Go to TA" loading
+    const [savingAll, setSavingAll] = useState(false);
 
     // Fetch report on mount
     useEffect(() => {
@@ -55,14 +56,13 @@ export default function ReportDetailPage() {
         });
     }, [id]);
 
-    // ── Add to My Strategies handlers (top-level to respect Rules of Hooks) ──
-
-    const handleAddStrategy = useCallback(async (ds: DiscoveryStrategyResult) => {
+    // ── Handler 1: "Save to Library" — saves strategy, stays on page ──
+    const handleSaveToLibrary = useCallback(async (ds: DiscoveryStrategyResult) => {
         if (!report) return;
-        if (addingIds.has(ds.rank)) return;
+        if (savingIds.has(ds.rank) || navigatingIds.has(ds.rank)) return;
         const sym = report.discoveryConfig?.symbol || report.symbol;
         const interv = report.discoveryConfig?.interval || '';
-        setAddingIds(prev => new Set(prev).add(ds.rank));
+        setSavingIds(prev => new Set(prev).add(ds.rank));
         try {
             const res = await addDiscoveredStrategy(
                 report._id,
@@ -71,31 +71,77 @@ export default function ReportDetailPage() {
                 interv,
             );
             if (res.success) {
-                toast.success(`"${res.name}" added to TA Strategies`);
+                toast.success(`"${res.name}" saved to library`);
             } else {
-                toast.error(res.error || 'Failed to add strategy');
+                toast.error(res.error || 'Failed to save strategy');
             }
         } catch {
             toast.error('An unexpected error occurred');
         } finally {
-            setAddingIds(prev => {
+            setSavingIds(prev => {
                 const next = new Set(prev);
                 next.delete(ds.rank);
                 return next;
             });
         }
-    }, [report, addingIds]);
+    }, [report, savingIds, navigatingIds]);
 
-    const handleAddAll = useCallback(async () => {
+    // ── Handler 2: "Save & Go to TA" — saves strategy, then navigates to TA page ──
+    const handleSaveAndGoToTA = useCallback(async (ds: DiscoveryStrategyResult) => {
+        if (!report) return;
+        if (savingIds.has(ds.rank) || navigatingIds.has(ds.rank)) return;
+        const sym = report.discoveryConfig?.symbol || report.symbol;
+        const interv = report.discoveryConfig?.interval || '';
+        const years = report.discoveryConfig?.years ?? 2;
+        setNavigatingIds(prev => new Set(prev).add(ds.rank));
+        try {
+            const res = await addDiscoveredStrategy(
+                report._id,
+                ds,
+                sym,
+                interv,
+            );
+            if (res.success) {
+                toast.success(`"${res.name}" saved — redirecting to TA...`);
+                const strategyKey = `saved_${res.strategyId}`;
+                const indParam = ds.combo.join(',');
+                const params = new URLSearchParams();
+                params.set('strategy', strategyKey);
+                params.set('ind', indParam);
+                params.set('symbol', sym);
+                params.set('interval', interv);
+                // CRITICAL: Pass years so TA page loads the same data range as the discovery
+                params.set('years', years.toString());
+                // Pass discovered params via 'p' for the TA page to apply optimized values
+                if (ds.bestParams && Object.keys(ds.bestParams).length > 0) {
+                    params.set('p', JSON.stringify(ds.bestParams));
+                }
+                router.push(`/ta?${params.toString()}`);
+            } else {
+                toast.error(res.error || 'Failed to save strategy');
+            }
+        } catch {
+            toast.error('An unexpected error occurred');
+        } finally {
+            setNavigatingIds(prev => {
+                const next = new Set(prev);
+                next.delete(ds.rank);
+                return next;
+            });
+        }
+    }, [report, savingIds, navigatingIds, router]);
+
+    // ── Handler: "Save All to Library" — saves all strategies, stays on page ──
+    const handleSaveAll = useCallback(async () => {
         if (!report) return;
         const results = (report.discoveryResults || []) as DiscoveryStrategyResult[];
         const sym = report.discoveryConfig?.symbol || report.symbol;
         const interv = report.discoveryConfig?.interval || '';
-        setAddingAll(true);
+        setSavingAll(true);
         try {
             for (const ds of results) {
-                if (addingIds.has(ds.rank)) continue;
-                setAddingIds(prev => new Set(prev).add(ds.rank));
+                if (savingIds.has(ds.rank) || navigatingIds.has(ds.rank)) continue;
+                setSavingIds(prev => new Set(prev).add(ds.rank));
                 const res = await addDiscoveredStrategy(
                     report._id,
                     ds,
@@ -103,21 +149,21 @@ export default function ReportDetailPage() {
                     interv,
                 );
                 if (!res.success) {
-                    toast.error(`Failed to add #${ds.rank}: ${res.error}`);
+                    toast.error(`Failed to save #${ds.rank}: ${res.error}`);
                 }
-                setAddingIds(prev => {
+                setSavingIds(prev => {
                     const next = new Set(prev);
                     next.delete(ds.rank);
                     return next;
                 });
             }
-            toast.success('All strategies added to TA');
+            toast.success('All strategies saved to library');
         } catch {
             toast.error('An unexpected error occurred');
         } finally {
-            setAddingAll(false);
+            setSavingAll(false);
         }
-    }, [report, addingIds]);
+    }, [report, savingIds, navigatingIds]);
 
     // ── Loading state ────────────────────────────────────────────────────────
 
@@ -191,7 +237,7 @@ export default function ReportDetailPage() {
                             </div>
                             <p className="text-gray-400 text-sm">
                                 Generated on{' '}
-                                {new Date(report.createdAt).toLocaleString('tr-TR', {
+                                {new Date(report.createdAt).toLocaleString('en-US', {
                                     day: 'numeric',
                                     month: 'long',
                                     year: 'numeric',
@@ -203,7 +249,7 @@ export default function ReportDetailPage() {
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={async () => {
-                                    if (!confirm('Bu raporu silmek istediğine emin misin? İlişkili tüm bildirimler de silinecek.')) return;
+                                    if (!confirm('Are you sure you want to delete this report? All associated notifications will also be removed.')) return;
                                     try {
                                         const { deleteReport } = await import('@/lib/actions/report.actions');
                                         const res = await deleteReport(report._id);
@@ -243,17 +289,8 @@ export default function ReportDetailPage() {
                     {/* ── Pipeline Summary ──────────────────────────────────── */}
                     <div className="flex flex-wrap items-center gap-4 mb-6 text-sm text-gray-400">
                         <span className="flex items-center gap-1.5">
-                            <Timer className="w-3.5 h-3.5" />
-                            Duration:{' '}
-                            {report.discoveryDuration
-                                ? report.discoveryDuration >= 60_000
-                                    ? `${(report.discoveryDuration / 60_000).toFixed(1)} min`
-                                    : `${(report.discoveryDuration / 1000).toFixed(1)}s`
-                                : 'N/A'}
-                        </span>
-                        <span className="flex items-center gap-1.5">
                             <BarChart2 className="w-3.5 h-3.5" />
-                            Best Validated WR:{' '}
+                            Win Rate:{' '}
                             <span className="text-amber-400 font-medium">
                                 {best ? `${best.validatedWinRate.toFixed(1)}%` : 'N/A'}
                             </span>
@@ -269,20 +306,20 @@ export default function ReportDetailPage() {
                         )}
                     </div>
 
-                    {/* ── Add All Button ─────────────────────────────────────── */}
+                    {/* ── Save All Button ─────────────────────────────────────── */}
                     {results.length > 1 && (
                         <div className="flex justify-end mb-3">
                             <button
-                                onClick={handleAddAll}
-                                disabled={addingAll}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 disabled:bg-emerald-600/10 disabled:cursor-not-allowed text-emerald-400 text-xs font-medium border border-emerald-600/30 transition-all duration-200"
+                                onClick={handleSaveAll}
+                                disabled={savingAll}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-600/20 hover:bg-gray-600/30 disabled:bg-gray-600/10 disabled:cursor-not-allowed text-gray-400 text-xs font-medium border border-gray-600/30 transition-all duration-200"
                             >
-                                {addingAll ? (
+                                {savingAll ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                 ) : (
                                     <Plus className="w-3.5 h-3.5" />
                                 )}
-                                {addingAll ? 'Adding All...' : `Add All (${results.length}) to My Strategies`}
+                                {savingAll ? 'Saving All...' : `Save All (${results.length}) to Library`}
                             </button>
                         </div>
                     )}
@@ -295,8 +332,7 @@ export default function ReportDetailPage() {
                                     <tr className="text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
                                         <th className="py-3 px-4 text-left">#</th>
                                         <th className="py-3 px-4 text-left">Strategy</th>
-                                        <th className="py-3 px-4 text-right">Best WR</th>
-                                        <th className="py-3 px-4 text-right">Validated WR</th>
+                                        <th className="py-3 px-4 text-right">Win Rate</th>
                                         <th className="py-3 px-4 text-right">Signals</th>
                                         <th className="py-3 px-4 text-center">Actions</th>
                                     </tr>
@@ -320,9 +356,6 @@ export default function ReportDetailPage() {
                                                     ))}
                                                 </div>
                                             </td>
-                                            <td className="py-3 px-4 text-right font-medium text-white">
-                                                {ds.bestWinRate.toFixed(1)}%
-                                            </td>
                                             <td className="py-3 px-4 text-right font-medium text-amber-400">
                                                 {ds.validatedWinRate.toFixed(1)}%
                                             </td>
@@ -330,18 +363,36 @@ export default function ReportDetailPage() {
                                                 {ds.totalSignals}
                                             </td>
                                             <td className="py-3 px-4 text-center">
-                                                <button
-                                                    onClick={() => handleAddStrategy(ds)}
-                                                    disabled={addingIds.has(ds.rank)}
-                                                    className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 disabled:bg-emerald-600/10 disabled:cursor-not-allowed text-emerald-400 text-xs font-medium border border-emerald-600/30 transition-all duration-200 mx-auto"
-                                                >
-                                                    {addingIds.has(ds.rank) ? (
-                                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                                    ) : (
-                                                        <Check className="w-3 h-3" />
-                                                    )}
-                                                    {addingIds.has(ds.rank) ? 'Adding...' : 'Add to TA'}
-                                                </button>
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                    {/* Button 1: Save to Library (no navigation) */}
+                                                    <button
+                                                        onClick={() => handleSaveToLibrary(ds)}
+                                                        disabled={savingIds.has(ds.rank) || navigatingIds.has(ds.rank)}
+                                                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-violet-600/20 hover:bg-violet-600/30 disabled:bg-violet-600/10 disabled:cursor-not-allowed text-violet-400 text-xs font-medium border border-violet-600/30 transition-all duration-200"
+                                                        title="Save strategy to your library without leaving this page"
+                                                    >
+                                                        {savingIds.has(ds.rank) ? (
+                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                        ) : (
+                                                            <Plus className="w-3 h-3" />
+                                                        )}
+                                                        {savingIds.has(ds.rank) ? '...' : 'Save'}
+                                                    </button>
+                                                    {/* Button 2: Save & Go to TA (save + navigate) */}
+                                                    <button
+                                                        onClick={() => handleSaveAndGoToTA(ds)}
+                                                        disabled={savingIds.has(ds.rank) || navigatingIds.has(ds.rank)}
+                                                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 disabled:bg-emerald-600/10 disabled:cursor-not-allowed text-emerald-400 text-xs font-medium border border-emerald-600/30 transition-all duration-200"
+                                                        title="Save strategy and open it on the TA page"
+                                                    >
+                                                        {navigatingIds.has(ds.rank) ? (
+                                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                                        ) : (
+                                                            <Check className="w-3 h-3" />
+                                                        )}
+                                                        {navigatingIds.has(ds.rank) ? '...' : 'Go to TA'}
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -383,7 +434,7 @@ export default function ReportDetailPage() {
                         </div>
                         <p className="text-gray-400 text-sm">
                             Generated on{' '}
-                            {new Date(report.createdAt).toLocaleString('tr-TR', {
+                            {new Date(report.createdAt).toLocaleString('en-US', {
                                 day: 'numeric',
                                 month: 'long',
                                 year: 'numeric',
@@ -395,7 +446,7 @@ export default function ReportDetailPage() {
                     <div className="flex items-center gap-3">
                         <button
                             onClick={async () => {
-                                if (!confirm('Bu raporu silmek istediğine emin misin? İlişkili tüm bildirimler de silinecek.')) return;
+                                if (!confirm('Are you sure you want to delete this report? All associated notifications will also be removed.')) return;
                                 try {
                                     const { deleteReport } = await import('@/lib/actions/report.actions');
                                     const res = await deleteReport(report._id);

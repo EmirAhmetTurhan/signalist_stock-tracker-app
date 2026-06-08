@@ -8,7 +8,7 @@
 
 "use client";
 
-import { Gauge, Database, BarChart3, Clock, TrendingUp, Shield, Layers, Target, AlertCircle } from "lucide-react";
+import { Gauge, Database, BarChart3, Clock, TrendingUp, Shield, Layers, Target, AlertCircle, ExternalLink } from "lucide-react";
 import { INDICATOR_DETAILS } from "@/lib/constants/indicator-categories";
 import type { RiskLevel } from "@/lib/ta/discovery-types";
 import { cn } from "@/lib/utils";
@@ -44,6 +44,17 @@ export interface DisplayStrategyResult {
     validatedWinRate?: number;
     overfittingRisk?: number;
     riskLevel?: RiskLevel;
+
+    // ─── Path-Aware + Portfolio Fields (Step 8, evaluationMode != 'lookforward') ───
+    evaluationMode?: 'lookforward' | 'pathaware' | 'regime';
+    mfe?: number;
+    mae?: number;
+    intraTradeDD?: number;
+    equityCurveResampled?: { time: string; equity: number }[];
+    drawdownCurveResampled?: { time: string; drawdownPct: number }[];
+    finalEquity?: number;
+    cagr?: number;
+    maxDrawdownPct?: number;
 }
 
 interface DeepDiscoveryResultsProps {
@@ -265,12 +276,29 @@ export default function DeepDiscoveryResults({ results, totalSaved, onApply }: D
                             Optimized
                         </span>
                     }
-                    <button
-                        onClick={() => onApply(best)}
-                        className="text-[10px] bg-amber-600 hover:bg-amber-500 text-black font-bold px-3 py-1.5 rounded transition-colors shadow-[0_0_10px_rgba(217,119,6,0.3)] hover:shadow-[0_0_15px_rgba(217,119,6,0.5)]"
-                    >
-                        Apply Strategy
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => onApply(best)}
+                            className="text-[10px] bg-amber-600 hover:bg-amber-500 text-black font-bold px-3 py-1.5 rounded transition-colors shadow-[0_0_10px_rgba(217,119,6,0.3)] hover:shadow-[0_0_15px_rgba(217,119,6,0.5)]"
+                            title="Add to TA — apply strategy params and stay on this page"
+                        >
+                            Add to TA
+                        </button>
+                        <button
+                            onClick={() => {
+                                onApply(best);
+                                // Navigate to TA page after a short delay to allow state update
+                                if (typeof window !== 'undefined') {
+                                    window.location.href = '/ta';
+                                }
+                            }}
+                            className="text-[10px] bg-violet-600 hover:bg-violet-500 text-white font-medium px-2 py-1.5 rounded transition-colors flex items-center gap-1"
+                            title="Go to TA — apply strategy and open Technical Analysis page"
+                        >
+                            <ExternalLink className="w-2.5 h-2.5" />
+                            Go to TA
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -351,12 +379,27 @@ export default function DeepDiscoveryResults({ results, totalSaved, onApply }: D
                                 )}
                             </div>
 
-                            <button
-                                onClick={() => onApply(ds)}
-                                className="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium px-2 py-1 rounded transition-colors opacity-0 group-hover:opacity-100"
-                            >
-                                Apply
-                            </button>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                    onClick={() => onApply(ds)}
+                                    className="text-[10px] bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium px-2 py-1 rounded transition-colors"
+                                    title="Add to TA"
+                                >
+                                    Add
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        onApply(ds);
+                                        if (typeof window !== 'undefined') {
+                                            window.location.href = '/ta';
+                                        }
+                                    }}
+                                    className="text-[10px] bg-gray-800 hover:bg-violet-700 text-violet-300 font-medium px-1.5 py-1 rounded transition-colors"
+                                    title="Go to TA"
+                                >
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                </button>
+                            </div>
                         </div>
                     );
                 })}

@@ -1,5 +1,5 @@
-// lib/ta/compute.ts — İndikatör hesaplama orkestratörü
-// Hem TA sayfası (sunucu) hem de AI Agent tools (sunucu) tarafından kullanılır
+// lib/ta/compute.ts — Indicator computation orchestrator
+// Used by both TA page (server) and AI Agent tools (server)
 
 import { computeMACD } from '@/lib/indicators/macd';
 import { computeRSI } from '@/lib/indicators/rsi';
@@ -23,7 +23,11 @@ import { detectHistoricalFractals } from '@/lib/indicators/historicalFractals';
 import { detectSupportResistance } from '@/lib/indicators/supportResistance';
 import type { IndicatorParams, CandleInput, TimePoint, ComputedIndicators } from './types';
 
-/** Kullanıcının seçtiği indikatörleri hesapla. Sadece activeIndicators içinde olanlar çalışır. */
+/** Helper: wrap a value as number | null, filtering out NaN/undefined. */
+const safeNum = (v: unknown): number | undefined =>
+  typeof v === 'number' && !isNaN(v) ? v : undefined;
+
+/** Compute only the indicators specified in activeIndicators. */
 export function computeIndicators(
   candles: CandleInput[],
   activeIndicators: Set<string>,
@@ -40,10 +44,10 @@ export function computeIndicators(
       p.macdFast, p.macdSlow, p.macdSig,
     );
     result.macd = {
-      macd: series.map((x) => ({ time: x.time, value: x.macd as number })),
-      signal: series.map((x) => ({ time: x.time, value: x.signal as number })),
+      macd: series.map((x) => ({ time: x.time, value: safeNum(x.macd) })),
+      signal: series.map((x) => ({ time: x.time, value: safeNum(x.signal) })),
       histogram: series.map((x) => ({
-        time: x.time, value: x.histogram as number,
+        time: x.time, value: safeNum(x.histogram),
         color: (x.histogram as number) >= 0 ? '#0db27a' : '#ef4444',
       })),
     };
@@ -55,9 +59,9 @@ export function computeIndicators(
       p.rsiLen, p.rsiMaLen,
     );
     result.rsi = {
-      rsi: series.map((x) => ({ time: x.time, value: x.rsi as number })),
-      ma: series.map((x) => ({ time: x.time, value: x.ma as number })),
-      // SPRINT 1 / B4.1: Confidence pass-through (DST fusion tüketecek)
+      rsi: series.map((x) => ({ time: x.time, value: safeNum(x.rsi) })),
+      ma: series.map((x) => ({ time: x.time, value: safeNum(x.ma) })),
+      // SPRINT 1 / B4.1: Confidence pass-through (consumed by DST fusion)
       confidence: series.map((x) => x.confidence),
     };
   }
@@ -68,8 +72,8 @@ export function computeIndicators(
       p.stochRsiLen, p.stochLen, p.stochK, p.stochD,
     );
     result.stochrsi = {
-      k: series.map((x) => ({ time: x.time, value: x.k as number })),
-      d: series.map((x) => ({ time: x.time, value: x.d as number })),
+      k: series.map((x) => ({ time: x.time, value: safeNum(x.k) })),
+      d: series.map((x) => ({ time: x.time, value: safeNum(x.d) })),
     };
   }
 
@@ -79,10 +83,10 @@ export function computeIndicators(
       p.wtAvgLen, p.wtChannelLen, p.wtMaLen,
     );
     result.wavetrend = {
-      wt1: series.map((x) => ({ time: x.time, value: x.wt1 as number })),
-      wt2: series.map((x) => ({ time: x.time, value: x.wt2 as number })),
+      wt1: series.map((x) => ({ time: x.time, value: safeNum(x.wt1) })),
+      wt2: series.map((x) => ({ time: x.time, value: safeNum(x.wt2) })),
       crosses: series.filter((x) => x.cross === 1 || x.cross === -1).map((x) => ({ time: x.time, cross: x.cross as 1 | -1 })),
-      // SPRINT 1 / B4.1: wt1 ve wt2 için ayrı confidence pass-through
+      // SPRINT 1 / B4.1: Separate confidence pass-through for wt1 and wt2
       wt1Confidence: series.map((x) => x.wt1Confidence),
       wt2Confidence: series.map((x) => x.wt2Confidence),
     };
@@ -94,9 +98,9 @@ export function computeIndicators(
       p.dmiDiLen, p.dmiAdxSmooth,
     );
     result.dmi = {
-      plusDI: series.map((x) => ({ time: x.time, value: x.plusDI as number })),
-      minusDI: series.map((x) => ({ time: x.time, value: x.minusDI as number })),
-      adx: series.map((x) => ({ time: x.time, value: x.adx as number })),
+      plusDI: series.map((x) => ({ time: x.time, value: safeNum(x.plusDI) })),
+      minusDI: series.map((x) => ({ time: x.time, value: safeNum(x.minusDI) })),
+      adx: series.map((x) => ({ time: x.time, value: safeNum(x.adx) })),
     };
   }
 
@@ -105,7 +109,7 @@ export function computeIndicators(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume })),
       p.mfiPeriod,
     );
-    result.mfi = { mfi: series.map((x) => ({ time: x.time, value: x.mfi as number })) };
+    result.mfi = { mfi: series.map((x) => ({ time: x.time, value: safeNum(x.mfi) })) };
   }
 
   if (activeIndicators.has('smi')) {
@@ -114,10 +118,10 @@ export function computeIndicators(
       p.smiLongLen, p.smiShortLen, p.smiSigLen,
     );
     result.smi = {
-      smi: series.map((x) => ({ time: x.time, value: x.smi as number })),
-      signal: series.map((x) => ({ time: x.time, value: x.signal as number })),
+      smi: series.map((x) => ({ time: x.time, value: safeNum(x.smi) })),
+      signal: series.map((x) => ({ time: x.time, value: safeNum(x.signal) })),
       histogram: series.map((x) => ({
-        time: x.time, value: x.histogram as number,
+        time: x.time, value: safeNum(x.histogram),
         color: (x.histogram as number) >= 0 ? '#0db27a' : '#ef4444',
       })),
     };
@@ -126,7 +130,7 @@ export function computeIndicators(
   if (activeIndicators.has('ao')) {
     result.ao = computeAO(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low })),
-    ).map((x) => ({ time: x.time, value: x.value }));
+    ).map((x) => ({ time: x.time, value: safeNum(x.value) }));
   }
 
   if (activeIndicators.has('cci')) {
@@ -135,8 +139,8 @@ export function computeIndicators(
       p.cciLen, p.cciMaLen,
     );
     result.cci = {
-      cci: series.map((x) => ({ time: x.time, value: x.cci as number })),
-      ma: series.map((x) => ({ time: x.time, value: x.ma as number })),
+      cci: series.map((x) => ({ time: x.time, value: safeNum(x.cci) })),
+      ma: series.map((x) => ({ time: x.time, value: safeNum(x.ma) })),
     };
   }
 
@@ -144,44 +148,45 @@ export function computeIndicators(
     result.wpr = computeWPR(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })),
       p.wprLen,
-    ).map((x) => ({ time: x.time, value: x.value }));
+    ).map((x) => ({ time: x.time, value: safeNum(x.value) }));
   }
 
   if (activeIndicators.has('di')) {
     result.di = computeDemandIndex(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, open: c.open, volume: c.volume || 0 })),
       p.diLen, p.diSmooth,
-    ).map((x) => ({ time: x.time, value: x.value }));
+    ).map((x) => ({ time: x.time, value: safeNum(x.value) }));
   }
 
   if (activeIndicators.has('cmf')) {
     result.cmf = computeCMF(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 })),
       p.cmfLen,
-    ).map((x) => ({ time: x.time, value: x.value }));
+    ).map((x) => ({ time: x.time, value: safeNum(x.value) }));
   }
 
   if (activeIndicators.has('ad')) {
     result.ad = computeAD(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 })),
-    ).map((x) => ({ time: x.time, value: x.value }));
+    ).map((x) => ({ time: x.time, value: safeNum(x.value) }));
   }
 
   if (activeIndicators.has('netvol')) {
     result.netvol = computeNetVolume(
       candles.map((c) => ({ time: c.time, open: c.open, close: c.close, volume: c.volume || 0 })),
-    ).map((x) => ({ time: x.time, value: x.value }));
+    ).map((x) => ({ time: x.time, value: safeNum(x.value) }));
   }
 
   if (activeIndicators.has('madr')) {
     result.madr = computeMADR(
       candles.map((c) => ({ time: c.time, close: c.close })),
       p.madrLen,
-    ).map((x) => ({ time: x.time, value: x.value }));
+    ).map((x) => ({ time: x.time, value: safeNum(x.value) }));
   }
 
   if (activeIndicators.has('alma')) {
-    result.alma = computeALMA(closes, p.almaLen, p.almaOffset, p.almaSigma) as TimePoint[];
+    result.alma = (computeALMA(closes, p.almaLen, p.almaOffset, p.almaSigma) as Array<{ time: number; value?: number }>)
+      .map((x) => ({ time: x.time, value: safeNum(x.value) }));
   }
 
   if (activeIndicators.has('bb')) {
@@ -208,7 +213,7 @@ export function computeIndicators(
   return result;
 }
 
-/** Yardımcı: ind parametresinden Set oluştur (virgülle ayrılmış) */
+/** Helper: parse comma-separated indicator names into a Set */
 export function parseActiveIndicators(indParam: string): Set<string> {
   return new Set(indParam.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
 }

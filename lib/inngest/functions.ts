@@ -282,7 +282,7 @@ export const aiOptimizeParameter = inngest.createFunction(
                     }
                 });
 
-                const optResult = findBestParameter(name, candles);
+                const optResult = findBestParameter(name, candles, { lookForward: 5, interval });
 
                 // Step guncelle: optimizasyon tamamlandi
                 await connectToDatabase();
@@ -423,7 +423,7 @@ export const aiRankIndicatorsJob = inngest.createFunction(
 
         const days = Math.round(years * 365);
 
-        const userId = (data as any).userId || 'inngest-system';
+        const userId = (data as Record<string, unknown>).userId as string || 'inngest-system';
 
         await step.run('create-ai-job', async () => {
             await connectToDatabase();
@@ -488,7 +488,10 @@ export const aiRankIndicatorsJob = inngest.createFunction(
                 });
 
                 const testResults: { name: string; winRate: number; signals: number }[] = [];
+                let indIdx = 0;
                 for (const ind of toTest) {
+                    if (indIdx > 0 && indIdx % 5 === 0) await new Promise(r => setTimeout(r, 0));
+                    indIdx++;
                     const idata = mapIndicatorData(computed, ind.toLowerCase());
                     if (!idata) continue;
                     try {

@@ -72,6 +72,7 @@ async function generateSmartTitle(model: any, conversationId: string, userMessag
 // ---- Logging ----
 
 const LOG = (step: string, status: 'OK' | 'ERROR' | 'INFO', detail?: string) => {
+  if (process.env.NODE_ENV !== 'development' && status !== 'ERROR') return;
   const ts = new Date().toISOString().slice(11, 23);
   const tag = status === 'ERROR' ? '[HATA]' : status === 'OK' ? '[OK]' : '[BILGI]';
   console.log(`${ts} ${tag} ${step}${detail ? ` — ${detail}` : ''}`);

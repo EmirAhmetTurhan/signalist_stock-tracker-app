@@ -238,7 +238,7 @@ function getDefaultParams(combo: string[], lookForward: number): Record<string, 
  * @param abortSignal - Optional abort signal
  * @returns Evaluated bracket results
  */
-export function executeBracket(
+export async function executeBracket(
     combos: string[][],
     bracketLevel: number,
     density: number,
@@ -249,10 +249,11 @@ export function executeBracket(
     deOptions: DEOptions | undefined,
     abortSignal: AbortSignal | undefined,
     signalProfile?: SignalProfile,
-): HyperbandBracketResult[] {
+): Promise<HyperbandBracketResult[]> {
     const results: HyperbandBracketResult[] = [];
 
     for (let i = 0; i < combos.length; i++) {
+        if (i > 0 && i % 10 === 0) await new Promise(r => setTimeout(r, 0));
         if (abortSignal?.aborted) break;
 
         const combo = combos[i];
@@ -368,11 +369,11 @@ export function promoteCombos(
     return result;
 }
 
-export function hyperbandSearch(
+export async function hyperbandSearch(
     candles: Candle[],
     allData: AllData,
     options: HyperbandOptions = {},
-): HyperbandResult {
+): Promise<HyperbandResult> {
     const lookForward = options.lookForward ?? 14;
     const interval = options.interval;
     const abortSignal = options.abortSignal;
@@ -400,7 +401,7 @@ export function hyperbandSearch(
 
     // ── Phase 2: MCTS Search ──
     onProgress?.('mcts-search', 0, 1);
-    const mctsResult = mctsSearch(evalCandles, allData, {
+    const mctsResult = await mctsSearch(evalCandles, allData, {
         ...mctsOptions,
         priorWeights,
         lookForward,
@@ -436,6 +437,7 @@ export function hyperbandSearch(
     const allSurvivors: HyperbandBracketResult[] = [];
 
     for (let b = 0; b < totalBrackets; b++) {
+        if (b > 0) await new Promise(r => setTimeout(r, 0));
         if (abortSignal?.aborted) break;
 
         const density = densities[b];
@@ -443,7 +445,7 @@ export function hyperbandSearch(
         onProgress?.('hyperband-bracket-' + b, 0, activeCombos.length);
 
         // Evaluate current bracket
-        const bracketResults = executeBracket(
+        const bracketResults = await executeBracket(
             activeCombos, b, density,
             evalCandles, allData,
             lookForward, interval,

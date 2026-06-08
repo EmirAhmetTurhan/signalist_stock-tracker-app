@@ -4,6 +4,7 @@ import { connectToDatabase } from '@/database/mongoose';
 import { Report } from '@/database/models/report.model';
 import AIJob from '@/database/models/ai-job.model';
 import Notification from '@/database/models/notification.model';
+import SavedStrategy from '@/database/models/saved-strategy.model';
 import { auth } from '@/lib/better-auth/auth';
 import { headers } from 'next/headers';
 import { inngest } from '@/lib/inngest/client';
@@ -248,9 +249,16 @@ export async function deleteReport(reportId: string) {
       await AIJob.deleteOne({ jobId: report.jobId, userId });
     }
 
+    // 5. Cascade delete: remove saved strategies linked to this report (discovery reports)
+    const strategyResult = await SavedStrategy.deleteMany({
+      userId,
+      sourceReportId: reportId,
+    });
+
     return {
       success: true,
       deletedNotifications: notifResult.deletedCount ?? 0,
+      deletedStrategies: strategyResult.deletedCount ?? 0,
     };
   } catch (error) {
     return { success: false, error: String(error) };

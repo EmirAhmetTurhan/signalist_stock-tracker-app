@@ -380,8 +380,8 @@ describe('optimizeStrategyParams', () => {
 // ─── discoverStrategy ──────────────────────────────────────────────────────────
 
 describe('discoverStrategy', () => {
-    it('handles empty candles (combinations are generated before backtest)', () => {
-        const result = discoverStrategy([], {}, {
+    it('handles empty candles (combinations are generated before backtest)', async () => {
+        const result = await discoverStrategy([], {}, {
             indicatorPool: ['rsi', 'cci'],
             minIndicators: 2,
             maxIndicators: 2,
@@ -396,13 +396,13 @@ describe('discoverStrategy', () => {
         expect(result.best.winRate).toBe(0);
     });
 
-    it('discovers best 2-indicator combination', () => {
+    it('discovers best 2-indicator combination', async () => {
         const candles = makeCandles(200, 'up');
         // Use oscillating data so signals are generated
         const data = makeMultiAllData(candles, ['rsi', 'cci'], 80, 30, {
             high: 80, low: 20, period: 15,
         });
-        const result = discoverStrategy(candles, data, {
+        const result = await discoverStrategy(candles, data, {
             indicatorPool: ['rsi', 'cci'],
             minIndicators: 2,
             maxIndicators: 2,
@@ -417,12 +417,12 @@ describe('discoverStrategy', () => {
         expect(result.poolSize).toBe(2);
     });
 
-    it('discovers with 3-indicator pool producing 1 combination of 3', () => {
+    it('discovers with 3-indicator pool producing 1 combination of 3', async () => {
         const candles = makeCandles(200, 'up');
         const data = makeMultiAllData(candles, ['rsi', 'cci', 'macd'], 80, 30, {
             high: 80, low: 20, period: 15,
         });
-        const result = discoverStrategy(candles, data, {
+        const result = await discoverStrategy(candles, data, {
             indicatorPool: ['rsi', 'cci', 'macd'],
             minIndicators: 3,
             maxIndicators: 3,
@@ -435,12 +435,12 @@ describe('discoverStrategy', () => {
         expect(result.best.indicators.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('discovers with 4-indicator pool producing C(4,2) = 6 combos', () => {
+    it('discovers with 4-indicator pool producing C(4,2) = 6 combos', async () => {
         const candles = makeCandles(200, 'up');
         const data = makeMultiAllData(candles, ['rsi', 'cci', 'macd', 'mfi'], 80, 30, {
             high: 80, low: 20, period: 15,
         });
-        const result = discoverStrategy(candles, data, {
+        const result = await discoverStrategy(candles, data, {
             indicatorPool: ['rsi', 'cci', 'macd', 'mfi'],
             minIndicators: 2,
             maxIndicators: 2,
@@ -451,12 +451,12 @@ describe('discoverStrategy', () => {
         expect(result.all.length).toBeLessThanOrEqual(3); // topN=3
     });
 
-    it('returns proper structure for discovered strategy', () => {
+    it('returns proper structure for discovered strategy', async () => {
         const candles = makeCandles(200, 'up');
         const data = makeMultiAllData(candles, ['rsi', 'cci'], 80, 30, {
             high: 80, low: 20, period: 15,
         });
-        const result = discoverStrategy(candles, data, {
+        const result = await discoverStrategy(candles, data, {
             indicatorPool: ['rsi', 'cci'],
             minIndicators: 2,
             maxIndicators: 2,
@@ -493,11 +493,11 @@ describe('discoverStrategy', () => {
         expect(DISCOVERY_POOL.length).toBe(17);
     });
 
-    it('handles missing indicator data in allData', () => {
+    it('handles missing indicator data in allData', async () => {
         const candles = makeCandles(200, 'up');
         // Provide data for rsi only, but ask to discover with rsi+cci
         const data = makeAllData('rsi', candles, 80, 30);
-        const result = discoverStrategy(candles, data, {
+        const result = await discoverStrategy(candles, data, {
             indicatorPool: ['rsi', 'cci'],
             minIndicators: 2,
             maxIndicators: 2,
