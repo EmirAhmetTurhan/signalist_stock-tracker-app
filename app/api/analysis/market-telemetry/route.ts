@@ -12,6 +12,7 @@ import { classifyRegime } from '@/lib/ta/regime-detector';
 import type { RegimeSegment } from '@/lib/ta/regime-detector';
 import { evaluateIndicators } from '@/lib/ta/indicator-evaluator';
 import { buildRegimeStrategies } from '@/lib/ta/regime-strategy-builder';
+import { buildCausalSegments } from '@/lib/ta/telemetry-utils';
 import type { Candle } from '@/lib/ta/backtest';
 import type { Timeframe } from '@/lib/ta/types';
 import { PARAM_DEFAULTS_NUM } from '@/lib/constants/indicator-params';
@@ -129,9 +130,7 @@ export async function POST(request: NextRequest) {
         // Ardışık aynı rejime sahip barları gruplayarak causal segment'ler oluşturur.
         const segments = buildCausalSegments(candleTruncated);
 
-        const indicatorData = buildIndicatorDataMap(allData as { [key: string]: unknown });
-
-        const performances = evaluateIndicators(candleTruncated, indicatorData, segments, {
+        const performances = evaluateIndicators(candleTruncated, allData as any, segments, {
             lookbackBars: 7,
             // Causal segments are typically shorter than non-causal zigzag segments.
             // Lower minSampleSize to 10 so we get meaningful stats even with fewer segments.
@@ -168,70 +167,6 @@ export async function POST(request: NextRequest) {
     }
 }
 
-function buildIndicatorDataMap(allData: unknown): Record<string, number[]> {
-    if (!allData || typeof allData !== 'object') return {};
-    const data = allData as Record<string, unknown>;
-    const map: Record<string, number[]> = {};
-
-    const extractSeries = (arr: unknown): number[] => {
-        if (!Array.isArray(arr)) return [];
-        return arr.map((p: { value?: number }) => (typeof p?.value === 'number' && !isNaN(p.value) ? p.value : NaN));
-    };
-
-    if (data.rsiData && typeof data.rsiData === 'object') {
-        map['rsi'] = extractSeries((data.rsiData as Record<string, unknown>).rsi);
-    }
-    if (data.cciData && typeof data.cciData === 'object') {
-        map['cci'] = extractSeries((data.cciData as Record<string, unknown>).cci);
-    }
-    if (data.waveTrendData && typeof data.waveTrendData === 'object') {
-        map['wavetrend'] = extractSeries((data.waveTrendData as Record<string, unknown>).wt1);
-    }
-    if (data.macdData && typeof data.macdData === 'object') {
-        map['macd'] = extractSeries((data.macdData as Record<string, unknown>).macd);
-    }
-    if (data.stochRsiData && typeof data.stochRsiData === 'object') {
-        map['stochrsi'] = extractSeries((data.stochRsiData as Record<string, unknown>).k);
-    }
-    if (data.dmiData && typeof data.dmiData === 'object') {
-        map['dmi'] = extractSeries((data.dmiData as Record<string, unknown>).adx);
-    }
-    if (data.aoData) {
-        map['ao'] = extractSeries(data.aoData);
-    }
-    if (data.mfiData && typeof data.mfiData === 'object') {
-        map['mfi'] = extractSeries((data.mfiData as Record<string, unknown>).mfi);
-    }
-    if (data.wprData) {
-        map['wpr'] = extractSeries(data.wprData);
-    }
-    if (data.smiData && typeof data.smiData === 'object') {
-        map['smi'] = extractSeries((data.smiData as Record<string, unknown>).smi);
-    }
-    if (data.diData) {
-        map['di'] = extractSeries(data.diData);
-    }
-    if (data.cmfData) {
-        map['cmf'] = extractSeries(data.cmfData);
-    }
-    if (data.adData) {
-        map['ad'] = extractSeries(data.adData);
-    }
-    if (data.nvData) {
-        map['netvol'] = extractSeries(data.nvData);
-    }
-    if (data.madrData) {
-        map['madr'] = extractSeries(data.madrData);
-    }
-    if (data.almaData) {
-        map['alma'] = extractSeries(data.almaData);
-    }
-    if (data.bbData) {
-        map['bb'] = extractSeries(data.bbData);
-    }
-
-    return map;
-}
 
 interface PriceSummaryItem {
     type: string;
@@ -242,63 +177,6 @@ interface PriceSummaryItem {
     priceChangePct: number;
     startPrice: number;
     endPrice: number;
-}
-
-/**
- * Build causal regime segments using classifyRegime() instead of
- * the non-causal segmentRegimes() zigzag algorithm.
- *
- * classifyRegime() only reads past bars → safe for live signal use.
- * Consecutive bars with the same regime are grouped into segments.
- */
-function buildCausalSegments(candles: Candle[]): RegimeSegment[] {
-    if (candles.length < 30) return [];
-
-    // Compute ATR once for all bars
-    const atr: number[] = [];
-    let sumTR = 0;
-    for (let i = 0; i < candles.length; i++) {
-        const high = candles[i].high;
-        const low = candles[i].low;
-        const prevClose = i > 0 ? candles[i - 1].close : candles[i].close;
-        const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
-        if (i < 14) { sumTR += tr; atr.push(sumTR / (i + 1)); }
-        else if (i === 14) { sumTR += tr; atr.push(sumTR / 14); }
-        else { atr.push((atr[i - 1] * 13 + tr) / 14); }
-    }
-
-    const segments: RegimeSegment[] = [];
-    let segStart = 30; // Skip warmup
-    let currentRegime = classifyRegime(candles, segStart, atr);
-
-    for (let i = 31; i < candles.length; i++) {
-        const regime = classifyRegime(candles, i, atr);
-        if (regime !== currentRegime || i === candles.length - 1) {
-            const endIdx = i === candles.length - 1 ? i : i - 1;
-            if (endIdx - segStart >= 3) { // Min 3 bars per segment
-                const startPrice = candles[segStart].close;
-                const endPrice = candles[endIdx].close;
-                const priceChangePct = ((endPrice - startPrice) / startPrice) * 100;
-                segments.push({
-                    startIndex: segStart,
-                    endIndex: endIdx,
-                    startDate: candles[segStart].time,
-                    endDate: candles[endIdx].time,
-                    type: currentRegime,
-                    priceChange: priceChangePct,
-                    priceChangePct,
-                    durationBars: endIdx - segStart + 1,
-                    confidence: 0.7,
-                    startPrice,
-                    endPrice,
-                });
-            }
-            segStart = i;
-            currentRegime = regime;
-        }
-    }
-
-    return segments;
 }
 
 function buildPriceSummary(segments: any[]): PriceSummaryItem[] {

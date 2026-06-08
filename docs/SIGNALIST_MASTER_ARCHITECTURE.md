@@ -198,9 +198,9 @@ Kullanıcı "Deep Discovery" başlatır
               │     • computeIndicators() → ComputedIndicators
               │     • mapComputedToAllData() → AllData
               │
-              ├── Phase 1.5: OPPORTUNITY LABELING (Triple Barrier Method)
-              │     • TP: +2.0 × ATR, SL: -1.0 × ATR, Time: 20 bar
-              │     • Her bar: TP'ye ulaşan → 1, SL'ye ulaşan → -1, zaman dolan → 0
+              ├── Phase 1.5: TELEMETRY EVAL (Market Telemetry Integration)
+              │     • computeTelemetryConfidences() → Record<string, number>
+              │     • Her indikatör için nedensel (causal) rejim hit rate'lerini hesaplar ve DST için inanç (confidence) skorlarına dönüştürür.
               │
               ├── Phase 2: MI FİLTRESİ + MCTS ARAMA
               │     • computeMIPriorWeights() → Float64Array(17)
@@ -505,7 +505,15 @@ POST /api/analysis/market-telemetry { symbol, interval, years }
   └── JSON response → MarketTelemetryPanel.tsx'te gösterilir
 ```
 
-**Mevcut durum:** Telemetry verisi keşif motoruna **henüz bağlanmamıştır.** Panel bağımsız bilgi amaçlı çalışır.
+**Mevcut durum:** Telemetry verisi keşif motoruna (Phase 1.5) **başarıyla bağlanmıştır**. Panel bağımsız bilgi amaçlı çalışmaya devam ederken, Telemetry metrikleri arka planda `indicatorConfidences` olarak MCTS ve Hyperband strateji keşif döngülerine dahil edilmiştir.
+
+### 3.12 Transaction Cost Modeling (İşlem Maliyetleri)
+
+Gerçekçi backtest sonuçları elde etmek için işlem maliyetleri strateji optimizasyon sürecine (Path B) entegre edilmiştir.
+
+- **Profil Yapılandırması:** Her strateji profili (`TrendFollower`, `SwingTrader`, vb.) `transactionCostPct` tanımlar. (Varsayılan %0.10: Giriş için %0.05 + Çıkış için %0.05).
+- **Maliyet Düşülmesi:** `runStrategyBacktest()` sırasında simüle edilen her işlemin getirisinden `transactionCostPct` düşülür.
+- **Sahte Başarı Önlemi:** Önceden "sıfır işlem maliyeti" ile test edildiğinde aşırı trade eden (high-frequency) zayıf stratejilerin yüksek skor alması engellenmiş olur.
 
 ---
 

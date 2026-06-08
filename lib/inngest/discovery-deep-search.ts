@@ -9,6 +9,7 @@
 // subsequent steps via closure — NOT re-passed between steps.
 
 import { inngest } from '@/lib/inngest/client';
+import { NonRetriableError } from 'inngest';
 import { connectToDatabase } from '@/database/mongoose';
 import AIJob from '@/database/models/ai-job.model';
 import Notification from '@/database/models/notification.model';
@@ -36,6 +37,7 @@ import { mctsSearch } from '@/lib/ta/mcts-search';
 import { buildPortfolio } from '@/lib/ta/strategy-portfolio';
 import type { StrategyPortfolio } from '@/lib/ta/strategy-portfolio';
 import { PHASE_NAMES } from '@/lib/ta/discovery-types';
+import { computeTelemetryConfidences } from '@/lib/ta/telemetry-utils';
 
 // ─── Constants ──────────────────────────────────────────────────────────────────
 
@@ -235,7 +237,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                 const candles: Candle[] = await getCandlesForInterval(symbol, safeInterval, days);
 
                 if (!candles || candles.length < 100) {
-                    throw new Error(
+                    throw new NonRetriableError(
                         `Insufficient data: ${symbol} returned ${candles?.length ?? 0} candles (need ≥100)`,
                     );
                 }
@@ -258,6 +260,37 @@ export const deepDiscoveryJob = inngest.createFunction(
 
                 // Return candles + allData — serialized once, referenced by all steps via closure
                 return { candles, allData, symbol, safeInterval, days };
+            });
+
+            // ═══════════════════════════════════════════════════════════
+            // Phase 1.5: Telemetry Eval
+            // Computes per-indicator hit rates across causal regimes to 
+            // generate dynamic confidence scores for DST fusion.
+            // ═══════════════════════════════════════════════════════════
+            const phase15Result = await step.run('phase-15-telemetry-eval', async () => {
+                const start = Date.now();
+                await updateJobProgress(jobId, 1, 3, 3, 'Computing Market Telemetry...');
+
+                const { candles, allData } = phase1Data;
+                
+                // computeTelemetryConfidences internally builds causal segments, 
+                // evaluates indicators, and computes duration-weighted average.
+                const indicatorConfidences = computeTelemetryConfidences(candles, allData);
+                
+                executionTimes.phase15 = Date.now() - start;
+                
+                // ── Checkpoint: Save to MongoDB ──
+                await connectToDatabase();
+                await AIJob.updateOne(
+                    { jobId },
+                    {
+                        $set: {
+                            'intermediateResults.telemetryConfidences': indicatorConfidences,
+                        },
+                    },
+                );
+
+                return { indicatorConfidences };
             });
 
             // ═══════════════════════════════════════════════════════════
@@ -299,6 +332,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                     interval: safeInterval,
                     simulations: DEFAULT_MCTS_ITERATIONS,
                     maxDepth: DEFAULT_MCTS_MAX_DEPTH,
+                    indicatorConfidences: phase15Result.indicatorConfidences,
                 });
 
                 const allCombos: string[][] = mctsResult.all.map(
@@ -333,7 +367,7 @@ export const deepDiscoveryJob = inngest.createFunction(
 
                 // ── Guard: No combos found → fail fast with descriptive error ──
                 if (allCombos.length === 0) {
-                    throw new Error(
+                    throw new NonRetriableError(
                         `MCTS search produced zero valid combinations for ${symbol}. ` +
                         `Insufficient signal quality — try a shorter date range or different interval.`,
                     );
@@ -383,6 +417,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                     undefined, // no DE at 25%
                     undefined,
                     signalProfile,
+                    phase15Result.indicatorConfidences,
                 );
 
                 // Promote top combos to next bracket
@@ -410,7 +445,7 @@ export const deepDiscoveryJob = inngest.createFunction(
 
                 // ── Guard: No combos promoted → fail fast ──
                 if (promotedCombos.length === 0) {
-                    throw new Error(
+                    throw new NonRetriableError(
                         `Hyperband bracket 1 eliminated all ${allCombos.length} candidate combinations for ${symbol}. ` +
                         `No viable strategies found at 25% mask density.`,
                     );
@@ -455,6 +490,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                     undefined, // no DE at 50%
                     undefined,
                     signalProfile,
+                    phase15Result.indicatorConfidences,
                 );
 
                 // Promote top combos to final bracket
@@ -482,7 +518,7 @@ export const deepDiscoveryJob = inngest.createFunction(
 
                 // ── Guard: No combos promoted → fail fast ──
                 if (promotedCombos.length === 0) {
-                    throw new Error(
+                    throw new NonRetriableError(
                         `Hyperband bracket 2 eliminated all ${inputCombos.length} remaining candidates for ${symbol}. ` +
                         `No viable strategies found at 50% mask density.`,
                     );
@@ -527,6 +563,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                     { seed }, // DE options
                     undefined,
                     signalProfile,
+                    phase15Result.indicatorConfidences,
                 );
 
                 // At final level, ALL evaluated results are survivors

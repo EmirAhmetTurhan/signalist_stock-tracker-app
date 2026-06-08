@@ -57,6 +57,8 @@ export interface HyperbandOptions {
     abortSignal?: AbortSignal;
     /** Progress callback. */
     onProgress?: (phase: string, current: number, total: number) => void;
+    /** Indicator confidence scores for DST fusion. */
+    indicatorConfidences?: Record<string, number>;
     /** MI Filter options. Pass to control prior weight computation. */
     miOptions?: MIOptions;
     /** MCTS options (maxNodes, maxDepth, iterations). */
@@ -171,6 +173,7 @@ function evaluateAtDensity(
     lookForward: number,
     interval: string | undefined,
     signalProfile?: SignalProfile,
+    indicatorConfidences?: Record<string, number>,
 ): StrategyBacktestResult {
     const mask = generateStratifiedMask(candles.length, density, lookForward);
 
@@ -179,7 +182,7 @@ function evaluateAtDensity(
         'CUSTOM',
         allData,
         { lookForward, interval, mode: 'all', signalMask: mask, signalProfile },
-        { customIndicators: combo, interval, mode: 'all' },
+        { customIndicators: combo, interval, mode: 'all', indicatorConfidences },
     );
 }
 
@@ -249,6 +252,7 @@ export async function executeBracket(
     deOptions: DEOptions | undefined,
     abortSignal: AbortSignal | undefined,
     signalProfile?: SignalProfile,
+    indicatorConfidences?: Record<string, number>,
 ): Promise<HyperbandBracketResult[]> {
     const results: HyperbandBracketResult[] = [];
 
@@ -262,7 +266,7 @@ export async function executeBracket(
         // Evaluate at current density
         const result = evaluateAtDensity(
             combo, defaultParams, candles, allData,
-            density, lookForward, interval, signalProfile,
+            density, lookForward, interval, signalProfile, indicatorConfidences,
         );
 
         // Compute composite score
@@ -289,7 +293,7 @@ export async function executeBracket(
             // Re-evaluate with DE-optimized params at full fidelity
             const fullResult = evaluateAtDensity(
                 combo, deResult.bestParams, candles, allData,
-                1.0, lookForward, interval, signalProfile,
+                1.0, lookForward, interval, signalProfile, indicatorConfidences,
             );
 
             const finalScore = computeCompositeScore(
@@ -406,6 +410,7 @@ export async function hyperbandSearch(
         priorWeights,
         lookForward,
         interval,
+        indicatorConfidences: options.indicatorConfidences,
         onProgress: (current: number, total: number) => {
             onProgress?.('mcts-search', current, total);
         },
@@ -452,6 +457,7 @@ export async function hyperbandSearch(
             density >= 1.0 ? deOptions : undefined,
             abortSignal,
             signalProfile,
+            options.indicatorConfidences,
         );
 
         totalEvaluations += bracketResults.length;

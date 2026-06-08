@@ -329,6 +329,8 @@ export interface MCTSOptions {
     lookForward?: number;
     /** Interval string for warmup (default: '1d'). */
     interval?: string;
+    /** Indicator confidence scores for DST fusion. */
+    indicatorConfidences?: Record<string, number>;
     /** Batch size for progress callbacks (default: 10). */
     batchSize?: number;
     /** Progress callback. */
@@ -491,6 +493,7 @@ export async function mctsSearch(
                 customIndicators: indicators,
                 mode: 'all',
                 interval,
+                indicatorConfidences: options.indicatorConfidences,
             });
 
             // Compute composite score for ranking

@@ -8,11 +8,24 @@
 //   - Beta-Binomial posterior credible intervals via getBetaPosterior
 //   - Min-sample gate (≥30 regime starts required for statistical significance)
 //   - Average bars-before metric (how early does the indicator signal?)
+//
+// IMPORTANT: Signal logic uses the CANONICAL *Signal() functions from
+// signal-registry.ts (via getIndicatorSignal in strategy-optimizer.ts).
+// This ensures telemetry hit rates are measured with the SAME rules
+// the strategy engine uses. Never add custom signal logic here.
 
 import type { Candle } from './backtest';
 import type { MarketRegime } from './types';
 import type { RegimeSegment } from './regime-detector';
+import type { AllData } from './strategy-optimizer/types';
 import { getBetaPosterior } from './strategy-optimizer';
+import {
+    rsiSignal, cciSignal, waveTrendSignal, macdSignal,
+    stochRsiSignal, dmiSignal, smiSignal, aoSignal,
+    mfiSignal, wprSignal, diSignal, cmfSignal, adSignal,
+    netvolSignal, madrSignal, almaSignal, bbSignal,
+    type BBPoint,
+} from './signal-registry';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -51,71 +64,167 @@ export const DEFAULT_EVALUATOR_CONFIG: EvaluatorConfig = {
     confidenceLevel: 0.95,
 };
 
-// ─── Indicator Signal Access ─────────────────────────────────────────────────
+// ─── Canonical Signal Access (uses signal-registry.ts functions) ─────────────
+
+/** All indicator keys evaluated by telemetry. */
+const INDICATOR_KEYS = [
+    'rsi', 'cci', 'wavetrend', 'macd', 'stochrsi', 'dmi',
+    'smi', 'ao', 'mfi', 'wpr', 'di', 'cmf', 'ad',
+    'netvol', 'madr', 'alma', 'bb',
+] as const;
 
 /**
- * Get a simple directional signal from an indicator at bar index i.
- * This is a lightweight version of the full signal functions in signal-registry.ts,
- * designed for the evaluation hot-path. Returns only BUY/SELL/null.
+ * Get a directional signal from an indicator at bar index i.
  *
- * Requires pre-loaded indicator values in the data map.
+ * Uses the CANONICAL *Signal() functions from signal-registry.ts —
+ * the same functions used by runStrategyBacktest(). This guarantees
+ * telemetry hit rates are measured with identical rules.
+ *
+ * Mirrors getIndicatorSignal() in strategy-optimizer.ts.
  */
 function getIndicatorDirection(
     key: string,
     i: number,
-    data: Record<string, number[]>,
+    allData: AllData,
+    candles: Candle[],
 ): 'BUY' | 'SELL' | null {
-    const values = data[key];
-    if (!values || i < 1) return null;
+    if (i < 1) return null;
 
-    const cur = values[i];
-    const prev = values[i - 1];
-    if (cur === undefined || prev === undefined) return null;
-
-    // Determine direction based on indicator-specific logic
     switch (key) {
         case 'rsi': {
-            // RSI: buy when crossing above oversold (30) or trending up strongly
-            if (cur > prev && prev < 40) return 'BUY';
-            if (cur < prev && prev > 60) return 'SELL';
-            return null;
+            if (!allData.rsiData) return null;
+            if (allData.rsiData.confidence && allData.rsiData.confidence[i] === 0) return null;
+            const rsi = allData.rsiData.rsi[i]?.value;
+            const rsiMa = allData.rsiData.ma[i]?.value;
+            if (rsi === undefined || rsiMa === undefined) return null;
+            return rsiSignal(rsi, rsiMa);
         }
         case 'cci': {
-            // CCI: buy when rising from negative territory, sell when falling from positive
-            if (cur > prev && cur > -100) return 'BUY';
-            if (cur < prev && cur < 100) return 'SELL';
-            return null;
-        }
-        case 'macd': {
-            // MACD: signal based on value relative to 0
-            if (cur > 0 && cur > prev) return 'BUY';
-            if (cur < 0 && cur < prev) return 'SELL';
-            return null;
+            if (!allData.cciData) return null;
+            const cci = allData.cciData.cci[i]?.value;
+            const ma = allData.cciData.ma[i]?.value;
+            if (cci === undefined || ma === undefined) return null;
+            return cciSignal(cci, ma);
         }
         case 'wavetrend': {
-            // WaveTrend: buy below oversold line, sell above overbought
-            if (cur < -60 && prev < -60 && cur > prev) return 'BUY';
-            if (cur > 60 && prev > 60 && cur < prev) return 'SELL';
-            return null;
+            if (!allData.waveTrendData) return null;
+            const w1Conf = allData.waveTrendData.wt1Confidence?.[i];
+            const w2Conf = allData.waveTrendData.wt2Confidence?.[i];
+            if (w1Conf === 0 || w2Conf === 0) return null;
+            const wt1 = allData.waveTrendData.wt1[i]?.value;
+            const wt2 = allData.waveTrendData.wt2[i]?.value;
+            if (wt1 === undefined || wt2 === undefined) return null;
+            return waveTrendSignal(wt1, wt2);
+        }
+        case 'macd': {
+            if (!allData.macdData) return null;
+            const macd = allData.macdData.macd[i]?.value;
+            const signal = allData.macdData.signal[i]?.value;
+            if (macd === undefined || signal === undefined) return null;
+            return macdSignal(macd, signal);
+        }
+        case 'stochrsi': {
+            if (!allData.stochRsiData) return null;
+            const k = allData.stochRsiData.k[i]?.value;
+            const d = allData.stochRsiData.d[i]?.value;
+            if (k === undefined || d === undefined) return null;
+            return stochRsiSignal(k, d);
         }
         case 'dmi': {
-            // DMI: plusDI vs some threshold proxy — here we use the raw value
-            if (cur > 25 && cur > prev) return 'BUY';
-            if (cur < 25 && cur < prev) return 'SELL';
-            return null;
+            if (!allData.dmiData) return null;
+            const plus = allData.dmiData.plusDI[i]?.value;
+            const minus = allData.dmiData.minusDI[i]?.value;
+            if (plus === undefined || minus === undefined) return null;
+            return dmiSignal(plus, minus);
+        }
+        case 'smi': {
+            if (!allData.smiData) return null;
+            const smi = allData.smiData.smi[i]?.value;
+            const signal = allData.smiData.signal[i]?.value;
+            if (smi === undefined || signal === undefined) return null;
+            return smiSignal(smi, signal);
         }
         case 'ao': {
-            // Awesome Oscillator: direction is the signal
-            if (cur > 0 && cur > prev) return 'BUY';
-            if (cur < 0 && cur < prev) return 'SELL';
-            return null;
+            const arr = allData.aoData ?? [];
+            const cur = arr[i]?.value;
+            const prev = arr[i - 1]?.value;
+            if (cur === undefined || prev === undefined) return null;
+            return aoSignal(cur, prev);
         }
-        default: {
-            // Generic: rising = bullish, falling = bearish
-            if (cur > prev) return 'BUY';
-            if (cur < prev) return 'SELL';
-            return null;
+        case 'mfi': {
+            const arr = allData.mfiData?.mfi ?? [];
+            const cur = arr[i]?.value;
+            const prev = arr[i - 1]?.value;
+            if (cur === undefined || prev === undefined) return null;
+            return mfiSignal(cur, prev);
         }
+        case 'wpr': {
+            const arr = allData.wprData ?? [];
+            const cur = arr[i]?.value;
+            const prev = arr[i - 1]?.value;
+            if (cur === undefined || prev === undefined) return null;
+            return wprSignal(cur, prev);
+        }
+        case 'di': {
+            const arr = allData.diData ?? [];
+            const cur = arr[i]?.value;
+            if (cur === undefined) return null;
+            return diSignal(cur);
+        }
+        case 'cmf': {
+            const arr = allData.cmfData ?? [];
+            const cur = arr[i]?.value;
+            if (cur === undefined) return null;
+            return cmfSignal(cur);
+        }
+        case 'ad': {
+            const arr = allData.adData ?? [];
+            const cur = arr[i]?.value;
+            if (cur === undefined) return null;
+            // Pre-compute SMA(20) inline — avoids hot-loop slice allocations
+            let sum = 0;
+            let count = 0;
+            const start = Math.max(0, i - 20);
+            for (let j = start; j <= i; j++) {
+                const v = arr[j]?.value;
+                if (v !== undefined) { sum += v; count++; }
+            }
+            if (count < 2) return null;
+            return adSignal(cur, sum / count);
+        }
+        case 'netvol': {
+            const arr = allData.nvData ?? [];
+            const cur = arr[i]?.value;
+            if (cur === undefined) return null;
+            return netvolSignal(cur);
+        }
+        case 'madr': {
+            const arr = allData.madrData ?? [];
+            const cur = arr[i]?.value;
+            if (cur === undefined) return null;
+            return madrSignal(cur);
+        }
+        case 'alma': {
+            const arr = allData.almaData ?? [];
+            const curA = arr[i]?.value;
+            const prevA = arr[i - 1]?.value;
+            const curC = candles[i]?.close;
+            const prevC = candles[i - 1]?.close;
+            if (curA === undefined || prevA === undefined || curC === undefined || prevC === undefined) return null;
+            return almaSignal(curA, prevA, curC, prevC);
+        }
+        case 'bb': {
+            const arr = allData.bbData ?? [];
+            const curBB = arr[i];
+            const prevBB = arr[i - 1];
+            const curC = candles[i]?.close;
+            const prevC = candles[i - 1]?.close;
+            if (!curBB || !prevBB || curC === undefined || prevC === undefined) return null;
+            if (curBB.lower === undefined || prevBB.lower === undefined || curBB.upper === undefined || prevBB.upper === undefined) return null;
+            return bbSignal(curBB as unknown as BBPoint, prevBB as unknown as BBPoint, curC, prevC);
+        }
+        default:
+            return null;
     }
 }
 
@@ -124,9 +233,8 @@ function getIndicatorDirection(
 /**
  * Evaluate per-indicator per-regime historical hit-rates.
  *
- * For each regime segment identified by segmentRegimes(), looks back
- * `lookbackBars` from the segment start and checks whether each indicator
- * generated a correct directional signal.
+ * For each regime segment, looks back `lookbackBars` from the segment start
+ * and checks whether each indicator generated a correct directional signal.
  *
  * A "correct" signal means:
  *   - BUY signal before an uptrend segment → hit
@@ -137,21 +245,20 @@ function getIndicatorDirection(
  * Reports hit rates only when sampleSize >= minSampleSize (sufficientSample = true).
  *
  * @param candles - Full candle array
- * @param indicatorDataMap - Map of indicator key → pre-computed value arrays
- * @param segments - Regime segments from segmentRegimes()
+ * @param allData - Pre-computed indicator data (AllData structure)
+ * @param segments - Regime segments from segmentRegimes() or buildCausalSegments()
  * @param config - Evaluation parameters
  * @returns Array of indicator-regime performance statistics
  */
 export function evaluateIndicators(
     candles: Candle[],
-    indicatorDataMap: Record<string, number[]>,
+    allData: AllData,
     segments: RegimeSegment[],
     config: EvaluatorConfig = DEFAULT_EVALUATOR_CONFIG,
 ): IndicatorRegimePerformance[] {
     const { lookbackBars, minSampleSize, confidenceLevel } = config;
-    const indicatorKeys = Object.keys(indicatorDataMap);
 
-    if (indicatorKeys.length === 0 || segments.length === 0) {
+    if (segments.length === 0) {
         return [];
     }
 
@@ -163,7 +270,7 @@ export function evaluateIndicators(
         signalCount: number;
     }>> = {};
 
-    for (const key of indicatorKeys) {
+    for (const key of INDICATOR_KEYS) {
         accumulator[key] = {
             uptrend: { hits: 0, misses: 0, totalBarsBefore: 0, signalCount: 0 },
             downtrend: { hits: 0, misses: 0, totalBarsBefore: 0, signalCount: 0 },
@@ -187,14 +294,14 @@ export function evaluateIndicators(
 
         if (lookbackEnd <= lookbackStart) continue; // Not enough bars
 
-        for (const key of indicatorKeys) {
+        for (const key of INDICATOR_KEYS) {
             const acc = accumulator[key][seg.type];
             let foundSignal = false;
             let barsBefore = 0;
 
             // Scan backwards from segment start for the LAST signal
             for (let j = lookbackEnd; j >= lookbackStart; j--) {
-                const dir = getIndicatorDirection(key, j, indicatorDataMap);
+                const dir = getIndicatorDirection(key, j, allData, candles);
                 if (dir === null) continue;
 
                 // Record the signal and its distance to segment start
@@ -237,7 +344,7 @@ export function evaluateIndicators(
     const results: IndicatorRegimePerformance[] = [];
     const allRegimes: MarketRegime[] = ['uptrend', 'downtrend', 'ranging', 'volatile', 'neutral'];
 
-    for (const key of indicatorKeys) {
+    for (const key of INDICATOR_KEYS) {
         for (const regime of allRegimes) {
             const acc = accumulator[key][regime];
             const sampleSize = acc.hits + acc.misses;

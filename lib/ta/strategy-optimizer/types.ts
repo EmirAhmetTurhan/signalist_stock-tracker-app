@@ -126,4 +126,5 @@ export interface ProfileConfig {
     takeProfitR: number;
     useTrailingStop: boolean;
     trailAtrMult: number;
+    transactionCostPct?: number;
 }
