@@ -12,8 +12,8 @@
  *   savedstrategies, smartalerts, strategymetas, trades, wallets, watchlists
  */
 
-// clear the database : npx tsx --env-file=.env scripts/clean-db.ts --dry-run
-// then : echo yes | npx tsx --env-file=.env scripts/clean-db.ts
+// clear the database : echo yes | npx tsx --env-file=.env scripts/clean-db.ts
+
 
 
 

@@ -11,7 +11,7 @@
 //
 // Extracted and hardened from lib/ta/strategy-optimizer.ts:808-867 (detectRegime).
 
-import type { Candle } from './backtest';
+import type { Candle } from '@/lib/ta/simulation/backtest';
 import type { MarketRegime } from './types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────

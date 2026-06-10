@@ -13,8 +13,8 @@ import type { RegimeSegment } from '@/lib/ta/regime-detector';
 import { evaluateIndicators } from '@/lib/ta/indicator-evaluator';
 import { buildRegimeStrategies } from '@/lib/ta/regime-strategy-builder';
 import { buildCausalSegments } from '@/lib/ta/telemetry-utils';
-import type { Candle } from '@/lib/ta/backtest';
-import type { Timeframe } from '@/lib/ta/types';
+import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Timeframe, IndicatorParams } from '@/lib/ta/types';
 import { PARAM_DEFAULTS_NUM } from '@/lib/constants/indicator-params';
 
 export async function POST(request: NextRequest) {
@@ -90,31 +90,32 @@ export async function POST(request: NextRequest) {
         const computed = computeIndicators(truncated, allIndicatorKeys, {
             macdFast: PARAM_DEFAULTS_NUM.macd_fast ?? 12,
             macdSlow: PARAM_DEFAULTS_NUM.macd_slow ?? 26,
-            macdSig: PARAM_DEFAULTS_NUM.macd_signal ?? 9,
-            stochRsiLen: PARAM_DEFAULTS_NUM.stochrsi_len ?? 14,
-            stochLen: PARAM_DEFAULTS_NUM.stoch_len ?? 3,
+            macdSig: PARAM_DEFAULTS_NUM.macd_sig ?? 9,
+            stochRsiLen: PARAM_DEFAULTS_NUM.stoch_rsi_len ?? 14,
+            stochLen: PARAM_DEFAULTS_NUM.stoch_len ?? 14,
             stochK: PARAM_DEFAULTS_NUM.stoch_k ?? 3,
             stochD: PARAM_DEFAULTS_NUM.stoch_d ?? 3,
-            wtAvgLen: PARAM_DEFAULTS_NUM.wavetrend_avg_len ?? 10,
-            wtChannelLen: PARAM_DEFAULTS_NUM.wavetrend_channel_len ?? 21,
-            wtMaLen: PARAM_DEFAULTS_NUM.wavetrend_ma_len ?? 4,
+            wtAvgLen: PARAM_DEFAULTS_NUM.wt_avg_len ?? 10,
+            wtChannelLen: PARAM_DEFAULTS_NUM.wt_channel_len ?? 21,
+            wtMaLen: PARAM_DEFAULTS_NUM.wt_ma_len ?? 4,
             dmiDiLen: PARAM_DEFAULTS_NUM.dmi_di_len ?? 14,
             dmiAdxSmooth: PARAM_DEFAULTS_NUM.dmi_adx_smooth ?? 14,
             mfiPeriod: PARAM_DEFAULTS_NUM.mfi_period ?? 14,
-            smiLongLen: PARAM_DEFAULTS_NUM.smi_long_len ?? 20,
-            smiShortLen: PARAM_DEFAULTS_NUM.smi_short_len ?? 5,
-            smiSigLen: PARAM_DEFAULTS_NUM.smi_sig_len ?? 5,
+            smiLongLen: PARAM_DEFAULTS_NUM.smi_long_len ?? 14,
+            smiShortLen: PARAM_DEFAULTS_NUM.smi_short_len ?? 3,
+            smiSigLen: PARAM_DEFAULTS_NUM.smi_sig_len ?? 3,
             rsiLen: PARAM_DEFAULTS_NUM.rsi_len ?? 14,
-            rsiMaLen: PARAM_DEFAULTS_NUM.rsi_ma_len ?? 5,
+            rsiMaLen: PARAM_DEFAULTS_NUM.rsi_ma_len ?? 14,
             cciLen: PARAM_DEFAULTS_NUM.cci_len ?? 20,
-            cciMaLen: PARAM_DEFAULTS_NUM.cci_ma_len ?? 5,
+            cciMaLen: PARAM_DEFAULTS_NUM.cci_ma_len ?? 14,
             wprLen: PARAM_DEFAULTS_NUM.wpr_len ?? 14,
-            diLen: PARAM_DEFAULTS_NUM.di_len ?? 14,
-            diSmooth: PARAM_DEFAULTS_NUM.di_smooth ?? 3,
-            diK: PARAM_DEFAULTS_NUM.di_k ?? 3,
-            cmfLen: PARAM_DEFAULTS_NUM.cmf_len ?? 21,
-            madrLen: PARAM_DEFAULTS_NUM.madr_len ?? 14,
-            almaLen: PARAM_DEFAULTS_NUM.alma_len ?? 14,
+            diLen: PARAM_DEFAULTS_NUM.di_len ?? 10,
+            diSmooth: PARAM_DEFAULTS_NUM.di_smooth ?? 10,
+            diK: PARAM_DEFAULTS_NUM.di_k ?? 2,
+            cmfLen: PARAM_DEFAULTS_NUM.cmf_len ?? 20,
+            adLen: PARAM_DEFAULTS_NUM.ad_len ?? 21,
+            madrLen: PARAM_DEFAULTS_NUM.madr_len ?? 21,
+            almaLen: PARAM_DEFAULTS_NUM.alma_len ?? 9,
             almaOffset: PARAM_DEFAULTS_NUM.alma_offset ?? 0.85,
             almaSigma: PARAM_DEFAULTS_NUM.alma_sigma ?? 6,
             almaColor: '#ff0', almaOpacity: 1, almaWidth: 2, almaStyle: 1,
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest) {
             bbStdDev: PARAM_DEFAULTS_NUM.bb_stddev ?? 2,
             bbOffset: PARAM_DEFAULTS_NUM.bb_offset ?? 0,
             bbColor: '#0ff', bbOpacity: 0.5, bbWidth: 1,
-        } as any);
+        } as IndicatorParams);
         const allData = mapComputedToAllData(computed);
 
         // ── Causal Rejim Segmentasyonu (non-causal zigzag YERİNE) ──

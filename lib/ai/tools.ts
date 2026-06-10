@@ -20,13 +20,13 @@ import { getPortfolioData, getOpenPositions } from '@/lib/actions/trade.actions'
 import { generateTradeToken } from '@/lib/ai/token-security';
 import { computeIndicators } from '@/lib/ta/compute';
 import { generateAllSignals } from '@/lib/ta/signals';
-import { calculateWinRate } from '@/lib/ta/backtest';
+import { calculateWinRate } from '@/lib/ta/simulation/backtest';
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from '@/lib/ta/optimizer';
 import { optimizeStrategyParams, discoverStrategy, mapComputedToAllData, DISCOVERY_POOL } from '@/lib/ta/strategy-optimizer';
 import { randomUUID } from 'crypto';
 import { inngest } from '@/lib/inngest/client';
 import { stockSymbolSchema } from '@/lib/validations/schemas';
-import type { Candle } from '@/lib/ta/backtest';
+import type { Candle } from '@/lib/ta/simulation/backtest';
 
 import { INDICATOR_KEYS, DEFAULT_PARAMS } from '@/lib/constants/indicators';
 import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';

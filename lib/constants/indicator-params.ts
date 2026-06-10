@@ -64,6 +64,9 @@ export const INDICATOR_PARAMS: readonly IndicatorParamDef[] = [
     // --- CMF ---
     { key: 'cmf_len', indicator: 'cmf', defaultStr: '20', defaultNum: 20, label: 'CMF Len' },
 
+    // --- AD ---
+    { key: 'ad_len', indicator: 'ad', defaultStr: '21', defaultNum: 21, label: 'AD SMA Len' },
+
     // --- MADR ---
     { key: 'madr_len', indicator: 'madr', defaultStr: '21', defaultNum: 21, label: 'MADR Len' },
 

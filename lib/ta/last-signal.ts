@@ -7,8 +7,8 @@ import {
   dmiSignal, smiSignal, aoSignal, cciSignal,
   wprSignal, diSignal, cmfSignal, adSignal, netvolSignal,
   madrSignal, almaSignal, bbSignal, mfiSignal,
-} from './signal-registry';
-import type { SignalDir, BBPoint } from './signal-registry';
+} from '@/lib/ta/registry/signal-registry';
+import type { SignalDir, BBPoint } from '@/lib/ta/registry/signal-registry';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ export interface AllIndicatorData {
   wprData?: TimeValuePoint[];
   diData?: TimeValuePoint[];
   cmfData?: TimeValuePoint[];
-  adData?: TimeValuePoint[];
+  adData?: { ad?: TimeValuePoint[]; ma?: TimeValuePoint[] };
   nvData?: TimeValuePoint[];
   madrData?: TimeValuePoint[];
   almaData?: TimeValuePoint[];
@@ -139,13 +139,11 @@ export function getLastSignal(
       return toDisplay(cmfSignal(cur));
     }
     case 'ad': {
-      const arr = data.adData ?? [];
-      const cur = arr[arr.length - 1]?.value;
-      if (cur === undefined || arr.length < 2) return '—';
-      const slice = arr.slice(Math.max(0, arr.length - 21))
-        .map(p => p.value)
-        .filter((v): v is number => v !== undefined);
-      const sma = slice.reduce((a, b) => a + b, 0) / slice.length;
+      const adObj = data.adData;
+      if (!adObj || !adObj.ad || !adObj.ma) return '—';
+      const cur = last(adObj.ad)?.value;
+      const sma = last(adObj.ma)?.value;
+      if (cur === undefined || sma === undefined) return '—';
       return toDisplay(adSignal(cur, sma));
     }
     case 'netvol': {

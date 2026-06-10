@@ -2,7 +2,7 @@ import { INDICATOR_DETAILS } from "@/lib/constants/indicator-categories";
 import { getCandlesForInterval } from "@/lib/actions/finnhub.actions";
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";
 // SPRINT 3: timeframe-limits.ts silindi, inline yıl->gün dönüşümü kullanılıyor.
-import type { Candle } from "@/lib/ta/backtest";
+import type { Candle } from "@/lib/ta/simulation/backtest";
 
 export interface OptimizationResult {
     key: string;

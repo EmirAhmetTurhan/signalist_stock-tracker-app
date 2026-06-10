@@ -12,6 +12,10 @@ vi.mock('@/database/mongoose', () => ({
   connectToDatabase: vi.fn(),
 }));
 
+vi.mock('@/lib/constants/market-calendar', () => ({
+  isMarketOpen: () => true,
+}));
+
 vi.mock('@/database/models/wallet.model');
 vi.mock('@/database/models/position.model');
 vi.mock('@/database/models/trade.model');

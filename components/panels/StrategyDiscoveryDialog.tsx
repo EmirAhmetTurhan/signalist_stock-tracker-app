@@ -11,9 +11,10 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Timeframe } from "@/lib/ta/types";
-import DeepDiscoveryProgress from "../ta/DeepDiscoveryProgress";
-import DeepDiscoveryResults from "../ta/DeepDiscoveryResults";
-import { DISCOVERY_POOL } from "@/lib/ta/indicator-registry";
+import DeepDiscoveryProgress from "../ta/discovery/DeepDiscoveryProgress";
+import DeepDiscoveryResults from "../ta/discovery/DeepDiscoveryResults";
+import { DISCOVERY_POOL } from "@/lib/ta/registry/indicator-registry";
+import { useNotificationCenter } from "@/components/providers/NotificationCenter";
 // SPRINT 3: timeframe-limits.ts silindi, inline LIMIT_INFO kullanılıyor.
 type TimeframeWithLimits = Timeframe | string; // '1d' | '4h' only at runtime
 const LIMIT_INFO: Record<Timeframe, { maxDays: number; label: string; hasHardCap: boolean }> = {
@@ -49,6 +50,7 @@ export default function StrategyDiscoveryDialog({
     open: externalOpen,
     onOpenChange: externalOnOpenChange,
 }: StrategyDiscoveryDialogProps) {
+    const { refresh } = useNotificationCenter();
     const [internalOpen, setInternalOpen] = useState(false);
     const open = externalOpen !== undefined ? externalOpen : internalOpen;
     const setOpen = externalOnOpenChange ?? setInternalOpen;
@@ -122,6 +124,11 @@ export default function StrategyDiscoveryDialog({
             }
 
             setJobId(data.jobId);
+            try {
+                refresh();
+            } catch (e) {
+                console.warn("[StrategyDiscoveryDialog] Failed to refresh notifications:", e);
+            }
             // Close dialog after job starts so user can navigate freely
             setOpen(false);
             toast.success("Discovery started", {

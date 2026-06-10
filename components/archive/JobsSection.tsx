@@ -18,6 +18,8 @@ export default function JobsSection() {
       const res = await getAllJobs();
       if (res.success && res.jobs) {
         setJobs(res.jobs);
+        // Notify notebook section to sync archive reports list
+        window.dispatchEvent(new CustomEvent('signalist-archive-refresh'));
       }
     } catch (error) {
       console.error('Failed to fetch jobs:', error);
@@ -49,6 +51,8 @@ export default function JobsSection() {
       const res = await deleteJob(id);
       if (res.success) {
         setJobs(jobs.filter(j => j._id !== id));
+        // Notify notebook section to sync archive reports list
+        window.dispatchEvent(new CustomEvent('signalist-archive-refresh'));
       }
     } catch (error) {
       console.error('Failed to delete job:', error);

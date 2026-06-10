@@ -5,9 +5,9 @@
 //
 // Output is a structured RegimeAnalysisReport suitable for UI consumption.
 
-import type { MarketRegime } from './types';
-import type { RegimeSegment } from './regime-detector';
-import type { IndicatorRegimePerformance } from './indicator-evaluator';
+import type { MarketRegime } from '@/lib/ta/types';
+import type { RegimeSegment } from '@/lib/ta/regime-detector';
+import type { IndicatorRegimePerformance } from '@/lib/ta/indicator-evaluator';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

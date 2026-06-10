@@ -136,9 +136,9 @@ export function useTAIndicatorParams() {
     }
 
     if (show.smi) {
-      setParam('smi_long_len', smiLongLen, '20');
-      setParam('smi_short_len', smiShortLen, '5');
-      setParam('smi_sig_len', smiSigLen, '5');
+      setParam('smi_long_len', smiLongLen, PARAM_DEFAULTS_STR.smi_long_len);
+      setParam('smi_short_len', smiShortLen, PARAM_DEFAULTS_STR.smi_short_len);
+      setParam('smi_sig_len', smiSigLen, PARAM_DEFAULTS_STR.smi_sig_len);
     } else {
       ['smi_long_len', 'smi_short_len', 'smi_sig_len'].forEach((k) => params.delete(k));
     }

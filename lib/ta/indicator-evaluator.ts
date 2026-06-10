@@ -14,18 +14,18 @@
 // This ensures telemetry hit rates are measured with the SAME rules
 // the strategy engine uses. Never add custom signal logic here.
 
-import type { Candle } from './backtest';
-import type { MarketRegime } from './types';
-import type { RegimeSegment } from './regime-detector';
-import type { AllData } from './strategy-optimizer/types';
-import { getBetaPosterior } from './strategy-optimizer';
+import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { MarketRegime } from '@/lib/ta/types';
+import type { RegimeSegment } from '@/lib/ta/regime-detector';
+import type { AllData } from '@/lib/ta/strategy-optimizer/types';
+import { getBetaPosterior } from '@/lib/ta/strategy-optimizer';
 import {
     rsiSignal, cciSignal, waveTrendSignal, macdSignal,
     stochRsiSignal, dmiSignal, smiSignal, aoSignal,
     mfiSignal, wprSignal, diSignal, cmfSignal, adSignal,
     netvolSignal, madrSignal, almaSignal, bbSignal,
     type BBPoint,
-} from './signal-registry';
+} from '@/lib/ta/registry/signal-registry';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -178,19 +178,12 @@ function getIndicatorDirection(
             return cmfSignal(cur);
         }
         case 'ad': {
-            const arr = allData.adData ?? [];
-            const cur = arr[i]?.value;
-            if (cur === undefined) return null;
-            // Pre-compute SMA(20) inline — avoids hot-loop slice allocations
-            let sum = 0;
-            let count = 0;
-            const start = Math.max(0, i - 20);
-            for (let j = start; j <= i; j++) {
-                const v = arr[j]?.value;
-                if (v !== undefined) { sum += v; count++; }
-            }
-            if (count < 2) return null;
-            return adSignal(cur, sum / count);
+            const adObj = allData.adData;
+            if (!adObj) return null;
+            const cur = adObj.ad[i]?.value;
+            const curSma = adObj.ma[i]?.value;
+            if (cur === undefined || curSma === undefined) return null;
+            return adSignal(cur, curSma);
         }
         case 'netvol': {
             const arr = allData.nvData ?? [];

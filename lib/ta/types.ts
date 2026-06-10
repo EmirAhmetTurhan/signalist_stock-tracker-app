@@ -71,6 +71,7 @@ export type IndicatorParams = {
   wprLen: number;
   diLen: number; diSmooth: number; diK: number;
   cmfLen: number;
+  adLen: number;
   madrLen: number;
   almaLen: number; almaOffset: number; almaSigma: number;
   almaColor: string; almaOpacity: number; almaWidth: number; almaStyle: number;
@@ -182,7 +183,7 @@ export type ComputedIndicators = {
   wpr?: TimePoint[];
   di?: TimePoint[];
   cmf?: TimePoint[];
-  ad?: TimePoint[];
+  ad?: { ad: TimePoint[]; ma: TimePoint[] };
   netvol?: TimePoint[];
   madr?: TimePoint[];
   alma?: TimePoint[];

@@ -154,6 +154,7 @@ export async function getSavedStrategyById(userId: string, id: string) {
                 indicators: strategy.indicators,
                 mode: strategy.mode,
                 lookForward: strategy.lookForward,
+                isDiscovered: strategy.isDiscovered ?? false,
                 discoveredParams: strategy.discoveredParams ?? null,
                 discoveredWinRate: strategy.discoveredWinRate ?? null,
                 discoveredTotalSignals: strategy.discoveredTotalSignals ?? null,
@@ -186,6 +187,9 @@ export interface UpdateSavedStrategyInput {
     indicators?: string[];
     mode?: StrategyMode;
     lookForward?: number;
+    discoveredParams?: Record<string, number> | null;
+    discoveredWinRate?: number | null;
+    discoveredTotalSignals?: number | null;
 }
 
 export async function updateSavedStrategy(userId: string, id: string, input: UpdateSavedStrategyInput) {
@@ -199,6 +203,9 @@ export async function updateSavedStrategy(userId: string, id: string, input: Upd
         if (input.indicators !== undefined) updateData.indicators = input.indicators;
         if (input.mode !== undefined) updateData.mode = input.mode;
         if (input.lookForward !== undefined) updateData.lookForward = input.lookForward;
+        if (input.discoveredParams !== undefined) updateData.discoveredParams = input.discoveredParams;
+        if (input.discoveredWinRate !== undefined) updateData.discoveredWinRate = input.discoveredWinRate;
+        if (input.discoveredTotalSignals !== undefined) updateData.discoveredTotalSignals = input.discoveredTotalSignals;
 
         const result = await SavedStrategy.findOneAndUpdate(
             { _id: id, userId },
@@ -255,6 +262,7 @@ export async function addDiscoveredStrategy(
     strategy: DiscoveryStrategyResult,
     symbol: string,
     interval: string,
+    customName?: string,
 ) {
     if (!reportId) return { success: false, error: 'Report ID is required.' };
     if (!strategy?.combo?.length) return { success: false, error: 'Invalid discovery strategy.' };
@@ -267,7 +275,7 @@ export async function addDiscoveredStrategy(
         await connectToDatabase();
 
         const indicatorNames = strategy.combo.map(k => k.toUpperCase()).join(' + ');
-        const name = `Discovered -- ${indicatorNames}`;
+        const name = customName?.trim() || `Discovered -- ${indicatorNames}`;
 
         const newStrategy = await SavedStrategy.create({
             userId,
@@ -323,19 +331,14 @@ export async function togglePinStrategy(userId: string, strategyId: string) {
     try {
         await connectToDatabase();
 
-        const strategy = await SavedStrategy.findOne({ _id: strategyId, userId });
-        if (!strategy) {
-            return { success: false, error: 'Strategy not found or access denied.' };
-        }
-
         const updated = await SavedStrategy.findOneAndUpdate(
             { _id: strategyId, userId },
-            { $set: { pinned: !strategy.pinned } },
+            [{ $set: { pinned: { $not: { $ifNull: ["$pinned", false] } } } }],
             { new: true },
         );
 
         if (!updated) {
-            return { success: false, error: 'Failed to toggle pin.' };
+            return { success: false, error: 'Strategy not found or access denied.' };
         }
 
         revalidatePath('/ta');

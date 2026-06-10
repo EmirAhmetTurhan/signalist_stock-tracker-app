@@ -15,7 +15,7 @@ import AIJob from '@/database/models/ai-job.model';
 import Notification from '@/database/models/notification.model';
 import { Report } from '@/database/models/report.model';
 import type { DiscoveryStrategyResult } from '@/database/models/report.model';
-import type { Candle } from '@/lib/ta/backtest';
+import type { Candle } from '@/lib/ta/simulation/backtest';
 // SPRINT 3: 1wk kaldırıldı, timeframe-limits.ts dosyası silindi.
 // 4h ve 1d tek desteklenen timeframe'ler olduğu için clamp mantığı inline yapıldı.
 import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';
@@ -24,18 +24,18 @@ import { DEFAULT_PARAMS } from '@/lib/constants/indicators';
 import { mapComputedToAllData, runStrategyBacktest } from '@/lib/ta/strategy-optimizer';
 import type { AllData, DiscoveredStrategy, StrategyBacktestResult } from '@/lib/ta/strategy-optimizer';
 import type { SignalProfile } from '@/lib/ta/types';
-import { DISCOVERY_POOL } from '@/lib/ta/indicator-registry';
+import { DISCOVERY_POOL } from '@/lib/ta/registry/indicator-registry';
 import {
     executeBracket,
     promoteCombos,
     MASK_DENSITIES,
     ETA,
-} from '@/lib/ta/hyperband-search';
-import type { HyperbandBracketResult } from '@/lib/ta/hyperband-search';
+} from '@/lib/ta/optimization/hyperband-search';
+import type { HyperbandBracketResult } from '@/lib/ta/optimization/hyperband-search';
 import { computeMIPriorWeights } from '@/lib/ta/mutual-information';
-import { mctsSearch } from '@/lib/ta/mcts-search';
-import { buildPortfolio } from '@/lib/ta/strategy-portfolio';
-import type { StrategyPortfolio } from '@/lib/ta/strategy-portfolio';
+import { mctsSearch } from '@/lib/ta/optimization/mcts-search';
+import { buildPortfolio } from '@/lib/ta/simulation/strategy-portfolio';
+import type { StrategyPortfolio } from '@/lib/ta/simulation/strategy-portfolio';
 import { PHASE_NAMES } from '@/lib/ta/discovery-types';
 import { computeTelemetryConfidences } from '@/lib/ta/telemetry-utils';
 

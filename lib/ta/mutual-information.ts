@@ -9,8 +9,8 @@
 //   - Bias-corrected entropy estimation (Miller-Madow correction for finite samples)
 //   - Pure typed array operations — zero GC allocation in hot-path
 
-import type { Candle } from './backtest';
-import type { AllData } from './strategy-optimizer';
+import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { AllData } from '@/lib/ta/strategy-optimizer';
 
 /** Series type matching lib/ta/strategy-optimizer.ts line 28, defined locally since it's not exported. */
 type Series = { time: string | number; value?: number }[];
@@ -247,7 +247,7 @@ function extractIndicatorSeries(
     // CMF (cmfData)
     series[11] = fromSeries(data.cmfData, candleCount);
     // AD (adData)
-    series[12] = fromSeries(data.adData, candleCount);
+    series[12] = fromSeries(data.adData?.ad, candleCount);
     // NetVol (nvData)
     series[13] = fromSeries(data.nvData, candleCount);
     // MADR (madrData)

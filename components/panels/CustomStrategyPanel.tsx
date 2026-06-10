@@ -3,9 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import StrategyBacktestMonitor, { AllIndicatorData } from "@/components/panels/StrategyBacktestMonitor";
-import { loadCustomStrategies, saveCustomStrategies, AVAILABLE_INDICATORS } from "@/components/panels/CustomStrategyModal";
-import type { CustomStrategy } from "@/components/panels/CustomStrategyModal";
-import StrategyDiscoveryDialog from "@/components/panels/StrategyDiscoveryDialog";
+import { loadCustomStrategies, AVAILABLE_INDICATORS } from "@/components/strategies/constants";
+import type { CustomStrategy } from "@/components/strategies/types";
 import { getSavedStrategyById, getSavedStrategies } from "@/lib/actions/saved-strategy.actions";
 import type { Timeframe, StrategyMode } from "@/lib/ta/types";
 import ForwardTestCreator from "@/components/portfolio/ForwardTestCreator";
@@ -31,7 +30,32 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
     const [strategy, setStrategy] = useState<CustomStrategy | null>(null);
 
     useEffect(() => {
-        if (strategyParam.startsWith("custom_")) {
+        if (strategyParam === "temp") {
+            const indParam = searchParams.get("ind") || "";
+            const modeParam = (searchParams.get("mode") || "all") as StrategyMode;
+            const lookForwardParam = parseInt(searchParams.get("lookForward") || "14", 10);
+            const pParam = searchParams.get("p") || "";
+            let parsedParams: any = undefined;
+            if (pParam) {
+                try {
+                    parsedParams = JSON.parse(pParam);
+                } catch {}
+            }
+            const indicators = indParam ? indParam.split(",") : [];
+            const indicatorNames = indicators.map(k => k.toUpperCase()).join(' + ');
+            setStrategy({
+                key: "temp",
+                name: `Temporary -- ${indicatorNames}`,
+                indicators,
+                createdAt: Date.now(),
+                mode: modeParam,
+                lookForward: lookForwardParam,
+                params: parsedParams,
+                discoveryWinRate: undefined,
+                discoverySignalCount: undefined,
+                isDiscovered: true,
+            });
+        } else if (strategyParam.startsWith("custom_")) {
             // Load from localStorage
             const all = loadCustomStrategies();
             setStrategy(all.find(s => s.key === strategyParam) ?? null);
@@ -48,6 +72,7 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
                         createdAt: d.createdAt ? new Date(d.createdAt).getTime() : Date.now(),
                         mode: d.mode,
                         lookForward: d.lookForward,
+                        isDiscovered: d.isDiscovered,
                         params: d.discoveredParams ?? undefined,
                         discoveryWinRate: d.discoveredWinRate ?? undefined,
                         discoverySignalCount: d.discoveredTotalSignals ?? undefined,
@@ -59,9 +84,63 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
         } else {
             setStrategy(null);
         }
-    }, [strategyParam, userId]);
+    }, [strategyParam, userId, searchParams]);
 
-    if (!strategy || !strategyParam.startsWith("custom_") && !strategyParam.startsWith("saved_")) return null;
+    const handleOptimized = useCallback(async (params: Record<string, number>, winRate: number, totalSignals: number) => {
+        if (!strategy || !strategyParam.startsWith("saved_") || !userId) return;
+        const mongoId = strategyParam.replace("saved_", "");
+        
+        try {
+            const { updateSavedStrategy } = await import("@/lib/actions/saved-strategy.actions");
+            const res = await updateSavedStrategy(userId, mongoId, {
+                discoveredParams: params,
+                discoveredWinRate: winRate,
+                discoveredTotalSignals: totalSignals
+            });
+            if (res.success) {
+                setStrategy(prev => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        params,
+                        discoveryWinRate: winRate,
+                        discoverySignalCount: totalSignals
+                    };
+                });
+            }
+        } catch (err) {
+            console.error("Failed to update optimized params in db:", err);
+        }
+    }, [strategy, strategyParam, userId]);
+
+    const handleReset = useCallback(async () => {
+        if (!strategy || !strategyParam.startsWith("saved_") || !userId) return;
+        const mongoId = strategyParam.replace("saved_", "");
+        
+        try {
+            const { updateSavedStrategy } = await import("@/lib/actions/saved-strategy.actions");
+            const res = await updateSavedStrategy(userId, mongoId, {
+                discoveredParams: null,
+                discoveredWinRate: null,
+                discoveredTotalSignals: null
+            });
+            if (res.success) {
+                setStrategy(prev => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        params: undefined,
+                        discoveryWinRate: undefined,
+                        discoverySignalCount: undefined
+                    };
+                });
+            }
+        } catch (err) {
+            console.error("Failed to reset optimized params in db:", err);
+        }
+    }, [strategy, strategyParam, userId]);
+
+    if (!strategy || (!strategyParam.startsWith("custom_") && !strategyParam.startsWith("saved_") && strategyParam !== "temp")) return null;
 
     const indicators = strategy.indicators;
     const signals = indicators.map(k => getLastSignal(k, allData, candles));
@@ -73,7 +152,9 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
 
     // Decision string: "BUY" | "SELL" | "CONFLICT"
     let decision: "BUY" | "SELL" | "CONFLICT";
-    if (mode === 'majority') {
+    if (total === 0) {
+        decision = "CONFLICT";
+    } else if (mode === 'majority') {
         if (buyCount > total / 2) decision = "BUY";
         else if (sellCount > total / 2) decision = "SELL";
         else decision = "CONFLICT";
@@ -93,42 +174,23 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
                 <div className="flex items-center gap-2 flex-wrap">
                     <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
                     <span className="text-base font-semibold text-emerald-200">{strategy.name}</span>
+                    {strategy.isDiscovered ? (
+                        <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase rounded bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                            Discovered
+                        </span>
+                    ) : (
+                        <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                            Manual
+                        </span>
+                    )}
                     <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full border border-gray-700">
                         {strategyParam.startsWith("saved_") ? 'Saved' : 'Custom'} Strategy — {indicators.length} indicators, {mode === 'majority' ? 'majority (>50%)' : 'all must agree'}
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <StrategyDiscoveryDialog
-                        candles={candles}
-                        allData={allData}
-                        symbol={symbol}
-                        interval={interval}
-                        mode={mode}
-                        userId={userId}
-                        onApply={(discovered) => {
-                            // Save discovered strategy with ALL params to localStorage and navigate
-                            const newStrategy: CustomStrategy = {
-                                key: `custom_${Date.now()}`,
-                                name: `Discovered — ${discovered.indicators.map(k =>
-                                    AVAILABLE_INDICATORS.find(i => i.key === k)?.label ?? k.toUpperCase()
-                                ).join(' + ')}`,
-                                indicators: discovered.indicators,
-                                createdAt: Date.now(),
-                                mode: mode,
-                                lookForward: Math.round(discovered.params.lookForward ?? 14),
-                                params: { ...discovered.params },
-                                discoveryWinRate: discovered.winRate,
-                                discoverySignalCount: discovered.totalSignals ?? 0,
-                            };
-                            const existing = loadCustomStrategies();
-                            saveCustomStrategies([newStrategy, ...existing]);
-                            const params = new URLSearchParams(searchParams.toString());
-                            params.set('strategy', newStrategy.key);
-                            router.push(`${pathname}?${params.toString()}`);
-                        }}
-                    />
                     <StrategyBacktestMonitor
                         strategyName="CUSTOM"
+                        symbol={symbol}
                         candles={candles}
                         customIndicators={indicators}
                         allData={allData}
@@ -139,6 +201,8 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
                         discoveryWinRate={strategy.discoveryWinRate}
                         discoverySignalCount={strategy.discoverySignalCount}
                         signalProfile="TrendFollower"
+                        onOptimized={handleOptimized}
+                        onReset={handleReset}
                     />
                 </div>
             </div>

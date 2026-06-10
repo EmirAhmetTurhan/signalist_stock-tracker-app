@@ -3,7 +3,7 @@
 // Ensures Top 10 results span different indicator counts (2-ind, 3-ind, 4-ind...)
 // instead of all results having the same indicator count.
 
-import type { SurrogateResult, DiverseStrategy, DiversityBadge } from './discovery-types';
+import type { SurrogateResult, DiverseStrategy, DiversityBadge } from '@/lib/ta/discovery-types';
 
 // ─── Configuration ──────────────────────────────────────────────────────────────
 

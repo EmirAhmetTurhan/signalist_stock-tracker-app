@@ -5,4 +5,4 @@ export { generateAllSignals, computeOverall, addSignal } from './signals';
 export type { SignalMap, OverallResult } from './signals';
 export type { SignalLabel, IndicatorParams } from './types';
 export { SIGNAL_STYLES } from './types';
-export * from './signal-registry';
+export * from './registry/signal-registry';

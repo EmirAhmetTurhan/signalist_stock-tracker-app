@@ -1,10 +1,10 @@
 import dynamicImport from "next/dynamic";
 import { redirect } from "next/navigation";
-import TASearch from "@/components/ta/TASearch";
-import TAIndicatorsButton from "@/components/ta/TAIndicatorsButton";
-import TATimeframes from "@/components/ta/TATimeframes";
-import TAIndicatorSettings from "@/components/ta/TAIndicatorSettings";
-import StockLogo from "@/components/ta/StockLogo";
+import TASearch from "@/components/ta/controls/TASearch";
+import TAIndicatorsButton from "@/components/ta/controls/TAIndicatorsButton";
+import TATimeframes from "@/components/ta/panels/TATimeframes";
+import TAIndicatorSettings from "@/components/ta/panels/TAIndicatorSettings";
+import StockLogo from "@/components/ta/common/StockLogo";
 import { auth } from "@/lib/better-auth/auth";
 import { headers } from "next/headers";
 import ForwardTestCreator from "@/components/portfolio/ForwardTestCreator";
@@ -30,19 +30,19 @@ const CHART_REGISTRY = {
   madr: dynamicImport(() => import("@/components/charts/LightweightMADRChart")),
 } as const;
 import TradingViewWidget from "@/components/charts/TradingViewWidget";
-import IndicatorSection from "@/components/ta/IndicatorSection";
-import TAStrategiesButton from "@/components/ta/TAStrategiesButton";
+import IndicatorSection from "@/components/ta/panels/IndicatorSection";
+import TAStrategiesButton from "@/components/ta/controls/TAStrategiesButton";
 import StrategyBacktestMonitor from "@/components/panels/StrategyBacktestMonitor";
 import CustomStrategyPanel from "@/components/panels/CustomStrategyPanel";
 import CandlePatternPanel from "@/components/panels/CandlePatternPanel";
 import HistoricalFractalsPanel from "@/components/panels/HistoricalFractalsPanel";
 import SRPanel from "@/components/panels/SRPanel";
-import MarketTelemetryPanel from "@/components/ta/MarketTelemetryPanel";
+import MarketTelemetryPanel from "@/components/ta/panels/MarketTelemetryPanel";
 import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 import { searchStocks, getCandlesForInterval } from "@/lib/actions/finnhub.actions";
 import { CANDLE_CHART_WIDGET_CONFIG } from "@/lib/constants";
 import { computeIndicators, parseActiveIndicators, generateAllSignals } from "@/lib/ta";
-import type { ComputedIndicators } from "@/lib/ta";
+import type { ComputedIndicators, Timeframe } from "@/lib/ta/types";
 import { extractIndicatorParams } from "@/lib/constants/indicator-params";
 // SPRINT 3: timeframe-limits.ts silindi. Sadece 4h ve 1d destekleniyor
 // (10 yıl = 3650 gün cap). Inline clamp yeterli.
@@ -97,13 +97,15 @@ const TAPage = async (props: TAProps) => {
     const params = extractIndicatorParams(effectiveSearch);
 
     // Apply discovered strategy param overrides from URL (p= param)
+    // Case-insensitive matching: toLowerCase() ensures RSI_LEN and rsi_len both match registry keys
     const pParam = search.p;
     if (pParam) {
         try {
             const overrides = JSON.parse(pParam) as Record<string, number>;
             for (const [key, value] of Object.entries(overrides)) {
-                if (params[key] !== undefined && typeof value === 'number') {
-                    params[key] = value;
+                const lowerKey = key.toLowerCase();
+                if (params[lowerKey] !== undefined && typeof value === 'number') {
+                    params[lowerKey] = value;
                 }
             }
         } catch {
@@ -144,6 +146,7 @@ const TAPage = async (props: TAProps) => {
         wprLen: Number(p.wpr_len),
         diLen: Number(p.di_len), diSmooth: Number(p.di_smooth), diK: Number(p.di_k),
         cmfLen: Number(p.cmf_len),
+        adLen: Number(p.ad_len),
         madrLen: Number(p.madr_len),
         almaLen: Number(p.alma_len), almaOffset: Number(p.alma_offset), almaSigma: Number(p.alma_sigma),
         almaColor: String(p.alma_color), almaOpacity: Number(p.alma_opacity), almaWidth: Number(p.alma_width), almaStyle: Number(p.alma_style),
@@ -199,7 +202,7 @@ const TAPage = async (props: TAProps) => {
         { key: 'wpr', data: wprData, name: `Williams %R (${ip.wprLen})`, btName: 'WPR', Chart: CHART_REGISTRY.wpr, chartProps: (d) => ({ data: d }) },
         { key: 'di', data: diData, name: `Demand Index (${ip.diLen}, ${ip.diK}, ${ip.diSmooth})`, btName: 'DI', Chart: CHART_REGISTRY.di, chartProps: (d) => ({ data: d }) },
         { key: 'cmf', data: cmfData, name: `CMF (${ip.cmfLen})`, btName: 'CMF', Chart: CHART_REGISTRY.cmf, chartProps: (d) => ({ data: d }) },
-        { key: 'ad', data: adData, name: 'A/D', btName: 'AD', Chart: CHART_REGISTRY.ad, chartProps: (d) => ({ data: d }) },
+        { key: 'ad', data: adData, name: 'A/D', btName: 'AD', Chart: CHART_REGISTRY.ad, chartProps: (d) => ({ ad: d.ad, ma: d.ma }) },
         { key: 'netvol', data: nvData, name: 'Net Volume', btName: 'NETVOL', Chart: CHART_REGISTRY.netvol, chartProps: (d) => ({ data: d }) },
         { key: 'madr', data: madrData, name: `MADR (${ip.madrLen})`, btName: 'MADR', Chart: CHART_REGISTRY.madr, chartProps: (d) => ({ data: d }) },
     ];
@@ -312,7 +315,7 @@ const TAPage = async (props: TAProps) => {
                                             <span className="text-base font-semibold text-violet-200">Strategy: RSI + CCI + WaveTrend</span>
                                             <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full border border-gray-700">3 indicators agree → trade signal</span>
                                         </div>
-                                        <StrategyBacktestMonitor strategyName="RSI_CCI_WT" candles={candles} rsiData={rsiData} cciData={cciData} waveTrendData={waveTrendData} />
+                                        <StrategyBacktestMonitor strategyName="RSI_CCI_WT" symbol={symbol} interval={intervalParam as Timeframe} candles={candles} rsiData={rsiData} cciData={cciData} waveTrendData={waveTrendData} />
                                     </div>
                                     <div className="grid grid-cols-4 gap-2 text-xs text-gray-400">
                                         <div className="bg-gray-900/60 rounded-lg p-2.5 border border-gray-800">
@@ -366,7 +369,7 @@ const TAPage = async (props: TAProps) => {
 
                             <CustomStrategyPanel
                                 candles={candles}
-                                allData={{ rsiData, cciData, waveTrendData, macdData, stochRsiData, dmiData, smiData, aoData: aoData ? (aoData as { time: string | number; value: number }[]) : undefined, mfiData: mfiData ? { mfi: mfiData.mfi } : undefined, wprData: wprData ? (wprData as { time: string | number; value: number }[]) : undefined, diData: diData ? (diData as { time: string | number; value: number }[]) : undefined, cmfData: cmfData ? (cmfData as { time: string | number; value: number }[]) : undefined, adData: adData ? (adData as { time: string | number; value: number }[]) : undefined, nvData: nvData ? (nvData as { time: string | number; value: number }[]) : undefined, madrData: madrData ? (madrData as { time: string | number; value: number }[]) : undefined, almaData: almaData ? (almaData as { time: string | number; value: number }[]) : undefined, bbData }}
+                                allData={{ rsiData, cciData, waveTrendData, macdData, stochRsiData, dmiData, smiData, aoData: aoData ? (aoData as { time: string | number; value: number }[]) : undefined, mfiData: mfiData ? { mfi: mfiData.mfi } : undefined, wprData: wprData ? (wprData as { time: string | number; value: number }[]) : undefined, diData: diData ? (diData as { time: string | number; value: number }[]) : undefined, cmfData: cmfData ? (cmfData as { time: string | number; value: number }[]) : undefined, adData: adData ? { ad: adData.ad as { time: string | number; value: number }[], ma: adData.ma as { time: string | number; value: number }[] } : undefined, nvData: nvData ? (nvData as { time: string | number; value: number }[]) : undefined, madrData: madrData ? (madrData as { time: string | number; value: number }[]) : undefined, almaData: almaData ? (almaData as { time: string | number; value: number }[]) : undefined, bbData }}
                                 symbol={symbol || ""}
                                 interval={(intervalParam as "1d" | "4h") || "1d"}
                                 userId={userId || ""}

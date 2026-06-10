@@ -26,10 +26,14 @@ export type SMIPoint = {
 };
 
 /** Rolling highest value over lookback period */
-function rollingHighest(values: number[], period: number): number[] {
-    const result: number[] = [];
+function rollingHighest(values: number[], period: number): (number | undefined)[] {
+    const result: (number | undefined)[] = [];
     for (let i = 0; i < values.length; i++) {
-        const start = Math.max(0, i - period + 1);
+        if (i < period - 1) {
+            result.push(undefined);
+            continue;
+        }
+        const start = i - period + 1;
         let max = -Infinity;
         for (let j = start; j <= i; j++) {
             if (values[j] > max) max = values[j];
@@ -40,10 +44,14 @@ function rollingHighest(values: number[], period: number): number[] {
 }
 
 /** Rolling lowest value over lookback period */
-function rollingLowest(values: number[], period: number): number[] {
-    const result: number[] = [];
+function rollingLowest(values: number[], period: number): (number | undefined)[] {
+    const result: (number | undefined)[] = [];
     for (let i = 0; i < values.length; i++) {
-        const start = Math.max(0, i - period + 1);
+        if (i < period - 1) {
+            result.push(undefined);
+            continue;
+        }
+        const start = i - period + 1;
         let min = Infinity;
         for (let j = start; j <= i; j++) {
             if (values[j] < min) min = values[j];

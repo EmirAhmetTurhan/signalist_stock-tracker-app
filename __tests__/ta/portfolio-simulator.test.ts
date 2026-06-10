@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { runPortfolioSimulation, resampleCurve, type PortfolioSimConfig, type PortfolioSignalEntry } from '@/lib/ta/portfolio-simulator';
-import type { Candle } from '@/lib/ta/backtest';
+import { runPortfolioSimulation, resampleCurve, type PortfolioSimConfig, type PortfolioSignalEntry } from '@/lib/ta/simulation/portfolio-simulator';
+import type { Candle } from '@/lib/ta/simulation/backtest';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

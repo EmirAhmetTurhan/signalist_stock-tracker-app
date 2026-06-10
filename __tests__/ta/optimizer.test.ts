@@ -1,20 +1,112 @@
-// __tests__/optimizer-sprint2.test.ts
-// SPRINT 2 / B2 — Timeframe-aware lookback range için unit testler.
-// SPRINT 3: 1wk kaldırıldı, sadece 1d ve 4h testleri korundu.
-
 import { describe, it, expect } from 'vitest';
-import { rangeForTimeframe, OPTIMIZABLE_INDICATORS } from '@/lib/ta/optimizer';
+import { rangeForTimeframe, findBestParameter, OPTIMIZABLE_INDICATORS } from '@/lib/ta/optimizer';
+import type { Candle } from '@/lib/ta/simulation/backtest';
+
+// Deterministic candle generator (no Math.random) for reproducible tests
+function makeCandles(count: number, trend: 'up' | 'down' | 'flat' = 'up'): Candle[] {
+    const candles: Candle[] = [];
+    let price = 100;
+    for (let i = 0; i < count; i++) {
+        const open = price;
+        if (trend === 'up') price += 1 + (i % 5) * 0.1;
+        else if (trend === 'down') price -= 1 + (i % 5) * 0.1;
+        else price = 100 + Math.sin(i * 0.1) * 0.5;
+        const close = price;
+        candles.push({
+            time: i + 1,
+            open: Math.min(open, close),
+            high: Math.max(open, close) + 0.1,
+            low: Math.min(open, close) - 0.1,
+            close,
+            volume: 1000,
+        });
+    }
+    return candles;
+}
+
+describe('findBestParameter', () => {
+    it('returns null for unknown indicator name', () => {
+        const candles = makeCandles(200, 'up');
+        const result = findBestParameter('UNKNOWN', candles);
+        expect(result).toBeNull();
+    });
+
+    it('returns bestVal as first range value with winRate 0 for empty candles', () => {
+        const result = findBestParameter('RSI', []);
+        expect(result).not.toBeNull();
+        expect(result!.bestWinRate).toBe(0);
+        expect(result!.bestVal).toBe(5);
+    });
+
+    it('returns zero winRate for insufficient candles', () => {
+        const candles = makeCandles(5, 'flat');
+        const result = findBestParameter('RSI', candles);
+        expect(result).not.toBeNull();
+        expect(result!.bestWinRate).toBe(0);
+        expect(result!.bestVal).toBe(5);
+    });
+
+    it('RSI finds best parameter with up-trend data', () => {
+        const candles = makeCandles(300, 'up');
+        const result = findBestParameter('RSI', candles, { lookForward: 5 });
+        expect(result).not.toBeNull();
+        expect(result!.bestVal).toBeGreaterThanOrEqual(2);
+        expect(result!.bestVal).toBeLessThanOrEqual(40);
+        expect(result!.bestWinRate).toBeGreaterThanOrEqual(0);
+    });
+
+    it('RSI returns lower winRate with down-trend data', () => {
+        const candles = makeCandles(300, 'down');
+        const result = findBestParameter('RSI', candles, { lookForward: 5 });
+        expect(result).not.toBeNull();
+        expect(result!.bestVal).toBeGreaterThanOrEqual(2);
+        expect(result!.bestWinRate).toBeGreaterThanOrEqual(0);
+    });
+
+    it('MACD optimization works with up-trend data', () => {
+        const candles = makeCandles(300, 'up');
+        const result = findBestParameter('MACD', candles, { lookForward: 5 });
+        expect(result).not.toBeNull();
+        expect(result!.bestVal).toBeGreaterThanOrEqual(5);
+        expect(result!.bestVal).toBeLessThanOrEqual(40);
+    });
+
+    it('CCI optimization works with up-trend data', () => {
+        const candles = makeCandles(300, 'up');
+        const result = findBestParameter('CCI', candles, { lookForward: 5 });
+        expect(result).not.toBeNull();
+        expect(result!.bestVal).toBeGreaterThanOrEqual(5);
+        expect(result!.bestVal).toBeLessThanOrEqual(40);
+    });
+
+    it('StochRSI optimization works with up-trend data', () => {
+        const candles = makeCandles(300, 'up');
+        const result = findBestParameter('STOCHRSI', candles, { lookForward: 5 });
+        expect(result).not.toBeNull();
+        expect(result!.bestVal).toBeGreaterThanOrEqual(5);
+        expect(result!.bestVal).toBeLessThanOrEqual(40);
+    });
+
+    it('all OPTIMIZABLE_INDICATORS run without error', () => {
+        const candles = makeCandles(200, 'up');
+        for (const name of Object.keys(OPTIMIZABLE_INDICATORS)) {
+            const result = findBestParameter(name, candles, { lookForward: 5 });
+            expect(result).not.toBeNull();
+            expect(result!.bestWinRate).toBeGreaterThanOrEqual(0);
+        }
+    });
+});
 
 describe('SPRINT 2 / B2 — rangeForTimeframe', () => {
     describe('Default range (1d, undefined)', () => {
         it('1d → OPTIMIZABLE_INDICATORS default range döner', () => {
             const range = rangeForTimeframe('RSI', '1d');
-            expect(range).toEqual([7, 28]);
+            expect(range).toEqual([5, 40]);
         });
 
         it('undefined → default range döner', () => {
             const range = rangeForTimeframe('RSI', undefined);
-            expect(range).toEqual([7, 28]);
+            expect(range).toEqual([5, 40]);
         });
     });
 
@@ -77,14 +169,7 @@ describe('SPRINT 2 / B2 — rangeForTimeframe', () => {
         });
 
         it('"BB" alias → BOLLINGER range', () => {
-            // BB alias to BOLLINGER (already in OPTIMIZABLE_INDICATORS)
             const range = rangeForTimeframe('BB', '4h');
-            // rangeForTimeframe checks RANGES_4H[indicator.toUpperCase()], so 'BB' is its own key
-            // Since 'BB' not in RANGES_4H, falls back to default BOLLINGER range [10, 30]
-            // Actually that's not quite right — the default OPTIMIZABLE_INDICATORS['BOLLINGER'].range is [10, 30]
-            // So BB 4h returns [10, 30] (fallback to default entry.range)
-            // Hmm, this depends on whether we add 'BB' to RANGES_4H. We didn't.
-            // So [10, 30] is the result (default BOLLINGER range).
             expect(range).toBeDefined();
         });
     });
@@ -98,8 +183,6 @@ describe('SPRINT 2 / B2 — rangeForTimeframe', () => {
 
     describe('Integration with OPTIMIZABLE_INDICATORS', () => {
         it('Tüm OPTIMIZABLE_INDICATORS için çağrılabilir', () => {
-            // SPRINT 3: 1wk kaldırıldı, sadece 1d ve 4h test edilir.
-            // 17 gösterge × 2 timeframe = 34 çağrı → hepsi valid range dönmeli
             for (const key of Object.keys(OPTIMIZABLE_INDICATORS)) {
                 for (const tf of ['1d', '4h'] as const) {
                     const range = rangeForTimeframe(key, tf);

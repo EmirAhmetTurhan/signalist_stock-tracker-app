@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { AVAILABLE_INDICATORS } from "@/components/panels/CustomStrategyModal";
+import { AVAILABLE_INDICATORS } from "@/components/strategies/constants";
 import type { StrategyMode, Timeframe } from "@/lib/ta/types";
 import {
     Dialog,
@@ -15,7 +15,11 @@ import { History, CheckCircle2, XCircle, TrendingUp, TrendingDown, Loader2, Zap,
 import { optimizeStrategyAction } from "@/lib/actions/optimize-strategy.actions";
 import { runBacktestAction } from "@/lib/actions/backtest.actions";
 
-type Candle = { time: string | number; close: number; high: number; low: number };
+import type { AllData } from "@/lib/ta/strategy-optimizer/types";
+import type { Candle } from "@/lib/ta/simulation/backtest";
+
+export interface AllIndicatorData extends AllData {}
+
 type Series = { time: string | number; value?: number }[];
 
 export type HistoryItem = {
@@ -31,28 +35,9 @@ export type HistoryItem = {
     realizedReturn?: number;
 };
 
-export interface AllIndicatorData {
-    rsiData?: { rsi: Series; ma: Series };
-    cciData?: { cci: Series; ma: Series };
-    waveTrendData?: { wt1: Series; wt2: Series; crosses?: { time: string | number; cross: 1 | -1 }[] };
-    macdData?: { macd: Series; signal: Series; histogram: (Series[number] & { color?: string })[] };
-    stochRsiData?: { k: Series; d: Series };
-    dmiData?: { plusDI: Series; minusDI: Series; adx: Series };
-    smiData?: { smi: Series; signal: Series; histogram?: (Series[number] & { color?: string })[] };
-    aoData?: Series;
-    mfiData?: { mfi: Series };
-    wprData?: Series;
-    diData?: Series;
-    cmfData?: Series;
-    adData?: Series;
-    nvData?: Series;
-    madrData?: Series;
-    almaData?: Series;
-    bbData?: { time: string | number; basis?: number; upper?: number; lower?: number }[];
-}
-
 interface StrategyBacktestMonitorProps {
     strategyName: string;
+    symbol: string;
     candles: Candle[];
     rsiData?: AllIndicatorData["rsiData"];
     cciData?: AllIndicatorData["cciData"];
@@ -68,10 +53,13 @@ interface StrategyBacktestMonitorProps {
     /** Signal profile for backtest sensitivity. Defaults to 'TrendFollower'
      *  to match Phase 4.5 full-fidelity backtest in discovery-deep-search. */
     signalProfile?: 'TrendFollower' | 'SwingTrader' | 'Aggressive' | 'Balanced' | 'Conservative';
+    onOptimized?: (params: Record<string, number>, winRate: number, totalSignals: number) => void;
+    onReset?: () => void;
 }
 
 export default function StrategyBacktestMonitor({
     strategyName,
+    symbol,
     candles,
     rsiData,
     cciData,
@@ -85,6 +73,8 @@ export default function StrategyBacktestMonitor({
     discoveryWinRate,
     discoverySignalCount,
     signalProfile = 'TrendFollower',
+    onOptimized,
+    onReset,
 }: StrategyBacktestMonitorProps) {
     const [stats, setStats] = useState<{
         winRate: number;
@@ -106,10 +96,13 @@ export default function StrategyBacktestMonitor({
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [optimizedParams, setOptimizedParams] = useState<Record<string, number> | null>(initialOptimizedParams ?? null);
-    const [optimizedWinRate, setOptimizedWinRate] = useState<number>(0);
+    const [optimizedWinRate, setOptimizedWinRate] = useState<number>(discoveryWinRate ?? 0);
 
     const isCustom = strategyName === "CUSTOM" && customIndicators && allData;
     const isAIDiscovered = !!(discoveryWinRate && discoveryWinRate > 0);
+
+    // Ref to track if we just successfully completed an optimization step
+    const hasJustOptimized = useRef(false);
 
     const handleOptimize = useCallback(async () => {
         if (!candles || candles.length === 0) return;
@@ -121,19 +114,14 @@ export default function StrategyBacktestMonitor({
                 ? customIndicators
                 : ['rsi', 'cci', 'wavetrend'];
 
-            const sourceData = isCustom && allData
-                ? allData
-                : { rsiData, cciData, waveTrendData };
-            const dataForOpt = sanitizeAllData(sourceData, indicators);
-
             const result = await optimizeStrategyAction(
-                candles,
-                dataForOpt,
+                symbol,
                 indicators,
-                { interval, mode }
+                { interval, mode, strategyName }
             );
 
             if (result.iterations > 0) {
+                hasJustOptimized.current = true;
                 setOptimizedParams(result.bestParams);
                 setOptimizedWinRate(result.bestWinRate);
                 setAnimatedPercent(result.bestWinRate);
@@ -145,50 +133,33 @@ export default function StrategyBacktestMonitor({
         } finally {
             setIsOptimizing(false);
         }
-    }, [candles, isCustom, customIndicators, rsiData, cciData, waveTrendData, interval, mode]);
-
-    function sanitizeAllData(data: AllIndicatorData, indicators: string[]): any {
-        const result: any = {};
-        for (const key of indicators) {
-            switch (key) {
-                case 'rsi': if (data.rsiData) result.rsiData = data.rsiData; break;
-                case 'cci': if (data.cciData) result.cciData = data.cciData; break;
-                case 'wavetrend': if (data.waveTrendData) result.waveTrendData = data.waveTrendData; break;
-                case 'macd': if (data.macdData) result.macdData = data.macdData; break;
-                case 'stochrsi': if (data.stochRsiData) result.stochRsiData = data.stochRsiData; break;
-                case 'dmi': if (data.dmiData) result.dmiData = data.dmiData; break;
-                case 'smi': if (data.smiData) result.smiData = data.smiData; break;
-                case 'ao': if (data.aoData) result.aoData = data.aoData; break;
-                case 'mfi': if (data.mfiData) result.mfiData = data.mfiData; break;
-                case 'wpr': if (data.wprData) result.wprData = data.wprData; break;
-                case 'di': if (data.diData) result.diData = data.diData; break;
-                case 'cmf': if (data.cmfData) result.cmfData = data.cmfData; break;
-                case 'ad': if (data.adData) result.adData = data.adData; break;
-                case 'netvol': if (data.nvData) result.nvData = data.nvData; break;
-                case 'madr': if (data.madrData) result.madrData = data.madrData; break;
-                case 'alma': if (data.almaData) result.almaData = data.almaData; break;
-                case 'bb': if (data.bbData) result.bbData = data.bbData; break;
-            }
-        }
-        return JSON.parse(JSON.stringify(result));
-    }
+    }, [candles, symbol, isCustom, customIndicators, interval, mode, strategyName]);
 
     const handleResetParams = useCallback(() => {
         if (initialOptimizedParams) {
             setOptimizedParams(initialOptimizedParams);
-            setOptimizedWinRate(0);
+            setOptimizedWinRate(discoveryWinRate ?? 0);
         } else {
             setOptimizedParams(null);
             setOptimizedWinRate(0);
         }
         // Always animate back to the live backtest result
         setAnimatedPercent(stats.winRate);
-    }, [initialOptimizedParams, stats.winRate]);
+
+        if (onReset) {
+            onReset();
+        }
+    }, [initialOptimizedParams, discoveryWinRate, stats.winRate, onReset]);
 
     // ── Memoize customIndicators to prevent infinite useEffect re-runs
     const customIndicatorsKey = useMemo(
         () => (customIndicators ? JSON.stringify([...customIndicators].sort()) : ''),
         [customIndicators],
+    );
+
+    const optimizedParamsKey = useMemo(
+        () => (optimizedParams ? JSON.stringify(optimizedParams) : ''),
+        [optimizedParams],
     );
 
     // ── Server-side backtest using DST fusion + path-aware engine ──
@@ -200,19 +171,17 @@ export default function StrategyBacktestMonitor({
 
         async function runBacktest() {
             try {
-                const builtInData = allData ?? { rsiData, cciData, waveTrendData };
-
                 const result = await runBacktestAction(
-                    candles,
+                    symbol,
                     strategyName,
-                    builtInData as any,
                     {
-                        lookForward: config.lookForward,
+                        lookForward: optimizedParams?.lookForward ?? config.lookForward,
                         interval,
                         customIndicators: customIndicators,
                         mode,
                         signalProfile,
                         evaluationMode: 'pathaware',
+                        parameterOverrides: optimizedParams ?? undefined,
                     }
                 );
 
@@ -243,6 +212,14 @@ export default function StrategyBacktestMonitor({
                     cagr: result.cagr,
                 });
 
+                // Trigger onOptimized once we have computed the exact winRate and totalSignals
+                if (hasJustOptimized.current) {
+                    hasJustOptimized.current = false;
+                    if (onOptimized && optimizedParams) {
+                        onOptimized(optimizedParams, result.winRate, result.totalSignals);
+                    }
+                }
+
                 // Animate circle toward the LIVE backtest win rate (not discovery static value)
                 const targetRate = result.winRate;
                 const timer = setTimeout(() => setAnimatedPercent(targetRate), 300);
@@ -260,7 +237,7 @@ export default function StrategyBacktestMonitor({
         runBacktest();
 
         return () => { cancelled = true; };
-    }, [strategyName, candles, config.lookForward, interval, mode, customIndicatorsKey]);
+    }, [symbol, strategyName, candles, config.lookForward, interval, mode, customIndicatorsKey, optimizedParamsKey, signalProfile, onOptimized]);
 
     // ── UI ────────────────────────────────────────────────────────
     // displayRate always reflects the LIVE backtest result (stats.winRate).
@@ -422,37 +399,36 @@ export default function StrategyBacktestMonitor({
                 </div>
 
                 {optimizedParams && (
-                    <div className="flex flex-wrap items-center gap-1 mt-1 bg-violet-900/20 border border-violet-800/30 rounded px-2 py-1">
-                        <Zap className="w-3 h-3 text-amber-400 flex-shrink-0" />
-                        <span className="text-[9px] text-amber-300 font-semibold uppercase tracking-wider mr-1">Optimized</span>
-                        {Object.entries(optimizedParams).map(([key, val]) => (
-                            <span key={key} className="text-[9px] bg-amber-900/40 text-amber-300 border border-amber-700/50 px-1.5 py-0.5 rounded-full">
-                                {key}:{val}
-                            </span>
-                        ))}
-                        <span className="text-[9px] bg-emerald-900/40 text-emerald-300 border border-emerald-700/50 px-1.5 py-0.5 rounded-full font-bold ml-1">
-                            {optimizedWinRate.toFixed(1)}%
-                        </span>
+                    <div className="flex items-center gap-1.5 mt-1">
+                        <div className="relative group flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded px-2 py-0.5 text-[10px] font-medium cursor-help select-none">
+                            <Zap className="w-3 h-3 text-amber-400 flex-shrink-0 animate-pulse" />
+                            <span>Optimized Settings</span>
+                            
+                            {/* Hover Tooltip Popup */}
+                            <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-gray-950/95 border border-gray-800 text-gray-200 rounded-lg p-2.5 text-xs whitespace-nowrap shadow-2xl z-50 backdrop-blur-sm min-w-[140px]">
+                                <div className="font-bold text-[10px] text-amber-300 border-b border-gray-800 pb-1 mb-1.5 uppercase tracking-wider">
+                                    Parameter Values
+                                </div>
+                                <div className="flex flex-col gap-1 font-mono text-[10px]">
+                                    {Object.entries(optimizedParams).map(([key, val]) => (
+                                        <div key={key} className="flex justify-between gap-4">
+                                            <span className="text-gray-400 uppercase">{key}:</span>
+                                            <span className="text-amber-400 font-bold">{val}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
                         <button
                             onClick={handleResetParams}
-                            className="ml-auto p-0.5 hover:bg-violet-800/40 rounded transition-colors text-gray-400 hover:text-gray-200"
+                            className="p-1 hover:bg-violet-900/40 rounded transition-colors text-gray-400 hover:text-gray-200"
                             title="Reset to Defaults"
                         >
-                            <RotateCcw className="w-3 h-3" />
+                            <RotateCcw className="w-3.5 h-3.5" />
                         </button>
                     </div>
                 )}
-
-                <div className="flex flex-wrap gap-1 mt-1">
-                    {displayInds.map(label => (
-                        <span key={label} className="text-[9px] bg-violet-900/40 text-violet-300 border border-violet-700/50 px-1.5 py-0.5 rounded-full">
-                            {label}
-                        </span>
-                    ))}
-                    <span className="text-[9px] bg-violet-900/40 text-violet-300 border border-violet-700/50 px-1.5 py-0.5 rounded-full">
-                        {config.lookForward}G
-                    </span>
-                </div>
             </div>
         </div>
     );

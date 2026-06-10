@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { calculateWinRate, Candle, BacktestHistoryItem } from "@/lib/ta/backtest";
+import { calculateWinRate, type Candle, type BacktestHistoryItem } from "@/lib/ta/simulation/backtest";
 import { useRouter, useSearchParams } from "next/navigation";
 import { RefreshCw, History, CheckCircle2, XCircle, TrendingUp, TrendingDown, RotateCcw } from "lucide-react";
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";

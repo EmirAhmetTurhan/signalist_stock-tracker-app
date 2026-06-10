@@ -8,8 +8,8 @@ import {
   dmiStrength, mfiStrength, smiStrength, aoStrength, cciStrength,
   wprStrength, diStrength, cmfStrength, adStrength, netvolStrength,
   madrStrength, almaStrength, bbStrength,
-} from './signal-registry';
-import type { SignalStrength } from './signal-registry';
+} from '@/lib/ta/registry/signal-registry';
+import type { SignalStrength } from '@/lib/ta/registry/signal-registry';
 
 export type SignalMap = Record<string, SignalLabel>;
 
@@ -202,20 +202,17 @@ export function generateAllSignals(computedData: ComputedIndicators, candles: { 
   }
 
   // AD
-  if (computedData.ad && Array.isArray(computedData.ad) && computedData.ad.length > 21) {
-    const adData = computedData.ad;
-    const values: number[] = [];
-    for (let k = 0; k < adData.length; k++) {
-      const v = adData[k].value;
-      if (v !== undefined) values.push(v);
-    }
-    if (values.length >= 22) {
-      const cur = values[values.length - 1];
-      const prev = values[values.length - 2];
-      // SMA of 21 bars BEFORE cur (cur excluded), consistent with backtest.ts AD resolver
-      const curSMA = values.slice(-22, -1).reduce((a: number, b: number) => a + b, 0) / 21;
-      const prevSMA = values.slice(-23, -2).reduce((a: number, b: number) => a + b, 0) / 21;
-      addSignal(signals, 'ad', toLabel(adStrength(cur, prev, curSMA, prevSMA)), acc);
+  if (computedData.ad && computedData.ad.ad && computedData.ad.ma) {
+    const adArr = computedData.ad.ad;
+    const maArr = computedData.ad.ma;
+    if (adArr.length >= 2 && maArr.length >= 2) {
+      const cur = adArr[adArr.length - 1].value;
+      const prev = adArr[adArr.length - 2].value;
+      const curSMA = maArr[maArr.length - 1].value;
+      const prevSMA = maArr[maArr.length - 2].value;
+      if (cur !== undefined && prev !== undefined && curSMA !== undefined && prevSMA !== undefined) {
+        addSignal(signals, 'ad', toLabel(adStrength(cur, prev, curSMA, prevSMA)), acc);
+      }
     }
   }
 
@@ -248,8 +245,8 @@ export function generateAllSignals(computedData: ComputedIndicators, candles: { 
   // Bollinger Bands
   if (computedData.bb && Array.isArray(computedData.bb) && computedData.bb.length >= 2) {
     const bbData = computedData.bb;
-    const curBB = bbData[bbData.length - 1] as import('./signal-registry').BBPoint;
-    const prevBB = bbData[bbData.length - 2] as import('./signal-registry').BBPoint;
+    const curBB = bbData[bbData.length - 1] as import('@/lib/ta/registry/signal-registry').BBPoint;
+    const prevBB = bbData[bbData.length - 2] as import('@/lib/ta/registry/signal-registry').BBPoint;
     const curC = candles[candles.length - 1].close;
     const prevC = candles[candles.length - 2].close;
     addSignal(signals, 'bb', toLabel(bbStrength(curBB, prevBB, curC, prevC)), acc);

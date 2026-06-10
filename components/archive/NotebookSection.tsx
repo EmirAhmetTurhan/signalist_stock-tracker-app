@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, X, BarChart2, Sparkles } from 'lucide-react';
+import { Search, X, BarChart2, Sparkles, RefreshCw } from 'lucide-react';
 import ReportCard from '@/components/notebook/ReportCard';
 import Link from 'next/link';
 
@@ -68,6 +68,17 @@ export default function NotebookSection() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  useEffect(() => {
+    const handleExternalRefresh = () => {
+      // Reload reports data when notified of job updates
+      loadData();
+    };
+    window.addEventListener('signalist-archive-refresh', handleExternalRefresh);
+    return () => {
+      window.removeEventListener('signalist-archive-refresh', handleExternalRefresh);
+    };
+  }, [loadData]);
+
   const uniqueSymbols = activeTab === 'strategies'
     ? [...new Set(strategies.map((r) => r.symbol).filter(Boolean))].sort()
     : [...new Set(analysisReports.map((r) => r.symbol).filter(Boolean))].sort();
@@ -90,9 +101,9 @@ export default function NotebookSection() {
           <thead>
             <tr className="text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
               <th className="text-left py-3 px-4 font-medium">Symbol</th>
-              <th className="text-right py-3 px-4 font-medium">Win Rate</th>
+              <th className="text-center py-3 px-4 font-medium">Win Rate</th>
               <th className="text-center py-3 px-4 font-medium">Data Range</th>
-              <th className="text-right py-3 px-4 font-medium">Date</th>
+              <th className="text-center py-3 px-4 font-medium">Date</th>
             </tr>
           </thead>
           <tbody>
@@ -109,7 +120,7 @@ export default function NotebookSection() {
                       <span className="font-bold text-white">{s.symbol}</span>
                     </div>
                   </td>
-                  <td className="py-3.5 px-4 text-right tabular-nums">
+                  <td className="py-3.5 px-4 text-center tabular-nums">
                     <span className="font-semibold text-amber-400">
                       %{s.winRate?.toFixed(1) ?? 'N/A'}
                     </span>
@@ -117,7 +128,7 @@ export default function NotebookSection() {
                   <td className="py-3.5 px-4 text-center text-gray-400">
                     {s.discoveryConfig?.years ?? '?'} Years
                   </td>
-                  <td className="py-3.5 px-4 text-right text-gray-400 text-xs whitespace-nowrap tabular-nums">
+                  <td className="py-3.5 px-4 text-center text-gray-400 text-xs whitespace-nowrap tabular-nums">
                     {new Date(s.createdAt).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </td>
                 </tr>
@@ -132,36 +143,47 @@ export default function NotebookSection() {
   return (
     <div className="flex flex-col bg-gray-900/20 border border-gray-800/50 rounded-2xl overflow-hidden mb-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 py-4 px-6 shrink-0 border-b border-gray-800/50 w-full bg-gray-900/40">
-        <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
-          <BarChart2 className="h-6 w-6 text-blue-500" />
-          Archive
-        </h2>
-        <div className="flex gap-4 sm:ml-8">
-          {/* Tab: Strategies */}
-          <button
-            onClick={() => { setActiveTab('strategies'); setSearch(''); setFilterSymbol(''); }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'strategies' ? 'border-violet-500 text-violet-400' : 'border-transparent text-gray-500 hover:text-gray-300'
-              }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            Strategies
-            {strategies.length > 0 && (
-              <span className="text-[10px] bg-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded-full">
-                {strategies.length}
-              </span>
-            )}
-          </button>
-          {/* Tab: AI Reports */}
-          <button
-            onClick={() => { setActiveTab('reports'); setSearch(''); setFilterSymbol(''); }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'reports' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
-              }`}
-          >
-            <BarChart2 className="w-4 h-4" />
-            AI Reports
-          </button>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6 py-4 px-6 shrink-0 border-b border-gray-800/50 w-full bg-gray-900/40">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6">
+          <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
+            <BarChart2 className="h-6 w-6 text-blue-500" />
+            Archive
+          </h2>
+          <div className="flex gap-4 sm:ml-8">
+            {/* Tab: Strategies */}
+            <button
+              onClick={() => { setActiveTab('strategies'); setSearch(''); setFilterSymbol(''); }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'strategies' ? 'border-violet-500 text-violet-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+                }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              Strategies
+              {strategies.length > 0 && (
+                <span className="text-[10px] bg-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded-full">
+                  {strategies.length}
+                </span>
+              )}
+            </button>
+            {/* Tab: AI Reports */}
+            <button
+              onClick={() => { setActiveTab('reports'); setSearch(''); setFilterSymbol(''); }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'reports' ? 'border-blue-500 text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-300'
+                }`}
+            >
+              <BarChart2 className="w-4 h-4" />
+              AI Reports
+            </button>
+          </div>
         </div>
+
+        <button
+          onClick={() => loadData()}
+          disabled={loading}
+          className="flex items-center gap-2 px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-400' : ''}`} />
+          Refresh
+        </button>
       </div>
 
       {/* Search + Filter */}

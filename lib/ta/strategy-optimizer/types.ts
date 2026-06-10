@@ -1,10 +1,10 @@
 // lib/ta/strategy-optimizer/types.ts
 // Type definitions extracted from strategy-optimizer.ts
 
-import type { BacktestHistoryItem } from '../backtest';
-import type { BacktestLogEntry } from '../backtest-log';
-import type { PortfolioSimResult, PortfolioSimConfig } from '../portfolio-simulator';
-import type { TradeRiskConfig } from '../trade-simulator';
+import type { BacktestHistoryItem } from '../simulation/backtest';
+import type { BacktestLogEntry } from '../simulation/backtest-log';
+import type { PortfolioSimResult, PortfolioSimConfig } from '../simulation/portfolio-simulator';
+import type { TradeRiskConfig } from '../simulation/trade-simulator';
 import type { MarketRegime, RegimeStats, SignalProfile, StrategyMode, EvaluationMode } from '../types';
 
 type Series = { time: string | number; value?: number }[];
@@ -22,7 +22,7 @@ export interface AllData {
     wprData?: Series;
     diData?: Series;
     cmfData?: Series;
-    adData?: Series;
+    adData?: { ad: Series; ma: Series };
     nvData?: Series;
     madrData?: Series;
     almaData?: Series;
@@ -80,6 +80,7 @@ export interface StrategyOptimizationConfig {
     convergenceRounds?: number;
     interval?: string;
     mode?: StrategyMode;
+    strategyName?: string;
 }
 
 export interface RoundResult { param: string; value: number; winRate: number }

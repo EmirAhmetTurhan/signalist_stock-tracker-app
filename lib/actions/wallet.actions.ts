@@ -116,43 +116,48 @@ export async function resetWallet(userId: string) {
         });
       } catch (e) {
         console.warn(`[WalletReset] Could not sell ${position.symbol} via engine, force-closing using cached price`);
-        const now = new Date();
-        
-        // Fetch last known price or fallback to entry price
-        const priceMap = await fetchPriceMap([position.symbol]);
-        const lastPrice = priceMap[position.symbol] || fromDecimal128(position.avgEntryPrice);
-        const proceeds = decimalMul(lastPrice, position.quantity);
-        const realizedPnl = decimalMul(decimalSub(lastPrice, fromDecimal128(position.avgEntryPrice)), position.quantity);
+        try {
+          const now = new Date();
+          
+          // Fetch last known price or fallback to entry price
+          const priceMap = await fetchPriceMap([position.symbol]);
+          const lastPrice = priceMap[position.symbol] || fromDecimal128(position.avgEntryPrice);
+          const proceeds = decimalMul(lastPrice, position.quantity);
+          const realizedPnl = decimalMul(decimalSub(lastPrice, fromDecimal128(position.avgEntryPrice)), position.quantity);
 
-        // Credit wallet temporarily before the big reset, so intermediate equity is mathematically sound
-        await Wallet.findOneAndUpdate(
-          { userId },
-          { $inc: { cashBalance: toDecimal128(proceeds) } }
-        );
+          // Credit wallet temporarily before the big reset, so intermediate equity is mathematically sound
+          await Wallet.findOneAndUpdate(
+            { userId },
+            { $inc: { cashBalance: toDecimal128(proceeds) } }
+          );
 
-        // Close position
-        await Position.updateOne(
-          { _id: position._id },
-          { $set: { status: 'closed', closedAt: now, closeReason: 'corporate_action', quantity: 0, lastTradeAt: now } }
-        );
+          // Close position
+          await Position.updateOne(
+            { _id: position._id },
+            { $set: { status: 'closed', closedAt: now, closeReason: 'corporate_action', quantity: 0, lastTradeAt: now } }
+          );
 
-        // Insert audit log trade
-        await Trade.create({
-          userId,
-          positionId: position._id,
-          clientRequestId: `reset-force-${randomUUID()}`,
-          symbol: position.symbol,
-          side: 'SELL',
-          quantity: position.quantity,
-          fillPrice: toDecimal128(lastPrice),
-          notional: toDecimal128(proceeds),
-          fees: toDecimal128(0),
-          realizedPnl: toDecimal128(realizedPnl),
-          triggerSource: 'corporate_action',
-          triggerContext: { reason: 'wallet_reset_fallback' },
-          status: 'executed',
-          executedAt: now,
-        });
+          // Insert audit log trade
+          await Trade.create({
+            userId,
+            positionId: position._id,
+            clientRequestId: `reset-force-${randomUUID()}`,
+            symbol: position.symbol,
+            side: 'SELL',
+            quantity: position.quantity,
+            fillPrice: toDecimal128(lastPrice),
+            notional: toDecimal128(proceeds),
+            fees: toDecimal128(0),
+            realizedPnl: toDecimal128(realizedPnl),
+            triggerSource: 'corporate_action',
+            triggerContext: { reason: 'wallet_reset_fallback' },
+            status: 'executed',
+            executedAt: now,
+          });
+        } catch (fallbackError) {
+          console.error(`[WalletReset] Critical fallback closure failed for ${position.symbol}:`, fallbackError);
+          throw new Error(`Failed to close position for ${position.symbol} during wallet reset.`);
+        }
       }
     }
 

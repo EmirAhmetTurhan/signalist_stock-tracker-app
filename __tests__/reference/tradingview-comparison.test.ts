@@ -226,7 +226,7 @@ function getLastValue(
             return v[v.length - 1]?.value;
         }
         case 'AD': {
-            const v = result.ad;
+            const v = result.ad?.ad;
             if (!v?.length) return undefined;
             return v[v.length - 1]?.value;
         }

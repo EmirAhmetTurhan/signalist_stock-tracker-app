@@ -8,6 +8,16 @@ import { getReportById } from '@/lib/actions/report.actions';
 import { toast } from 'sonner';
 import { addDiscoveredStrategy } from '@/lib/actions/saved-strategy.actions';
 import MarkdownRenderer from '@/components/ai/MarkdownRenderer';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 
 // ─── Types (mirrored from report.model.ts for client-side use) ─────────────────
 
@@ -41,8 +51,12 @@ export default function ReportDetailPage() {
     const [error, setError] = useState<string | null>(null);
     // ── Add to My Strategies state ──
     const [savingIds, setSavingIds] = useState<Set<number>>(new Set());       // "Save to Library" loading
-    const [navigatingIds, setNavigatingIds] = useState<Set<number>>(new Set()); // "Save & Go to TA" loading
     const [savingAll, setSavingAll] = useState(false);
+
+    // ── Custom Naming Modal State ──
+    const [nameModalOpen, setNameModalOpen] = useState(false);
+    const [strategyToSave, setStrategyToSave] = useState<DiscoveryStrategyResult | null>(null);
+    const [customNameInput, setCustomNameInput] = useState('');
 
     // Fetch report on mount
     useEffect(() => {
@@ -56,12 +70,26 @@ export default function ReportDetailPage() {
         });
     }, [id]);
 
-    // ── Handler 1: "Save to Library" — saves strategy, stays on page ──
-    const handleSaveToLibrary = useCallback(async (ds: DiscoveryStrategyResult) => {
-        if (!report) return;
-        if (savingIds.has(ds.rank) || navigatingIds.has(ds.rank)) return;
+    // ── Trigger Custom Name Dialog ──
+    const handleSaveClick = useCallback((ds: DiscoveryStrategyResult) => {
+        const indicatorNames = ds.combo.map(k => k.toUpperCase()).join(' + ');
+        const defaultName = `Discovered -- ${indicatorNames}`;
+        setStrategyToSave(ds);
+        setCustomNameInput(defaultName);
+        setNameModalOpen(true);
+    }, []);
+
+    // ── Confirm Save from Naming Modal ──
+    const handleConfirmSave = useCallback(async () => {
+        if (!report || !strategyToSave) return;
+        const ds = strategyToSave;
         const sym = report.discoveryConfig?.symbol || report.symbol;
         const interv = report.discoveryConfig?.interval || '';
+        const finalName = customNameInput.trim() || `Discovered -- ${ds.combo.map(k => k.toUpperCase()).join(' + ')}`;
+
+        setNameModalOpen(false);
+        // Use combo key as unique ID (rank can be 0 which is falsy)
+        const comboKey = ds.combo.join(',');
         setSavingIds(prev => new Set(prev).add(ds.rank));
         try {
             const res = await addDiscoveredStrategy(
@@ -69,9 +97,10 @@ export default function ReportDetailPage() {
                 ds,
                 sym,
                 interv,
+                finalName
             );
             if (res.success) {
-                toast.success(`"${res.name}" saved to library`);
+                toast.success(`"${res.name}" saved to My Strategies`);
             } else {
                 toast.error(res.error || 'Failed to save strategy');
             }
@@ -83,53 +112,31 @@ export default function ReportDetailPage() {
                 next.delete(ds.rank);
                 return next;
             });
+            setStrategyToSave(null);
         }
-    }, [report, savingIds, navigatingIds]);
+    }, [report, strategyToSave, customNameInput]);
 
-    // ── Handler 2: "Save & Go to TA" — saves strategy, then navigates to TA page ──
-    const handleSaveAndGoToTA = useCallback(async (ds: DiscoveryStrategyResult) => {
+    // ── Handler 2: "Go to TA" — redirect directly without database write ──
+    const handleGoToTA = useCallback((ds: DiscoveryStrategyResult) => {
         if (!report) return;
-        if (savingIds.has(ds.rank) || navigatingIds.has(ds.rank)) return;
         const sym = report.discoveryConfig?.symbol || report.symbol;
         const interv = report.discoveryConfig?.interval || '';
         const years = report.discoveryConfig?.years ?? 2;
-        setNavigatingIds(prev => new Set(prev).add(ds.rank));
-        try {
-            const res = await addDiscoveredStrategy(
-                report._id,
-                ds,
-                sym,
-                interv,
-            );
-            if (res.success) {
-                toast.success(`"${res.name}" saved — redirecting to TA...`);
-                const strategyKey = `saved_${res.strategyId}`;
-                const indParam = ds.combo.join(',');
-                const params = new URLSearchParams();
-                params.set('strategy', strategyKey);
-                params.set('ind', indParam);
-                params.set('symbol', sym);
-                params.set('interval', interv);
-                // CRITICAL: Pass years so TA page loads the same data range as the discovery
-                params.set('years', years.toString());
-                // Pass discovered params via 'p' for the TA page to apply optimized values
-                if (ds.bestParams && Object.keys(ds.bestParams).length > 0) {
-                    params.set('p', JSON.stringify(ds.bestParams));
-                }
-                router.push(`/ta?${params.toString()}`);
-            } else {
-                toast.error(res.error || 'Failed to save strategy');
-            }
-        } catch {
-            toast.error('An unexpected error occurred');
-        } finally {
-            setNavigatingIds(prev => {
-                const next = new Set(prev);
-                next.delete(ds.rank);
-                return next;
-            });
+
+        const indParam = ds.combo.join(',');
+        const params = new URLSearchParams();
+        params.set('strategy', 'temp');
+        params.set('ind', indParam);
+        params.set('symbol', sym);
+        params.set('interval', interv);
+        // CRITICAL: Pass years so TA page loads the same data range as the discovery
+        params.set('years', years.toString());
+        // Pass discovered params via 'p' for the TA page to apply optimized values
+        if (ds.bestParams && Object.keys(ds.bestParams).length > 0) {
+            params.set('p', JSON.stringify(ds.bestParams));
         }
-    }, [report, savingIds, navigatingIds, router]);
+        router.push(`/ta?${params.toString()}`);
+    }, [report, router]);
 
     // ── Handler: "Save All to Library" — saves all strategies, stays on page ──
     const handleSaveAll = useCallback(async () => {
@@ -140,14 +147,14 @@ export default function ReportDetailPage() {
         setSavingAll(true);
         try {
             for (const ds of results) {
-                if (savingIds.has(ds.rank) || navigatingIds.has(ds.rank)) continue;
+                if (savingIds.has(ds.rank)) continue;
                 setSavingIds(prev => new Set(prev).add(ds.rank));
                 const res = await addDiscoveredStrategy(
                     report._id,
                     ds,
                     sym,
                     interv,
-                );
+                    );
                 if (!res.success) {
                     toast.error(`Failed to save #${ds.rank}: ${res.error}`);
                 }
@@ -163,7 +170,7 @@ export default function ReportDetailPage() {
         } finally {
             setSavingAll(false);
         }
-    }, [report, savingIds, navigatingIds]);
+    }, [report, savingIds]);
 
     // ── Loading state ────────────────────────────────────────────────────────
 
@@ -208,14 +215,15 @@ export default function ReportDetailPage() {
         const interval = config?.interval || '';
 
         return (
-            <div className="max-w-5xl mx-auto py-8 px-6">
-                <Link
-                    href="/archive"
-                    className="flex items-center gap-2 text-gray-500 hover:text-gray-300 transition-colors mb-6 w-fit"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Back to Archive</span>
-                </Link>
+            <>
+                <div className="max-w-5xl mx-auto py-8 px-6">
+                    <Link
+                        href="/archive"
+                        className="flex items-center gap-2 text-gray-500 hover:text-gray-300 transition-colors mb-6 w-fit"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>Back to Archive</span>
+                    </Link>
 
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-8">
                     {/* ── Header ────────────────────────────────────────────── */}
@@ -332,8 +340,8 @@ export default function ReportDetailPage() {
                                     <tr className="text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
                                         <th className="py-3 px-4 text-left">#</th>
                                         <th className="py-3 px-4 text-left">Strategy</th>
-                                        <th className="py-3 px-4 text-right">Win Rate</th>
-                                        <th className="py-3 px-4 text-right">Signals</th>
+                                        <th className="py-3 px-4 text-center">Win Rate</th>
+                                        <th className="py-3 px-4 text-center">Signals</th>
                                         <th className="py-3 px-4 text-center">Actions</th>
                                     </tr>
                                 </thead>
@@ -356,18 +364,18 @@ export default function ReportDetailPage() {
                                                     ))}
                                                 </div>
                                             </td>
-                                            <td className="py-3 px-4 text-right font-medium text-amber-400">
+                                            <td className="py-3 px-4 text-center font-medium text-amber-400">
                                                 {ds.validatedWinRate.toFixed(1)}%
                                             </td>
-                                            <td className="py-3 px-4 text-right text-gray-400">
+                                            <td className="py-3 px-4 text-center text-gray-400">
                                                 {ds.totalSignals}
                                             </td>
                                             <td className="py-3 px-4 text-center">
                                                 <div className="flex items-center justify-center gap-1.5">
                                                     {/* Button 1: Save to Library (no navigation) */}
                                                     <button
-                                                        onClick={() => handleSaveToLibrary(ds)}
-                                                        disabled={savingIds.has(ds.rank) || navigatingIds.has(ds.rank)}
+                                                        onClick={() => handleSaveClick(ds)}
+                                                        disabled={savingIds.has(ds.rank)}
                                                         className="flex items-center gap-1 px-2 py-1 rounded-md bg-violet-600/20 hover:bg-violet-600/30 disabled:bg-violet-600/10 disabled:cursor-not-allowed text-violet-400 text-xs font-medium border border-violet-600/30 transition-all duration-200"
                                                         title="Save strategy to your library without leaving this page"
                                                     >
@@ -378,19 +386,14 @@ export default function ReportDetailPage() {
                                                         )}
                                                         {savingIds.has(ds.rank) ? '...' : 'Save'}
                                                     </button>
-                                                    {/* Button 2: Save & Go to TA (save + navigate) */}
+                                                    {/* Button 2: Go to TA (direct navigation) */}
                                                     <button
-                                                        onClick={() => handleSaveAndGoToTA(ds)}
-                                                        disabled={savingIds.has(ds.rank) || navigatingIds.has(ds.rank)}
-                                                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 disabled:bg-emerald-600/10 disabled:cursor-not-allowed text-emerald-400 text-xs font-medium border border-emerald-600/30 transition-all duration-200"
-                                                        title="Save strategy and open it on the TA page"
+                                                        onClick={() => handleGoToTA(ds)}
+                                                        className="flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-xs font-medium border border-emerald-600/30 transition-all duration-200"
+                                                        title="Open this strategy on the TA page without saving it to library"
                                                     >
-                                                        {navigatingIds.has(ds.rank) ? (
-                                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                                        ) : (
-                                                            <Check className="w-3 h-3" />
-                                                        )}
-                                                        {navigatingIds.has(ds.rank) ? '...' : 'Go to TA'}
+                                                        <Check className="w-3 h-3" />
+                                                        Go to TA
                                                     </button>
                                                 </div>
                                             </td>
@@ -406,7 +409,62 @@ export default function ReportDetailPage() {
                     )}
                 </div>
             </div>
-        );
+
+            {/* ── Custom Naming Modal (MUST live inside this return block) ── */}
+            <Dialog open={nameModalOpen} onOpenChange={setNameModalOpen}>
+                <DialogContent className="sm:max-w-md bg-gray-950 border border-gray-800 text-gray-100 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-violet-400" />
+                            Save Discovered Strategy
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="flex flex-col gap-2">
+                            <Label htmlFor="strategy-name-discovery" className="text-sm text-gray-400">
+                                Enter a name for this strategy:
+                            </Label>
+                            <Input
+                                id="strategy-name-discovery"
+                                value={customNameInput}
+                                onChange={(e) => setCustomNameInput(e.target.value)}
+                                className="bg-gray-900 border-gray-800 text-white placeholder-gray-600 focus-visible:ring-violet-500"
+                                placeholder="e.g. Discovered -- RSI + MACD"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleConfirmSave();
+                                }}
+                            />
+                            {strategyToSave && (
+                                <p className="text-xs text-gray-500">
+                                    Indicators: {strategyToSave.combo.map(k => k.toUpperCase()).join(', ')}
+                                    {' '}&middot; Win Rate: {strategyToSave.validatedWinRate.toFixed(1)}%
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    <DialogFooter className="flex gap-2 sm:justify-end">
+                        <Button
+                            variant="ghost"
+                            onClick={() => {
+                                setNameModalOpen(false);
+                                setStrategyToSave(null);
+                            }}
+                            className="text-gray-400 hover:text-white hover:bg-gray-900"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleConfirmSave}
+                            className="bg-violet-600 text-white hover:bg-violet-500 hover:shadow-[0_0_15px_rgba(124,58,237,0.4)] transition-all"
+                        >
+                            Save to My Strategies
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
+    );
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -478,6 +536,56 @@ export default function ReportDetailPage() {
                     />
                 </div>
             </div>
+
+            {/* Custom Naming Modal */}
+            <Dialog open={nameModalOpen} onOpenChange={setNameModalOpen}>
+                <DialogContent className="sm:max-w-md bg-gray-950 border border-gray-800 text-gray-100 shadow-2xl">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+                            <Sparkles className="w-5 h-5 text-violet-400" />
+                            Save Discovered Strategy
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        <div className="flex flex-col gap-2">
+                            <Label htmlFor="strategy-name" className="text-sm text-gray-400">
+                                Enter custom name for this strategy (English):
+                            </Label>
+                            <Input
+                                id="strategy-name"
+                                value={customNameInput}
+                                onChange={(e) => setCustomNameInput(e.target.value)}
+                                className="bg-gray-900 border-gray-800 text-white placeholder-gray-600 focus-visible:ring-violet-500"
+                                placeholder="e.g. Discovered -- RSI + MACD"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleConfirmSave();
+                                    }
+                                }}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter className="flex gap-2 sm:justify-end">
+                        <Button
+                            variant="ghost"
+                            onClick={() => {
+                                setNameModalOpen(false);
+                                setStrategyToSave(null);
+                            }}
+                            className="text-gray-400 hover:text-white hover:bg-gray-900"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleConfirmSave}
+                            className="bg-violet-600 text-white hover:bg-violet-500 hover:shadow-[0_0_15px_rgba(124,58,237,0.4)] transition-all"
+                        >
+                            Save to Library
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

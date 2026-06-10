@@ -442,10 +442,13 @@ export async function executeTrade(input: TradeInput): Promise<TradeResult> {
           const pnl = fromDecimal128(t.realizedPnl);
           return pnl < 0 ? sum + Math.abs(pnl) : sum;
         }, 0);
-        const initialBal = fromDecimal128(wallet.initialBalance);
-        const maxLoss = (wallet.maxDailyLossPercent / 100) * initialBal;
-        if (totalDailyLoss >= maxLoss) {
-          await Wallet.updateOne({ userId }, { $set: { circuitBreakerTriggered: true } });
+        const freshWallet = await Wallet.findOne({ userId }).lean();
+        if (freshWallet) {
+          const initialBal = fromDecimal128(freshWallet.initialBalance);
+          const maxLoss = (freshWallet.maxDailyLossPercent / 100) * initialBal;
+          if (totalDailyLoss >= maxLoss) {
+            await Wallet.updateOne({ userId }, { $set: { circuitBreakerTriggered: true } });
+          }
         }
       }
 

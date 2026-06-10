@@ -12,7 +12,7 @@ import { computeCMF } from "@/lib/indicators/cmf";
 import { computeMADR } from "@/lib/indicators/madr";
 import { computeALMA } from "@/lib/indicators/alma";
 import { computeBollingerBands } from "@/lib/indicators/bollinger";
-import { calculateWinRate, Candle } from "./backtest";
+import { calculateWinRate, type Candle } from "@/lib/ta/simulation/backtest";
 import type { RSIInput, RSIOutput } from "@/lib/indicators/rsi";
 import type { MACDInput, MACDOutput } from "@/lib/indicators/macd";
 import type { MFIInput, MFIPoint } from "@/lib/indicators/mfi";

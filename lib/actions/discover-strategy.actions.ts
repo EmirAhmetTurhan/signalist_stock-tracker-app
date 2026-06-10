@@ -104,28 +104,37 @@ export async function discoverStrategyAction(
                     };
                 }
 
-                // Race condition edge case — retry once
-                await AIJob.create({
-                    jobId,
-                    userId,
-                    type: 'deep_discovery',
-                    status: 'queued',
-                    title: `${symbol.toUpperCase()} Deep Discovery`,
-                    source: 'discovery',
-                    input: {
-                        symbol: symbol.toUpperCase(),
-                        interval: safeInterval,
-                        years: safeYears,
+                // Race condition edge case — retry once and catch any errors
+                try {
+                    await AIJob.create({
+                        jobId,
+                        userId,
+                        type: 'deep_discovery',
+                        status: 'queued',
+                        title: `${symbol.toUpperCase()} Deep Discovery`,
+                        source: 'discovery',
+                        input: {
+                            symbol: symbol.toUpperCase(),
+                            interval: safeInterval,
+                            years: safeYears,
+                            seed,
+                        },
+                        progress: 0,
+                        currentPhase: 0,
+                        phaseDetail: 'Queued — waiting to start...',
+                        steps: [
+                            { name: 'init', status: 'completed', detail: 'Job created via Server Action', completedAt: new Date() },
+                        ],
                         seed,
-                    },
-                    progress: 0,
-                    currentPhase: 0,
-                    phaseDetail: 'Queued — waiting to start...',
-                    steps: [
-                        { name: 'init', status: 'completed', detail: 'Job created via Server Action', completedAt: new Date() },
-                    ],
-                    seed,
-                });
+                    });
+                } catch (retryErr) {
+                    console.error('[discoverStrategyAction] Retry create failed:', retryErr);
+                    return {
+                        success: false,
+                        error: 'A discovery job conflicts or failed to initialize. Please try again.',
+                        status: 409,
+                    };
+                }
             } else {
                 throw err;
             }
@@ -154,20 +163,32 @@ export async function discoverStrategyAction(
             console.warn('[discoverStrategyAction] Stale job cleanup failed:', staleError);
         }
 
-        // ── Dispatch Inngest event (fire-and-forget — don't block response) ──
-        inngest.send({
-            name: 'discovery/deep-search.started',
-            data: {
-                jobId,
-                symbol: symbol.toUpperCase(),
-                interval: safeInterval,
-                years: safeYears,
-                userId,
-                seed,
-            },
-        }).catch((sendError) => {
-            console.warn('[discoverStrategyAction] Inngest send failed (job already in DB):', sendError);
-        });
+        // ── Dispatch Inngest event (Awaited to fail gracefully if offline) ──
+        try {
+            await inngest.send({
+                name: 'discovery/deep-search.started',
+                data: {
+                    jobId,
+                    symbol: symbol.toUpperCase(),
+                    interval: safeInterval,
+                    years: safeYears,
+                    userId,
+                    seed,
+                },
+            });
+        } catch (sendError) {
+            console.error('[discoverStrategyAction] Inngest send failed:', sendError);
+            // Mark job as failed in DB so it doesn't stay queued forever
+            await AIJob.updateOne(
+                { jobId },
+                { $set: { status: 'failed', errorMessage: 'Inngest event dispatcher is offline. Job could not be started.' } }
+            );
+            return {
+                success: false,
+                error: 'Failed to dispatch job to background worker. Please try again.',
+                status: 503,
+            };
+        }
 
         revalidatePath('/ta');
 
