@@ -27,7 +27,7 @@ export default function PendingOrdersTable({ orders, userId }: PendingOrdersTabl
   const handleCancel = async (orderId: string) => {
     setCancelling(orderId);
     try {
-      const res = await cancelPendingOrder(orderId, userId);
+      const res = await cancelPendingOrder(orderId);
       if (res.success) {
         toast.success('Emir iptal edildi');
       } else {

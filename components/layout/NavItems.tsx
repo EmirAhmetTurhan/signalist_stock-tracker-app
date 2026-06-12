@@ -16,6 +16,7 @@ const NavItems = memo(function NavItems({initialStocks}: { initialStocks: StockW
 
     const isActive = (path: string) => {
         if (path === '/') return pathname === '/';
+        if (path === '/portfolio') return pathname === '/portfolio';
 
         return pathname.startsWith(path);
     }
@@ -46,7 +47,7 @@ const NavItems = memo(function NavItems({initialStocks}: { initialStocks: StockW
                     return <li key={href} role="listitem">
                         <Link
                             href={effectiveHref}
-                            className={`transition-colors ${active ? 'text-white font-bold' : 'text-gray-400 hover:text-white'}`}
+                            className={`transition-colors whitespace-nowrap ${active ? 'text-white font-bold' : 'text-gray-400 hover:text-white'}`}
                             aria-current={active ? 'page' : undefined}
                             aria-label={`${label} page`}
                         >

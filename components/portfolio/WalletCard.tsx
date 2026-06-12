@@ -13,10 +13,13 @@ interface WalletCardProps {
     initialBalance: number;
     resetCount: number;
   };
-  userId: string;
+  // userId prop is kept for backward compatibility but no longer forwarded to
+  // server actions. The server derives the user from the authenticated session
+  // (IDOR fix).
+  userId?: string;
 }
 
-export default function WalletCard({ wallet, userId }: WalletCardProps) {
+export default function WalletCard({ wallet }: WalletCardProps) {
   const [resetting, setResetting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const router = useRouter();
@@ -26,7 +29,7 @@ export default function WalletCard({ wallet, userId }: WalletCardProps) {
   const handleReset = async () => {
     setResetting(true);
     try {
-      const result = await resetWallet(userId);
+      const result = await resetWallet();
       if (result.success) {
         setShowConfirm(false);
         router.refresh();

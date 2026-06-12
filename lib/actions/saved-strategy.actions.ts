@@ -8,12 +8,20 @@ import type { DiscoveryStrategyResult } from '@/database/models/report.model';
 import { auth } from '@/lib/better-auth/auth';
 import { headers } from 'next/headers';
 
+async function requireUserId(): Promise<string | null> {
+    try {
+        const session = await auth.api.getSession({ headers: await headers() });
+        return session?.user?.id ?? null;
+    } catch {
+        return null;
+    }
+}
+
 // ============================================================
 // Create Saved Strategy
 // ============================================================
 
 export interface CreateSavedStrategyInput {
-    userId: string;
     name: string;
     indicators: string[];
     mode?: StrategyMode;
@@ -43,7 +51,8 @@ export interface CreateSavedStrategyInput {
 }
 
 export async function createSavedStrategy(input: CreateSavedStrategyInput) {
-    if (!input.userId) return { success: false, error: 'User ID is required.' };
+    const userId = await requireUserId();
+    if (!userId) return { success: false, error: 'Unauthorized' };
     if (!input.name?.trim()) return { success: false, error: 'Strategy name is required.' };
     if (!input.indicators?.length) return { success: false, error: 'At least one indicator is required.' };
 
@@ -51,7 +60,7 @@ export async function createSavedStrategy(input: CreateSavedStrategyInput) {
         await connectToDatabase();
 
         const newStrategy = await SavedStrategy.create({
-            userId: input.userId,
+            userId: userId,
             name: input.name.trim(),
             indicators: input.indicators,
             mode: input.mode ?? 'all',
@@ -87,7 +96,8 @@ export async function createSavedStrategy(input: CreateSavedStrategyInput) {
 // Get All Saved Strategies for a User
 // ============================================================
 
-export async function getSavedStrategies(userId: string) {
+export async function getSavedStrategies() {
+    const userId = await requireUserId();
     if (!userId) return { success: false, data: [] };
 
     try {
@@ -135,8 +145,9 @@ export async function getSavedStrategies(userId: string) {
 // Get Single Saved Strategy by ID
 // ============================================================
 
-export async function getSavedStrategyById(userId: string, id: string) {
-    if (!userId || !id) return { success: false, error: 'User ID and Strategy ID are required.' };
+export async function getSavedStrategyById(id: string) {
+    const userId = await requireUserId();
+    if (!userId || !id) return { success: false, error: 'Unauthorized or invalid parameters.' };
 
     try {
         await connectToDatabase();
@@ -192,8 +203,9 @@ export interface UpdateSavedStrategyInput {
     discoveredTotalSignals?: number | null;
 }
 
-export async function updateSavedStrategy(userId: string, id: string, input: UpdateSavedStrategyInput) {
-    if (!userId || !id) return { success: false, error: 'User ID and Strategy ID are required.' };
+export async function updateSavedStrategy(id: string, input: UpdateSavedStrategyInput) {
+    const userId = await requireUserId();
+    if (!userId || !id) return { success: false, error: 'Unauthorized or invalid parameters.' };
 
     try {
         await connectToDatabase();
@@ -228,8 +240,9 @@ export async function updateSavedStrategy(userId: string, id: string, input: Upd
 // Delete Saved Strategy
 // ============================================================
 
-export async function deleteSavedStrategy(userId: string, id: string) {
-    if (!userId || !id) return { success: false, error: 'User ID and Strategy ID are required.' };
+export async function deleteSavedStrategy(id: string) {
+    const userId = await requireUserId();
+    if (!userId || !id) return { success: false, error: 'Unauthorized or invalid parameters.' };
 
     try {
         await connectToDatabase();
@@ -323,9 +336,10 @@ export async function addDiscoveredStrategy(
  * Flip the pinned boolean on a saved strategy.
  * Pinned strategies appear first in the UI.
  */
-export async function togglePinStrategy(userId: string, strategyId: string) {
+export async function togglePinStrategy(strategyId: string) {
+    const userId = await requireUserId();
     if (!userId || !strategyId) {
-        return { success: false, error: 'User ID and Strategy ID are required.' };
+        return { success: false, error: 'Unauthorized or invalid parameters.' };
     }
 
     try {
@@ -357,9 +371,10 @@ export async function togglePinStrategy(userId: string, strategyId: string) {
 /**
  * Update the display name of a saved strategy.
  */
-export async function renameStrategy(userId: string, strategyId: string, newName: string) {
+export async function renameStrategy(strategyId: string, newName: string) {
+    const userId = await requireUserId();
     if (!userId || !strategyId) {
-        return { success: false, error: 'User ID and Strategy ID are required.' };
+        return { success: false, error: 'Unauthorized or invalid parameters.' };
     }
     if (!newName?.trim()) {
         return { success: false, error: 'Strategy name is required.' };

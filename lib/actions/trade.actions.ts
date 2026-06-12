@@ -2,10 +2,13 @@
 
 // lib/actions/trade.actions.ts — Trade execution & history server actions
 // All trade mutations go through the execution engine. This file is the RPC surface.
+//
+// SECURITY: userId is ALWAYS derived from the authenticated session (better-auth).
+// We deliberately ignore any userId sent by the client to prevent IDOR.
 
 import { connectToDatabase } from '@/database/mongoose';
 import Position from '@/database/models/position.model';
-import { executeTrade, type TradeInput } from '@/lib/paper-trading/execution-engine';
+import { executeTrade } from '@/lib/paper-trading/execution-engine';
 import {
   getPortfolioSummary,
   getTradeHistory as getTradeHistoryInternal,
@@ -17,22 +20,33 @@ import {
 } from '@/lib/paper-trading/portfolio-metrics';
 import { fromDecimal128 } from '@/lib/paper-trading/decimal-utils';
 import { createPendingOrder } from './pending-orders.actions';
-import { randomUUID } from 'crypto';
+import { auth } from '@/lib/better-auth/auth';
+import { headers } from 'next/headers';
+
+async function requireUserId(): Promise<string | null> {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    return session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // ============================================================
 // Execute Manual Trade
 // ============================================================
 
 export async function executeManualTrade(input: {
-  userId: string;
   symbol: string;
   side: 'BUY' | 'SELL';
   quantity: number;
   clientRequestId: string;
 }) {
-  const { userId, symbol, side, quantity, clientRequestId } = input;
-
+  const userId = await requireUserId();
   if (!userId) return { success: false, error: 'Oturum bulunamadı. Lütfen giriş yapın.' };
+
+  const { symbol, side, quantity, clientRequestId } = input;
+
   if (!symbol) return { success: false, error: 'Hisse sembolü gerekli.' };
   if (!side || !['BUY', 'SELL'].includes(side)) return { success: false, error: 'Geçersiz işlem yönü.' };
   if (!quantity || quantity <= 0 || !Number.isInteger(quantity)) {
@@ -57,7 +71,6 @@ export async function executeManualTrade(input: {
 
       if (currentPrice > 0) {
         const pendingRes = await createPendingOrder({
-          userId,
           symbol: symbol.toUpperCase(),
           side,
           orderType: 'market_on_open',
@@ -66,9 +79,9 @@ export async function executeManualTrade(input: {
         });
 
         if (pendingRes.success) {
-          return { 
-            success: true, 
-            userMessage: 'Piyasa kapalı olduğu için işleminiz piyasa açılış emri (Market on Open) olarak kaydedildi.' 
+          return {
+            success: true,
+            userMessage: 'Piyasa kapalı olduğu için işleminiz piyasa açılış emri (Market on Open) olarak kaydedildi.',
           };
         }
       }
@@ -84,11 +97,12 @@ export async function executeManualTrade(input: {
 // Get Portfolio Data (for page load)
 // ============================================================
 
-export async function getPortfolioData(userId: string): Promise<{
+export async function getPortfolioData(): Promise<{
   success: boolean;
   data?: PortfolioSummary;
   error?: string;
 }> {
+  const userId = await requireUserId();
   if (!userId) return { success: false, error: 'Oturum bulunamadı.' };
 
   try {
@@ -115,7 +129,7 @@ export async function getPortfolioData(userId: string): Promise<{
 // Get Open Positions (with current prices)
 // ============================================================
 
-export async function getOpenPositions(userId: string): Promise<{
+export async function getOpenPositions(): Promise<{
   success: boolean;
   positions?: Array<{
     id: string;
@@ -132,6 +146,7 @@ export async function getOpenPositions(userId: string): Promise<{
   }>;
   error?: string;
 }> {
+  const userId = await requireUserId();
   if (!userId) return { success: false, error: 'Oturum bulunamadı.' };
 
   try {
@@ -175,7 +190,6 @@ export async function getOpenPositions(userId: string): Promise<{
 // ============================================================
 
 export async function getTradeHistoryAction(
-  userId: string,
   options?: { limit?: number; offset?: number; symbol?: string }
 ): Promise<{
   success: boolean;
@@ -183,6 +197,7 @@ export async function getTradeHistoryAction(
   total?: number;
   error?: string;
 }> {
+  const userId = await requireUserId();
   if (!userId) return { success: false, error: 'Oturum bulunamadı.' };
 
   try {
@@ -198,11 +213,12 @@ export async function getTradeHistoryAction(
 // Get Performance Metrics
 // ============================================================
 
-export async function getPerformanceMetricsAction(userId: string): Promise<{
+export async function getPerformanceMetricsAction(): Promise<{
   success: boolean;
   metrics?: PerformanceMetrics;
   error?: string;
 }> {
+  const userId = await requireUserId();
   if (!userId) return { success: false, error: 'Oturum bulunamadı.' };
 
   try {

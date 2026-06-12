@@ -47,8 +47,8 @@ const PendingOrderSchema = new Schema<IPendingOrder>({
   timestamps: true,
   toJSON: {
     transform: (_doc, ret) => {
-      if (ret.triggerPrice) ret.triggerPrice = ret.triggerPrice.toString() as any;
-      if (ret.reservedFunds) ret.reservedFunds = ret.reservedFunds.toString() as any;
+      if (ret.triggerPrice != null) ret.triggerPrice = ret.triggerPrice.toString() as any;
+      if (ret.reservedFunds != null) ret.reservedFunds = ret.reservedFunds.toString() as any;
       return ret;
     },
   },

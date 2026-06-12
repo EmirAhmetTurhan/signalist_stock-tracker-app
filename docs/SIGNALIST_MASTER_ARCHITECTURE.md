@@ -1,7 +1,7 @@
 # Signalist — Ana Sistem Mimarisi ve Teknik Referans
 
-> **Versiyon:** 5.1 — Faz 4 (Trade Simulator Motoru + UI/UX Terminal İyileştirmeleri + System Logic Flow Dokümantasyonu)  
-> **Tarih:** 2026-06-11  
+> **Versiyon:** 6.0 — Faz 5 + Faz 6 (Simulation Lab + Paper Trading)
+> **Tarih:** 2026-06-13
 > **Amaç:** Signalist projesinin eksiksiz, güncel ve tek kaynak teknik dokümanı.  
 > Bu belge, kod tabanının Faz 2 (Clean Architecture ve Modülerizasyon), Faz 3 (Sinyal Mimarisi Güncellemesi — Kesişim Tabanlı Sinyaller) ve Faz 4 (Trade Simulator Motoru Mantıksal Güncellemeleri + UI/UX Terminal İyileştirmeleri) sonrasındaki nihai halini yansıtır.  
 > **Dil:** Türkçe  
@@ -33,9 +33,13 @@
 7. [UI/UX Terminal İyileştirmeleri — Faz 4](#7-uiux-terminal-iyileştirmeleri--faz-4)
 8. [Gerçekçi Yol Haritası (Next Steps)](#8-gerçekçi-yol-haritası-next-steps)
 9. [Gelecek Vizyonu ve İleri Düzey Geliştirme Önerileri](#9-gelecek-vizyonu-ve-ileri-düzey-geliştirme-önerileri)
-10. [Ek A: Kritik Dosya Referansları ve Yeni Dosya Hiyerarşisi](#ek-a-kritik-dosya-referansları-ve-yeni-dosya-hiyerarşisi)
-11. [Ek B: Faz 1-2 Kritik Düzeltme ve Refaktör Özeti](#ek-b-faz-1-2-kritik-düzeltme-ve-refaktör-özeti)
-12. [Ek C: Faz 4 Trade Simulator ve UI/UX Güncelleme Özeti](#ek-c-faz-4-trade-simulator-ve-uiux-güncelleme-özeti)
+10. [Bölüm 10: Faz 5 - Simulation Lab](#bölüm-10-faz-5---simulation-lab)
+11. [Bölüm 11: Faz 6 - Paper Trading](#bölüm-11-faz-6---paper-trading)
+12. [Ek A: Kritik Dosya Referansları ve Yeni Dosya Hiyerarşisi](#ek-a-kritik-dosya-referansları-ve-yeni-dosya-hiyerarşisi)
+13. [Ek B: Faz 1-2 Kritik Düzeltme ve Refaktör Özeti](#ek-b-faz-1-2-kritik-düzeltme-ve-refaktör-özeti)
+14. [Ek C: Faz 4 Trade Simulator ve UI/UX Güncelleme Özeti](#ek-c-faz-4-trade-simulator-ve-uiux-güncelleme-özeti)
+15. [Ek D: Faz 5 Simulation Lab Özeti](#ek-d-faz-5-simulation-lab-özeti)
+16. [Ek E: Faz 6 Paper Trading Özeti](#ek-e-faz-6-paper-trading-özeti)
 
 ---
 
@@ -1784,6 +1788,21 @@ Bu yapı sayesinde modalın tüm yüksekliği kontrollü kalır, butonlar her za
 
 ---
 
+
+---
+
+## Bölüm 10: Faz 5 - Simulation Lab
+
+(Bu bölüm Faz 5 - Simulation Lab (Kurumsal Kantitatif Backtest Altyapısı) detaylarını içermektedir. Detaylı teknik döküm için Ek D'ye bakınız.)
+
+---
+
+## Bölüm 11: Faz 6 - Paper Trading
+
+(Bu bölüm Faz 6 - Paper Trading (Canlı Cüzdan) detaylarını içermektedir. Detaylı teknik döküm için Ek E'ye bakınız.)
+
+---
+
 ## 8. Gerçekçi Yol Haritası (Next Steps)
 
 ### 8.1 Öncelik Sıralaması
@@ -1956,3 +1975,54 @@ Bu fazda, sistemin UI/UX yapısı tamamen "Premium Dark Terminal" vizyonuna gör
 ### 6.5 Premium AlertForm Optimizasyonu
 - Alarm kurma formu (`AlertForm.tsx`), güncel hisse fiyatını arka planda çekerek (`Fetching...`) validasyon yapan, kullanıcının belirlediği limitleri anlık fiyata göre denetleyen gelişmiş bir mimariyle optimize edildi.
 - Bağımsız alarm sayfası (`/alerts/create`) ve hisse bazlı alarm sayfası (`/stocks/[symbol]/alert`) aynı Premium `<AlertForm />` bileşenini kullanacak şekilde refaktör edilerek UI/UX çakışmaları tamamen ortadan kaldırıldı.
+
+
+---
+
+## Ek D: Faz 5 Simulation Lab Özeti
+
+**Felsefe: İki Ayrı Dünya**
+* **Simulation Lab (Geçmişe Dönük):** 10 yıllık veride backtest, Inngest chunking, deterministik motor.
+* **Paper Trading (Canlı/İleriye Dönük):** Gerçek zamanlı sinyallerle sanal cüzdan, cron job.
+
+**Inngest Altyapısı (`lib/inngest/functions/simulation/run-simulation.ts`)**
+* **Chunking:** 90 günlük bloklar, OOM koruması, yield-based processing.
+* **Idempotency:** `event.data.simulationId` (çift tetikleme koruması).
+* **Error Recovery:** `retries: 3`, exponential backoff, onFailure hook (`status: 'failed'`, `failedAt`).
+* **Incremental Sync:** `lastProcessedDate` ile kaldığı yerden devam.
+* **Multi-Strategy Weighted Consensus:** Her strateji -1/0/+1 sinyali, `weight` ile çarpılır, threshold ±0.4.
+
+**Kritik Kurallar**
+* **Immutable Ledger:** Transaction ASLA silinemez, sadece REVERSAL ile düzeltilir.
+* **TWR (Time-Weighted Return):** Deposit/Withdraw durumunda metrikler bozulmaz.
+* **Corporate Actions:** Stock Split, Dividend, Delisted Stock handling.
+* **Bankruptcy Circuit Breaker:** Total Equity < %10 of initial → force liquidation.
+* **Benchmarking:** Alpha/Beta vs SPY/QQQ/IWM/DIA/VTI.
+* **MFE/MAE Tracking:** Pozisyonun gördüğü max kâr/zarar.
+
+---
+
+## Ek E: Faz 6 Paper Trading Özeti
+
+**Daily Execution Cron Job (`lib/inngest/functions/paper-trading/daily-execution.ts`)**
+* **Trigger:** cron `0 20 * * 1-5` (Pzt-Cum 20:00 UTC, US Market Close).
+* **Event trigger:** `paper-trading/daily-execution` (Execute Now butonu için).
+* Her live wallet için: `activeSymbols` tara, stratejilerin sinyallerini üret, weighted consensus, `simulateTrade` ile Faz 4 kuralları uygula.
+* Açık pozisyonlar için: `currentPrice` ve `unrealizedPnl` güncelle (Finnhub Quote API).
+* `Transaction.insertMany` ile ledger'a işle.
+
+**Server Actions (`lib/actions/paper-trading.actions.ts`)**
+* `depositWithdrawAction`: Wallet.capitalInjections.push, Transaction.create.
+* `closePositionAction`: Finnhub'dan güncel fiyat, manuel kapatma.
+* `updateStrategyAllocationAction`: Wallet.strategyPortfolio ve activeSymbols güncelle.
+
+**API Endpoints**
+* `/api/strategies`: Kullanıcının tüm stratejilerini döndürür (MyStrategies + DiscoveredStrategies).
+* `/api/paper-trading/execute`: Manuel cron tetikleme.
+* `/api/inngest`: Inngest webhook handler.
+
+**MODEL DEĞİŞİKLİKLERİ (Özet)**
+* `wallet.model.ts`: `strategyPortfolio[]`, `activeSymbols[]`, `positionSizingConfig`, `status`, `lastError`, `capitalInjections.type` (DEPOSIT/WITHDRAW).
+* `position.model.ts`: `currentPrice`, `unrealizedPnl` (Decimal128).
+* `simulation.model.ts`: `strategyPortfolio[]` (array, Record değil), `finalMetrics` (totalReturn, totalSignals, exitReasonBreakdown Map), `failedAt`.
+* `transaction.model.ts`: `fees`, `feeType` (COMMISSION/SPREAD/REGULATORY), `relatedTransactionId`, `metadata`, FEE ve REVERSAL type'ları.

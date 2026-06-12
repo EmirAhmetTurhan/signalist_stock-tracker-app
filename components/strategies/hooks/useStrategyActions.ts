@@ -63,7 +63,7 @@ export function useStrategyActions({
         if (!userId) return;
         setLoadingSaved(true);
         try {
-            const res = await getSavedStrategies(userId);
+            const res = await getSavedStrategies();
             if (res.success) {
                 setSavedStrategies(res.data as SavedStrategyItem[]);
             }
@@ -92,7 +92,7 @@ export function useStrategyActions({
         if (togglingPin.has(strategyId)) return;
         setTogglingPin(prev => new Set(prev).add(strategyId));
         try {
-            const res = await togglePinStrategy(userId, strategyId);
+            const res = await togglePinStrategy(strategyId);
             if (res.success) {
                 setSavedStrategies(prev => prev.map(s =>
                     s.id === strategyId ? { ...s, pinned: res.pinned } : s
@@ -133,7 +133,7 @@ export function useStrategyActions({
         if (!renameTarget || !renameValue.trim()) return;
         setRenamingStrategy(renameTarget);
         try {
-            const res = await renameStrategy(userId, renameTarget, renameValue.trim());
+            const res = await renameStrategy(renameTarget, renameValue.trim());
             if (res.success) {
                 setSavedStrategies(prev => prev.map(s =>
                     s.id === renameTarget ? { ...s, name: renameValue.trim() } : s
@@ -187,7 +187,7 @@ export function useStrategyActions({
 
         setDeletingStrategy(prev => new Set(prev).add(id));
         try {
-            const res = await deleteSavedStrategy(userId, id);
+            const res = await deleteSavedStrategy(id);
             if (res.success) {
                 setSavedStrategies(prev => prev.filter(s => s.id !== id));
                 if (selectedStrategy === getStrategyKey(id)) {

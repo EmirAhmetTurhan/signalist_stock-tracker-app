@@ -16,7 +16,12 @@ import { getCurrentUserWatchlist, addToWatchlist, removeFromWatchlist } from '@/
 import { createAlert, deleteAlert, getUserAlerts } from '@/lib/actions/alerts.actions';
 import { createSmartAlert as createSmartAlertAction, getSmartAlerts as getSmartAlertsAction } from '@/lib/actions/smart-alerts.actions';
 import { createForwardTest, changeForwardTestStatus } from '@/lib/actions/forward-test.actions';
-import { getPortfolioData, getOpenPositions } from '@/lib/actions/trade.actions';
+// AI tools authenticate via closure-bound userId, not the server-action session.
+// We therefore call portfolio-metrics internals directly (the trade.actions server
+// actions are session-locked to prevent IDOR and would reject AI invocations).
+import { getPortfolioSummary, fetchPriceMap } from '@/lib/paper-trading/portfolio-metrics';
+import Position from '@/database/models/position.model';
+import { fromDecimal128 } from '@/lib/paper-trading/decimal-utils';
 import { generateTradeToken } from '@/lib/ai/token-security';
 import { computeIndicators } from '@/lib/ta/compute';
 import { generateAllSignals } from '@/lib/ta/signals';
@@ -559,7 +564,6 @@ export const getTools = (userId?: string | null) => ({
         if (!userId) return { success: false, error: 'Oturum bulunamadı.' };
 
         const result = await createForwardTest({
-          userId,
           name,
           symbol,
           interval,
@@ -587,17 +591,34 @@ export const getTools = (userId?: string | null) => ({
       try {
         if (!userId) return { success: false, error: 'Unauthorized: You must be logged in to view your portfolio.' };
 
-        const summaryRes = await getPortfolioData(userId);
-        const positionsRes = await getOpenPositions(userId);
+        const openPositions = await Position.find({ userId, status: 'open' }).lean();
+        const symbols = openPositions.map((p: any) => p.symbol);
+        const priceMap = await fetchPriceMap(symbols);
+        const summary = await getPortfolioSummary(userId, priceMap);
 
-        if (!summaryRes.success || !positionsRes.success) {
-          return { success: false, error: 'Failed to fetch portfolio data.' };
-        }
+        const positions = openPositions.map((p: any) => {
+          const avgEntry = fromDecimal128(p.avgEntryPrice);
+          const currentPrice = priceMap[p.symbol] || avgEntry;
+          const marketValue = currentPrice * p.quantity;
+          const unrealizedPnl = (currentPrice - avgEntry) * p.quantity;
+          const unrealizedPnlPercent = avgEntry > 0 ? ((currentPrice - avgEntry) / avgEntry) * 100 : 0;
+          return {
+            id: String(p._id),
+            symbol: p.symbol,
+            quantity: p.quantity,
+            avgEntryPrice: Math.round(avgEntry * 100) / 100,
+            currentPrice: Math.round(currentPrice * 100) / 100,
+            marketValue: Math.round(marketValue * 100) / 100,
+            unrealizedPnl: Math.round(unrealizedPnl * 100) / 100,
+            unrealizedPnlPercent: Math.round(unrealizedPnlPercent * 100) / 100,
+            openedAt: p.openedAt?.toISOString?.() || '',
+          };
+        });
 
         return {
           success: true,
-          summary: summaryRes.data,
-          positions: positionsRes.positions,
+          summary,
+          positions,
         };
       } catch (e) {
         return { success: false, error: `Portfolio fetch failed: ${formatError(e)}` };
@@ -666,7 +687,7 @@ export const getTools = (userId?: string | null) => ({
     execute: async ({ strategyId }) => {
       try {
         if (!userId) return { success: false, error: 'Unauthorized.' };
-        const result = await changeForwardTestStatus(userId, strategyId, 'paused');
+        const result = await changeForwardTestStatus(strategyId, 'paused');
         if (!result.success) return result;
         return { success: true, strategyId, message: 'Strategy has been successfully paused.' };
       } catch (e) {

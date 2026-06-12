@@ -6,6 +6,9 @@ import PendingOrder from '@/database/models/pending-order.model';
 import Notification from '@/database/models/notification.model';
 import { fromDecimal128, toDecimal128, decimalMul } from '@/lib/paper-trading/decimal-utils';
 import { fetchJSON } from '@/lib/actions/finnhub.actions';
+import CorporateActionLog from '@/database/models/corporate-action-log.model';
+import { getCurrentPrice } from '@/lib/actions/finnhub/quote';
+import { Types } from 'mongoose';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
 
@@ -48,18 +51,36 @@ export const processCorporateActionsJob = inngest.createFunction(
 
           for (const div of dividends) {
             if (div.exDate === fromStr || div.exDate === toStr) {
+              // Idempotency Guard
+              const alreadyProcessed = await CorporateActionLog.findOne({
+                symbol: symbol.toUpperCase(),
+                exDate: div.exDate,
+                type: 'dividend'
+              });
+              if (alreadyProcessed) {
+                console.log(`[CorporateActions] Dividend for ${symbol} on ${div.exDate} already processed. Skipping.`);
+                continue;
+              }
+
               // Find all users holding this symbol
               const holders = activePositions.filter(p => p.symbol === symbol);
+              let processedAny = false;
               for (const pos of holders) {
                 // If position opened before exDate
                 const openedAt = new Date(pos.openedAt);
                 const exDateObj = new Date(div.exDate);
                 if (openedAt < exDateObj) {
-                  const dividendAmount = decimalMul(pos.quantity, div.amount);
+                  const qtyVal = parseFloat(pos.quantity.toString());
+                  const dividendAmount = qtyVal * div.amount;
                   
                   await Wallet.updateOne(
-                    { userId: pos.userId },
-                    { $inc: { cashBalance: toDecimal128(dividendAmount) } }
+                    { _id: pos.walletId },
+                    { 
+                      $inc: { 
+                        cashBalance: toDecimal128(dividendAmount),
+                        totalEquity: toDecimal128(dividendAmount)
+                      } 
+                    }
                   );
 
                   await Notification.create({
@@ -68,7 +89,16 @@ export const processCorporateActionsJob = inngest.createFunction(
                     title: `Temettü Ödemesi: ${symbol}`,
                     message: `${symbol} hisseden hisse başı $${div.amount} üzerinden toplam $${dividendAmount.toFixed(2)} temettü kazandınız.`
                   });
+                  processedAny = true;
                 }
+              }
+
+              if (processedAny || holders.length === 0) {
+                await CorporateActionLog.create({
+                  symbol: symbol.toUpperCase(),
+                  exDate: div.exDate,
+                  type: 'dividend'
+                });
               }
             }
           }
@@ -89,6 +119,17 @@ export const processCorporateActionsJob = inngest.createFunction(
 
           for (const split of splits) {
             if (split.date === fromStr || split.date === toStr) {
+              // Idempotency Guard
+              const alreadyProcessed = await CorporateActionLog.findOne({
+                symbol: symbol.toUpperCase(),
+                exDate: split.date,
+                type: 'split'
+              });
+              if (alreadyProcessed) {
+                console.log(`[CorporateActions] Split for ${symbol} on ${split.date} already processed. Skipping.`);
+                continue;
+              }
+
               const fromFactor = split.fromFactor || 1;
               const toFactor = split.toFactor || 1;
               const ratio = toFactor / fromFactor; // e.g. 2 for a 2-for-1 split
@@ -96,17 +137,19 @@ export const processCorporateActionsJob = inngest.createFunction(
               if (ratio === 1) continue;
 
               const holders = activePositions.filter(p => p.symbol === symbol);
+              let processedAny = false;
               
               for (const pos of holders) {
                 // Adjust position
-                const newQty = Math.floor(pos.quantity * ratio);
+                const qtyVal = parseFloat(pos.quantity.toString());
+                const newQty = qtyVal * ratio;
                 const newAvgEntry = fromDecimal128(pos.avgEntryPrice) / ratio;
 
                 await Position.updateOne(
                   { _id: pos._id },
                   { 
                     $set: { 
-                      quantity: newQty,
+                      quantity: Types.Decimal128.fromString(newQty.toFixed(4)),
                       avgEntryPrice: toDecimal128(newAvgEntry)
                     } 
                   }
@@ -115,17 +158,33 @@ export const processCorporateActionsJob = inngest.createFunction(
                 // Adjust pending orders
                 const pending = await PendingOrder.find({ userId: pos.userId, symbol: symbol, status: 'active' });
                 for (const order of pending) {
-                  const newOrderQty = Math.floor(order.quantity * ratio);
+                  const oQtyVal = parseFloat(order.quantity.toString());
+                  const newOrderQty = oQtyVal * ratio;
                   const newTrigger = fromDecimal128(order.triggerPrice) / ratio;
                   await PendingOrder.updateOne(
                     { _id: order._id },
                     {
                       $set: {
-                        quantity: newOrderQty,
+                        quantity: Types.Decimal128.fromString(newOrderQty.toFixed(4)),
                         triggerPrice: toDecimal128(newTrigger)
                       }
                     }
                   );
+                }
+
+                // Recalculate totalEquity for the wallet
+                const wallet = await Wallet.findById(pos.walletId);
+                if (wallet) {
+                  const walletPositions = await Position.find({ walletId: wallet._id, status: 'open' });
+                  let positionsMV = 0;
+                  for (const p of walletPositions) {
+                    const pQty = parseFloat(p.quantity.toString());
+                    const currentPrice = await getCurrentPrice(p.symbol) || fromDecimal128(p.currentPrice);
+                    positionsMV += pQty * currentPrice;
+                  }
+                  const cashVal = parseFloat(wallet.cashBalance.toString());
+                  wallet.totalEquity = toDecimal128(cashVal + positionsMV);
+                  await wallet.save();
                 }
 
                 await Notification.create({
@@ -133,6 +192,15 @@ export const processCorporateActionsJob = inngest.createFunction(
                   type: 'system_alert',
                   title: `Hisse Bölünmesi: ${symbol}`,
                   message: `${symbol} hissesinde ${toFactor}:${fromFactor} bölünme gerçekleşti. Pozisyonunuz ve açık emirleriniz güncellendi.`
+                });
+                processedAny = true;
+              }
+
+              if (processedAny || holders.length === 0) {
+                await CorporateActionLog.create({
+                  symbol: symbol.toUpperCase(),
+                  exDate: split.date,
+                  type: 'split'
                 });
               }
             }

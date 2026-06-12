@@ -8,9 +8,19 @@ import Notification from '@/database/models/notification.model';
 import { toDecimal128, fromDecimal128, decimalMul, decimalAdd } from '@/lib/paper-trading/decimal-utils';
 import mongoose from 'mongoose';
 import { revalidatePath } from 'next/cache';
+import { auth } from '@/lib/better-auth/auth';
+import { headers } from 'next/headers';
+
+async function requireUserId(): Promise<string | null> {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    return session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function createPendingOrder(input: {
-  userId: string;
   symbol: string;
   side: 'BUY' | 'SELL';
   orderType: 'limit' | 'stop_loss' | 'take_profit' | 'market_on_open';
@@ -18,10 +28,13 @@ export async function createPendingOrder(input: {
   triggerPrice: number;
   timeInForce?: 'day' | 'gtc';
   parentStrategyId?: string;
+  userId?: string;
 }) {
   try {
+    const userId = input.userId || await requireUserId();
+    if (!userId) return { success: false, error: 'Unauthorized' };
     await connectToDatabase();
-    const { userId, symbol, side, orderType, quantity, triggerPrice, timeInForce = 'day', parentStrategyId } = input;
+    const { symbol, side, orderType, quantity, triggerPrice, timeInForce = 'day', parentStrategyId } = input;
     
     const notional = decimalMul(quantity, triggerPrice);
 
@@ -103,8 +116,10 @@ export async function createPendingOrder(input: {
   }
 }
 
-export async function cancelPendingOrder(orderId: string, userId: string) {
+export async function cancelPendingOrder(orderId: string) {
   try {
+    const userId = await requireUserId();
+    if (!userId) return { success: false, error: 'Unauthorized' };
     await connectToDatabase();
     
     const session = await mongoose.startSession();
@@ -164,8 +179,10 @@ export async function cancelPendingOrder(orderId: string, userId: string) {
   }
 }
 
-export async function getPendingOrders(userId: string) {
+export async function getPendingOrders() {
   try {
+    const userId = await requireUserId();
+    if (!userId) return { success: false, error: 'Unauthorized' };
     await connectToDatabase();
     const orders = await PendingOrder.find({ userId }).sort({ createdAt: -1 }).lean();
     return { success: true, orders: JSON.parse(JSON.stringify(orders)) };
@@ -175,8 +192,10 @@ export async function getPendingOrders(userId: string) {
   }
 }
 
-export async function cleanupDanglingOrders(positionId: string, userId: string) {
+export async function cleanupDanglingOrders(positionId: string, providedUserId?: string) {
   try {
+    const userId = providedUserId || await requireUserId();
+    if (!userId) return;
     await connectToDatabase();
     
     // Find active sell orders attached to this position

@@ -91,8 +91,8 @@ export default function ManualTradeModal({
 
     setSubmitting(true);
     try {
+      // userId is derived server-side from the authenticated session (IDOR fix).
       const result = await executeManualTrade({
-        userId,
         symbol: symbol.toUpperCase(),
         side,
         quantity: qty,

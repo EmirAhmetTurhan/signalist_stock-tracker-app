@@ -59,9 +59,8 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
             const all = loadCustomStrategies();
             setStrategy(all.find(s => s.key === strategyParam) ?? null);
         } else if (strategyParam.startsWith("saved_") && userId) {
-            // Load from MongoDB
             const mongoId = strategyParam.replace("saved_", "");
-            getSavedStrategyById(userId, mongoId).then(res => {
+            getSavedStrategyById(mongoId).then(res => {
                 if (res.success && res.data) {
                     const d = res.data;
                     setStrategy({
@@ -91,7 +90,7 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
         
         try {
             const { updateSavedStrategy } = await import("@/lib/actions/saved-strategy.actions");
-            const res = await updateSavedStrategy(userId, mongoId, {
+            const res = await updateSavedStrategy(mongoId, {
                 discoveredParams: params,
                 discoveredWinRate: winRate,
                 discoveredTotalSignals: totalSignals
@@ -118,7 +117,7 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
         
         try {
             const { updateSavedStrategy } = await import("@/lib/actions/saved-strategy.actions");
-            const res = await updateSavedStrategy(userId, mongoId, {
+            const res = await updateSavedStrategy(mongoId, {
                 discoveredParams: null,
                 discoveredWinRate: null,
                 discoveredTotalSignals: null

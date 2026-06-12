@@ -5,13 +5,23 @@ import ForwardTestStrategy from '@/database/models/forward-test-strategy.model';
 import { toDecimal128, fromDecimal128 } from '@/lib/paper-trading/decimal-utils';
 import { revalidatePath } from 'next/cache';
 import type { Timeframe } from '@/lib/ta/types';
+import { auth } from '@/lib/better-auth/auth';
+import { headers } from 'next/headers';
+
+async function requireUserId(): Promise<string | null> {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    return session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // ============================================================
 // Create Forward Test
 // ============================================================
 
 export async function createForwardTest(input: {
-  userId: string;
   name: string;
   symbol: string;
   interval: Timeframe;
@@ -22,13 +32,13 @@ export async function createForwardTest(input: {
   executionMode: 'shadow' | 'auto' | 'propose_only';
   capitalAllocated: number;
 }) {
-  if (!input.userId) return { success: false, error: 'Oturum bulunamadı.' };
-
   try {
+    const userId = await requireUserId();
+    if (!userId) return { success: false, error: 'Oturum bulunamadı. Lütfen giriş yapın.' };
     await connectToDatabase();
 
     const newStrategy = await ForwardTestStrategy.create({
-      userId: input.userId,
+      userId: userId,
       name: input.name,
       symbol: input.symbol.toUpperCase(),
       interval: input.interval,
@@ -56,7 +66,8 @@ export async function createForwardTest(input: {
 // Get User Forward Tests
 // ============================================================
 
-export async function getForwardTests(userId: string) {
+export async function getForwardTests() {
+  const userId = await requireUserId();
   if (!userId) return { success: false, data: [] };
 
   try {
@@ -91,8 +102,10 @@ export async function getForwardTests(userId: string) {
 // Change Status
 // ============================================================
 
-export async function changeForwardTestStatus(userId: string, id: string, status: 'running' | 'paused' | 'stopped') {
+export async function changeForwardTestStatus(id: string, status: 'running' | 'paused' | 'stopped') {
   try {
+    const userId = await requireUserId();
+    if (!userId) return { success: false, error: 'Unauthorized' };
     await connectToDatabase();
 
     // Validate authorization and find the strategy
@@ -112,8 +125,10 @@ export async function changeForwardTestStatus(userId: string, id: string, status
   }
 }
 
-export async function changeForwardTestMode(userId: string, id: string, mode: 'shadow' | 'auto' | 'propose_only', confirmationText?: string) {
+export async function changeForwardTestMode(id: string, mode: 'shadow' | 'auto' | 'propose_only', confirmationText?: string) {
   try {
+    const userId = await requireUserId();
+    if (!userId) return { success: false, error: 'Unauthorized' };
     await connectToDatabase();
 
     const strategy = await ForwardTestStrategy.findOne({ _id: id, userId });

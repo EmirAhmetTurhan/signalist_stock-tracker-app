@@ -368,27 +368,25 @@ export async function executeTrade(input: TradeInput): Promise<TradeResult> {
         { returnDocument: 'after', ...sessionOpt }
       );
 
-      // Update position
-      const newQty = existingPosition.quantity - quantity;
+      // Update position (Atomic Conditional Update)
+      const currentQty = parseFloat(existingPosition.quantity.toString());
+      const newQty = currentQty - quantity;
       const isFullClose = newQty === 0;
       const cumulativePnl = decimalAdd(fromDecimal128(existingPosition.realizedPnlToDate), realizedPnl);
 
-      const positionUpdateQuery: any = {
-        quantity: newQty,
-        realizedPnlToDate: toDecimal128(cumulativePnl),
-        lastTradeAt: now,
-      };
+      const quantityField = useReservedFunds ? 'reservedQuantity' : 'quantity';
+      let result;
 
-      if (useReservedFunds) {
-        positionUpdateQuery.reservedQuantity = existingPosition.reservedQuantity - quantity;
-      }
-
-      await Position.updateOne(
-        { _id: existingPosition._id },
-        {
-          $set: {
-            ...positionUpdateQuery,
-            ...(isFullClose ? {
+      if (isFullClose) {
+        // Full close: quantity must be exactly equal to what we want to sell
+        result = await Position.updateOne(
+          { _id: existingPosition._id, [quantityField]: quantity },
+          {
+            $set: {
+              quantity: 0,
+              ...(useReservedFunds ? { reservedQuantity: 0 } : {}),
+              realizedPnlToDate: toDecimal128(cumulativePnl),
+              lastTradeAt: now,
               status: 'closed',
               closedAt: now,
               closeReason: triggerSource === 'manual' ? 'user_sell'
@@ -396,11 +394,35 @@ export async function executeTrade(input: TradeInput): Promise<TradeResult> {
                   : triggerSource === 'take_profit' ? 'take_profit'
                     : triggerSource === 'strategy' ? 'strategy_exit'
                       : 'user_sell',
-            } : {}),
+            }
           },
-        },
-        sessionOpt
-      );
+          sessionOpt
+        );
+      } else {
+        // Partial close: quantity must be strictly greater than what we want to sell
+        result = await Position.updateOne(
+          { _id: existingPosition._id, [quantityField]: { $gt: quantity } },
+          {
+            $inc: { 
+              quantity: -quantity,
+              ...(useReservedFunds ? { reservedQuantity: -quantity } : {})
+            },
+            $set: {
+              realizedPnlToDate: toDecimal128(cumulativePnl),
+              lastTradeAt: now
+            }
+          },
+          sessionOpt
+        );
+      }
+
+      if (result.matchedCount === 0) {
+        if (useTransaction && session) await session.abortTransaction();
+        return tradeError(
+          'INSUFFICIENT_POSITION',
+          `${symbol} için yetersiz pozisyon miktarı (eşzamanlı başka bir işlem nedeniyle pozisyon güncellenemedi).`
+        );
+      }
 
       // Insert trade record
       const positionIdForTrade = isFullClose ? null : existingPosition._id;

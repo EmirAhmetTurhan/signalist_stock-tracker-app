@@ -66,7 +66,7 @@ export default function CustomStrategyModal({ open, onClose, onCreated, userId }
     useEffect(() => {
         if (open && tab === 'saved' && userId) {
             setLoadingSaved(true);
-            getSavedStrategies(userId).then(res => {
+            getSavedStrategies().then(res => {
                 if (res.success) {
                     setSavedStrategies(res.data as SavedStrategyItem[]);
                 }
@@ -123,7 +123,6 @@ export default function CustomStrategyModal({ open, onClose, onCreated, userId }
 
         if (userId) {
             const res = await createSavedStrategy({
-                userId,
                 name: trimmed,
                 indicators: Array.from(selected),
                 mode,
@@ -180,7 +179,7 @@ export default function CustomStrategyModal({ open, onClose, onCreated, userId }
 
     const confirmDelete = useCallback(async () => {
         if (!userId || !deleteConfirm) return;
-        const res = await deleteSavedStrategy(userId, deleteConfirm);
+        const res = await deleteSavedStrategy(deleteConfirm);
         if (res.success) {
             setSavedStrategies(prev => prev.filter(s => s.id !== deleteConfirm));
         }

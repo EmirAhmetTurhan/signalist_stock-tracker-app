@@ -31,7 +31,6 @@ export default function ForwardTestCreator({
 
     try {
       const result = await createForwardTest({
-        userId,
         name: `FT: ${strategyName}`,
         symbol,
         interval: interval as Timeframe,

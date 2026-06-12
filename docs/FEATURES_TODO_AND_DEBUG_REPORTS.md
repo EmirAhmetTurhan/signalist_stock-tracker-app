@@ -509,3 +509,100 @@ Aşağıdaki görsel ve mantıksal onarımlar kod sistemine başarıyla uygulanm
 3. **AlertForm Tasarım Senkronizasyonu:** `/alerts/create` sayfasında unutulan eski HTML form silindi ve anlık fiyat çeken, fetch validasyonu yapan Premium `AlertForm.tsx` entegre edilerek tüm sistemde tek ve şık bir form yapısı sağlandı.
 4. **Dashboard Breakpoint Optimizasyonu:** `lg:` breakpoint'lerinin çift monitör ve split-screen kullanımlarda sayfayı çok daralttığı tespit edilerek `xl:` (1280px) değerine yükseltildi, Tailwind `order` sınıflarıyla ekran daralmasında widget'ların kontrollü dizilimi güvence altına alındı.
 5. **Search Arayüzü İyileştirmeleri:** Hisse aramalarında karmaşık ve uzun isimlerin UI'yi bozmaması adına `truncate` eklendi ve hissenin hangi borsadan (NASDAQ, TO, MX vb.) geldiğini belirten ufak şık rozetler tasarlandı.
+
+
+## 14. Faz 5: Simulation Lab
+
+**Felsefe: İki Ayrı Dünya**
+* **Simulation Lab (Geçmişe Dönük):** 10 yıllık veride backtest, Inngest chunking, deterministik motor.
+* **Paper Trading (Canlı/İleriye Dönük):** Gerçek zamanlı sinyallerle sanal cüzdan, cron job.
+
+**Entity'ler (Domain Model):** 
+* `Wallet`: `type 'live' | 'simulation'`, `strategyPortfolio[]`, `activeSymbols[]`, `positionSizingConfig`, `capitalInjections` (TWR için), `status`, `lastError`.
+* `Position`: `currentPrice`, `unrealizedPnl`, `mfe`, `mae`, `maxDrawdown`, `exitReason` enum.
+* `Transaction`: Immutable Ledger (Double-Entry), `FEE` type, `fees`, `feeType`, `relatedTransactionId`, `metadata`.
+* `Simulation`: `strategyPortfolio[]` (multi-strategy), `finalMetrics` cache (`winRate`, `sharpe`, `sortino`, `cagr`, `alpha`, `beta`, `totalReturn`, `exitReasonBreakdown`), `equityCurve` embedded array, `benchmarkCurve`, `failedAt`.
+* `StrategySnapshot`: Engine Versioning (motor değişse bile eski simülasyon bozulmaz).
+
+**Inngest Altyapısı (`lib/inngest/functions/simulation/run-simulation.ts`)**
+* **Chunking:** 90 günlük bloklar, OOM koruması, yield-based processing.
+* **Idempotency:** `event.data.simulationId` (çift tetikleme koruması).
+* **Error Recovery:** `retries: 3`, exponential backoff, onFailure hook (`status: 'failed'`, `failedAt`).
+* **Incremental Sync:** `lastProcessedDate` ile kaldığı yerden devam.
+* **Multi-Strategy Weighted Consensus:** Her strateji -1/0/+1 sinyali, `weight` ile çarpılır, threshold ±0.4.
+
+**Kritik Kurallar**
+* **Immutable Ledger:** Transaction ASLA silinemez, sadece REVERSAL ile düzeltilir.
+* **TWR (Time-Weighted Return):** Deposit/Withdraw durumunda metrikler bozulmaz.
+* **Corporate Actions:** Stock Split, Dividend, Delisted Stock handling.
+* **Bankruptcy Circuit Breaker:** Total Equity < %10 of initial → force liquidation.
+* **Benchmarking:** Alpha/Beta vs SPY/QQQ/IWM/DIA/VTI.
+* **MFE/MAE Tracking:** Pozisyonun gördüğü max kâr/zarar.
+
+**UI Bileşenleri**
+* `SimulationCreationModal`: Modern Calendar (dropdown yıl/ay), Benchmark dropdown (5 endeks + açıklamalar), Position Sizing açıklamaları, strateji silme butonu, weight validation (toplam 1.0), max 10 strateji.
+* `SimulationProgressCard`: 2 saniyelik polling, amber pulse, error counter.
+* `SimulationResultsDashboard`: Lightweight Charts (equity curve + benchmark + trade markers), 8 metrik grid, CSV export (Blob API), Trade History tablosu.
+* `SimulationsList`: Grid layout, status badge'ler, AlertDialog ile silme.
+* `LaunchLabButton` + `useSimulationModal` (Zustand): Global modal state.
+* `RetryButton`: Failed durumda yeniden çalıştırma.
+
+**Navigation**
+* `/portfolio/simulations` (Sim Lab list)
+* `/portfolio/simulations/[id]` (Sim Lab detail)
+* `NavItems.tsx`: Exact match for `/portfolio` (çakışma önlendi).
+
+---
+
+## 15. Faz 6: Paper Trading
+
+**Daily Execution Cron Job (`lib/inngest/functions/paper-trading/daily-execution.ts`)**
+* **Trigger:** cron `0 20 * * 1-5` (Pzt-Cum 20:00 UTC, US Market Close).
+* **Event trigger:** `paper-trading/daily-execution` (Execute Now butonu için).
+* Her live wallet için: `activeSymbols` tara, stratejilerin sinyallerini üret, weighted consensus, `simulateTrade` ile Faz 4 kuralları uygula.
+* Açık pozisyonlar için: `currentPrice` ve `unrealizedPnl` güncelle (Finnhub Quote API).
+* `Transaction.insertMany` ile ledger'a işle.
+
+**UI Bileşenleri**
+* `PaperTradingDashboard`: 4 summary card (Total Equity, Cash Balance, Total Return, Unrealized P&L), Open Positions tablosu (manuel Close butonu), Strategy Allocation panel, Recent Transactions tablosu, CSV export.
+* `DepositWithdrawModal`: TWR için `capitalInjections` kaydı.
+* `StrategyAllocationModal`: Strateji ağırlıkları (toplam 1.0), `activeSymbols` (virgülle), max 10 strateji.
+* `Execute Now` butonu: Manuel cron tetikleme.
+
+**Server Actions (`lib/actions/paper-trading.actions.ts`)**
+* `depositWithdrawAction`: Wallet.capitalInjections.push, Transaction.create.
+* `closePositionAction`: Finnhub'dan güncel fiyat, manuel kapatma.
+* `updateStrategyAllocationAction`: Wallet.strategyPortfolio ve activeSymbols güncelle.
+
+**API Endpoints**
+* `/api/strategies`: Kullanıcının tüm stratejilerini döndürür (MyStrategies + DiscoveredStrategies).
+* `/api/paper-trading/execute`: Manuel cron tetikleme.
+* `/api/inngest`: Inngest webhook handler.
+
+**Navigation**
+* `/portfolio`: Paper Trading dashboard.
+
+**MODEL DEĞİŞİKLİKLERİ (Özet)**
+* `wallet.model.ts`: `strategyPortfolio[]`, `activeSymbols[]`, `positionSizingConfig`, `status`, `lastError`, `capitalInjections.type` (DEPOSIT/WITHDRAW).
+* `position.model.ts`: `currentPrice`, `unrealizedPnl` (Decimal128).
+* `simulation.model.ts`: `strategyPortfolio[]` (array, Record değil), `finalMetrics` (totalReturn, totalSignals, exitReasonBreakdown Map), `failedAt`.
+* `transaction.model.ts`: `fees`, `feeType` (COMMISSION/SPREAD/REGULATORY), `relatedTransactionId`, `metadata`, FEE ve REVERSAL type'ları.
+
+**YENİ DOSYALAR**
+* **Inngest:** `lib/inngest/client.ts`, `app/api/inngest/route.ts`, `lib/inngest/functions/simulation/run-simulation.ts`, `lib/inngest/functions/paper-trading/daily-execution.ts`
+* **Server Actions:** `lib/actions/simulation.actions.ts`, `lib/actions/paper-trading.actions.ts`, `lib/actions/finnhub/quote.ts`
+* **API Routes:** `app/api/strategies/route.ts`, `app/api/paper-trading/execute/route.ts`
+* **Pages:** `app/(root)/portfolio/page.tsx`, `app/(root)/portfolio/simulations/page.tsx`, `app/(root)/portfolio/simulations/[id]/page.tsx`
+* **Components:** `components/simulation/SimulationCreationModal.tsx`, `components/simulation/SimulationProgressCard.tsx`, `components/simulation/SimulationResultsDashboard.tsx`, `components/simulation/SimulationsList.tsx`, `components/simulation/RetryButton.tsx`, `components/simulation/LaunchLabButton.tsx`, `components/paper-trading/PaperTradingDashboard.tsx`, `components/paper-trading/DepositWithdrawModal.tsx`, `components/paper-trading/StrategyAllocationModal.tsx`
+* **Store:** `lib/store/useSimulationModal.ts`
+
+**UI/UX DEĞİŞİKLİKLERİ (Özet)**
+* **Renk teması:** emerald → amber/yellow (sistemle uyumlu, yellow-400/500).
+* **Modern Calendar:** shadcn/ui Calendar + Popover, captionLayout='dropdown', 1990-2050 arası.
+* **Number input spinner kaldırma:** `app/globals.css`'e webkit/moz kuralları eklendi.
+* **Navigation active state:** `/portfolio` için exact match (startsWith değil).
+* **Premium scrollbar:** Tüm modal ve dialog'lara uygulandı.
+* **Initial Capital:** `min="0.01"` (1000$ sınırı kalktı, $50 ile de test edilebilir).
+* **Benchmark dropdown:** 5 endeks + tooltip açıklamalar.
+* **Position Sizing:** Her seçenek için alt açıklama (flex-col layout).
+* **Strateji silme butonu:** ✕ ikonu, max 10 strateji limiti.

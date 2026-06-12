@@ -13,7 +13,7 @@ export default function ForwardTestList({ forwardTests, userId }: { forwardTests
 
   const handleStatusChange = async (id: string, newStatus: 'running' | 'paused' | 'stopped') => {
     setLoadingId(id);
-    await changeForwardTestStatus(userId, id, newStatus);
+    await changeForwardTestStatus(id, newStatus);
     setLoadingId(null);
   };
 
@@ -32,7 +32,7 @@ export default function ForwardTestList({ forwardTests, userId }: { forwardTests
     }
     setLoadingId(selectedTest.id);
     setModeModalOpen(false);
-    const res = await changeForwardTestMode(userId, selectedTest.id, 'auto', confirmationInput);
+    const res = await changeForwardTestMode(selectedTest.id, 'auto', confirmationInput);
     if (!res.success) toast.error(res.error || 'Hata oluştu');
     else toast.success('Strateji Auto moda geçirildi!');
     setLoadingId(null);

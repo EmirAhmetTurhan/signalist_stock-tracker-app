@@ -7,6 +7,7 @@ export const NAV_ITEMS = [
     { href: '/ta', label: 'T/A' },
     { href: '/ai', label: 'AI' },
     { href: '/portfolio', label: 'Portfolio' },
+    { href: '/portfolio/simulations', label: 'Simulation Lab' },
     { href: '/archive', label: 'Archive' },
 ];
 

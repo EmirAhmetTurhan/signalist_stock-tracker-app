@@ -2,6 +2,9 @@
 
 // lib/actions/wallet.actions.ts — Wallet CRUD server actions
 // All wallet mutations go through here. Never call MongoDB directly from client components.
+//
+// SECURITY: userId is ALWAYS derived from the authenticated session (better-auth).
+// We deliberately ignore any userId sent by the client to prevent IDOR.
 
 import { connectToDatabase } from '@/database/mongoose';
 import Wallet from '@/database/models/wallet.model';
@@ -11,13 +14,25 @@ import { toDecimal128, fromDecimal128, decimalMul, decimalSub, DEFAULT_INITIAL_B
 import { executeTrade } from '@/lib/paper-trading/execution-engine';
 import { fetchPriceMap } from '@/lib/paper-trading/portfolio-metrics';
 import { randomUUID } from 'crypto';
+import { auth } from '@/lib/better-auth/auth';
+import { headers } from 'next/headers';
+
+async function requireUserId(): Promise<string | null> {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    return session?.user?.id ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // ============================================================
 // Get or Create Wallet (lazy initialization)
 // ============================================================
 
-export async function getOrCreateWallet(userId: string) {
-  if (!userId) return { success: false, error: 'Kullanıcı kimliği eksik.' };
+export async function getOrCreateWallet() {
+  const userId = await requireUserId();
+  if (!userId) return { success: false, error: 'Oturum bulunamadı.' };
 
   try {
     await connectToDatabase();
@@ -67,7 +82,8 @@ export async function getOrCreateWallet(userId: string) {
 // Get Wallet Balance (read-only)
 // ============================================================
 
-export async function getWalletBalance(userId: string) {
+export async function getWalletBalance() {
+  const userId = await requireUserId();
   if (!userId) return null;
 
   try {
@@ -92,8 +108,9 @@ export async function getWalletBalance(userId: string) {
 // Reset Wallet
 // ============================================================
 
-export async function resetWallet(userId: string) {
-  if (!userId) return { success: false, error: 'Kullanıcı kimliği eksik.' };
+export async function resetWallet() {
+  const userId = await requireUserId();
+  if (!userId) return { success: false, error: 'Oturum bulunamadı.' };
 
   try {
     await connectToDatabase();
@@ -118,7 +135,7 @@ export async function resetWallet(userId: string) {
         console.warn(`[WalletReset] Could not sell ${position.symbol} via engine, force-closing using cached price`);
         try {
           const now = new Date();
-          
+
           // Fetch last known price or fallback to entry price
           const priceMap = await fetchPriceMap([position.symbol]);
           const lastPrice = priceMap[position.symbol] || fromDecimal128(position.avgEntryPrice);

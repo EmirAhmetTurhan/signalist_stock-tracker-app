@@ -86,7 +86,9 @@ export function simulateTrade(
     signal: 'BUY' | 'SELL',
     atrValues: number[],
     riskConfig: TradeRiskConfig,
-    hasOppositeSignal?: (barIndex: number) => boolean,
+    hasOppositeSignal?: ((barIndex: number) => boolean) | null,
+    highestPrice?: number,
+    lowestPrice?: number,
 ): SimulatedTrade {
     const entryPrice = candles[entryIndex].close;
     const currentATR = atrValues[entryIndex] ?? 0;
@@ -110,14 +112,31 @@ export function simulateTrade(
     // ── Tracking variables ──
     let bestPnlPct = 0;   // MFE tracking (best unrealized P&L %)
     let worstPnlPct = 0;  // MAE tracking (worst unrealized P&L %)
-    let peakPnlPct = 0;   // For intra-trade drawdown
-    let maxIntraDD = 0;   // Largest peak-to-trough in unrealized P&L
+
+    if (isBuy) {
+        if (highestPrice !== undefined) bestPnlPct = ((highestPrice - entryPrice) / entryPrice) * 100;
+        if (lowestPrice !== undefined) worstPnlPct = ((lowestPrice - entryPrice) / entryPrice) * 100;
+    } else {
+        if (lowestPrice !== undefined) bestPnlPct = ((entryPrice - lowestPrice) / entryPrice) * 100;
+        if (highestPrice !== undefined) worstPnlPct = ((entryPrice - highestPrice) / entryPrice) * 100;
+    }
+
+    let peakPnlPct = bestPnlPct;   // For intra-trade drawdown
+    let maxIntraDD = Math.max(0, bestPnlPct - worstPnlPct);   // Largest peak-to-trough in unrealized P&L
 
     // Trailing stop tracking
     let peakPrice = entryPrice;
+    if (highestPrice !== undefined || lowestPrice !== undefined) {
+        if (isBuy) {
+            peakPrice = highestPrice ?? entryPrice;
+        } else {
+            peakPrice = lowestPrice ?? entryPrice;
+        }
+    }
+
     let trailingStopPrice = isBuy
-        ? entryPrice - currentATR * (riskConfig.trailAtrMult || riskConfig.stopLossAtrMult)
-        : entryPrice + currentATR * (riskConfig.trailAtrMult || riskConfig.stopLossAtrMult);
+        ? peakPrice - currentATR * (riskConfig.trailAtrMult || riskConfig.stopLossAtrMult)
+        : peakPrice + currentATR * (riskConfig.trailAtrMult || riskConfig.stopLossAtrMult);
 
     // ── Helper to build result ──
     function buildResult(exitIdx: number, reason: ExitReason): SimulatedTrade {

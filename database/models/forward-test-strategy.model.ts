@@ -91,8 +91,8 @@ const ForwardTestStrategySchema = new Schema<IForwardTestStrategy>({
   timestamps: true,
   toJSON: {
     transform: (_doc, ret) => {
-      if (ret.capitalAllocated) ret.capitalAllocated = ret.capitalAllocated.toString() as any;
-      if (ret.shadowPnl) ret.shadowPnl = ret.shadowPnl.toString() as any;
+      if (ret.capitalAllocated != null) ret.capitalAllocated = ret.capitalAllocated.toString() as any;
+      if (ret.shadowPnl != null) ret.shadowPnl = ret.shadowPnl.toString() as any;
       return ret;
     },
   },
