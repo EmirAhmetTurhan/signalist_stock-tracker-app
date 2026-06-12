@@ -69,21 +69,6 @@ const WatchlistPage = async () => {
     };
   });
 
-  if (!items.length) {
-    return (
-      <div className="watchlist-empty-container">
-        <div className="watchlist-empty">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="watchlist-star">
-            <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-          </svg>
-          <h2 className="empty-title">Your Watchlist is empty</h2>
-          <p className="empty-description">Use the Search to find a stock and click “Add to Watchlist”. Your saved brands will appear here.</p>
-          <Link className="search-btn" href="/search">Search Stocks</Link>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="watchlist-container flex flex-col xl:flex-row gap-6 w-full">
       <section className="watchlist flex-1 overflow-hidden">
@@ -91,7 +76,19 @@ const WatchlistPage = async () => {
           <h1 className="watchlist-title">Watchlist</h1>
         </div>
 
-        <WatchlistTable watchlist={enrichedWatchlist} />
+        {items.length === 0 ? (
+          <div className="watchlist-empty-container mt-8">
+            <div className="watchlist-empty">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="watchlist-star">
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+              </svg>
+              <h2 className="empty-title">Your Watchlist is empty</h2>
+              <p className="text-gray-500 mt-2 text-sm text-center max-w-sm">Use the search bar in the navigation to find and add stocks to your watchlist.</p>
+            </div>
+          </div>
+        ) : (
+          <WatchlistTable watchlist={enrichedWatchlist} />
+        )}
       </section>
 
       {/* Right column placeholder for Alerts & News to mirror the design */}

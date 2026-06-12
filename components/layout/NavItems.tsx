@@ -46,7 +46,7 @@ const NavItems = memo(function NavItems({initialStocks}: { initialStocks: StockW
                     return <li key={href} role="listitem">
                         <Link
                             href={effectiveHref}
-                            className={`px-2 py-1 rounded-md transition-all ${active ? 'bg-white/10 text-white font-semibold' : 'text-gray-400 hover:text-yellow-500 hover:bg-white/5'}`}
+                            className={`transition-colors ${active ? 'text-white font-bold' : 'text-gray-400 hover:text-white'}`}
                             aria-current={active ? 'page' : undefined}
                             aria-label={`${label} page`}
                         >
