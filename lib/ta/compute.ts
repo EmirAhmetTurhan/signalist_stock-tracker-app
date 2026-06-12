@@ -147,7 +147,7 @@ export function computeIndicators(
   if (activeIndicators.has('wavetrend')) {
     const series = computeWaveTrend(
       candles.map((c) => ({ time: c.time, high: c.high, low: c.low, close: c.close })),
-      params.wtAvgLen, params.wtChannelLen, params.wtMaLen,
+      params.wtChannelLen, params.wtAvgLen, params.wtMaLen,
     );
     result.wavetrend = {
       wt1: series.map((x) => ({ time: x.time, value: safeNum(x.wt1) })),

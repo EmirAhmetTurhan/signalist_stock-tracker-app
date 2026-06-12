@@ -29,6 +29,7 @@ interface YahooChartResponse {
 function parseCandleResponse(
     timestamps: number[],
     quote: YahooChartQuote,
+    synthetic = false,
 ): CandleDataPoint[] {
     const { open: opens, high: highs, low: lows, close: closes, volume: volumes } = quote;
     const out: CandleDataPoint[] = [];
@@ -43,13 +44,38 @@ function parseCandleResponse(
         if (!(l <= h)) continue;
         const item: CandleDataPoint = { time: timestamps[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
         if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
+        if (synthetic) item.synthetic = true;
         out.push(item);
     }
     return out;
 }
 
-export async function getDailyCandles(symbol: string, days = 180): Promise<CandleDataPoint[]> {
-    const to = Math.floor(Date.now() / 1000);
+/** Calculate Average True Range (ATR) to check price discontinuity. */
+function calculateATR(candles: CandleDataPoint[], period = 14): number {
+    if (candles.length === 0) return 0;
+    const trs: number[] = [];
+    for (let i = 0; i < candles.length; i++) {
+        const c = candles[i];
+        if (i === 0) {
+            trs.push(c.high - c.low);
+        } else {
+            const prevClose = candles[i - 1].close;
+            const tr = Math.max(c.high - c.low, Math.abs(c.high - prevClose), Math.abs(c.low - prevClose));
+            trs.push(tr);
+        }
+    }
+    if (trs.length < period) {
+        return trs.reduce((a, b) => a + b, 0) / trs.length;
+    }
+    let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+    for (let i = period; i < trs.length; i++) {
+        atr = (atr * (period - 1) + trs[i]) / period;
+    }
+    return atr;
+}
+
+export async function getDailyCandles(symbol: string, days = 180, toTimestamp?: number): Promise<CandleDataPoint[]> {
+    const to = toTimestamp ?? Math.floor(Date.now() / 1000);
     const from = to - days * 24 * 60 * 60;
 
     // 1) Try Yahoo Finance first — no API key, no rate limits, 10+ years of data
@@ -61,36 +87,9 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
         const json: YahooChartResponse = await res.json();
         const result = json?.chart?.result?.[0];
         const ts: number[] | undefined = result?.timestamp;
-        const quote = result?.indicators?.quote?.[0] || {};
-        const opens: Array<number | null> | undefined = quote.open;
-        const highs: Array<number | null> | undefined = quote.high;
-        const lows: Array<number | null> | undefined = quote.low;
-        const closes: Array<number | null> | undefined = quote.close;
-        const volumes: Array<number | null> | undefined = quote.volume;
-        if (Array.isArray(ts) && ts.length) {
-            const out: CandleDataPoint[] = [];
-            for (let i = 0; i < ts.length; i++) {
-                const oRaw = opens?.[i];
-                const hRaw = highs?.[i];
-                const lRaw = lows?.[i];
-                const cRaw = closes?.[i];
-                const vRaw = volumes?.[i];
-
-                const valid = [oRaw, hRaw, lRaw, cRaw].every(
-                    (x) => typeof x === 'number' && Number.isFinite(x) && (x as number) > 0
-                );
-                if (!valid) continue;
-
-                const o = oRaw as number;
-                const h = hRaw as number;
-                const l = lRaw as number;
-                const c = cRaw as number;
-                if (!(l <= h)) continue;
-
-                const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
-                if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
-                out.push(item);
-            }
+        const quote = result?.indicators?.quote?.[0];
+        if (Array.isArray(ts) && ts.length && quote) {
+            const out = parseCandleResponse(ts, quote, false);
             if (out.length > 0) return out;
         }
     } catch (e) {
@@ -142,13 +141,14 @@ export async function getDailyCandles(symbol: string, days = 180): Promise<Candl
         console.error('getDailyCandles Finnhub fallback error', e);
     }
 
-    return [];
+    throw new Error(`Failed to fetch daily candles for ${symbol}`);
 }
 
 // ─── Yahoo 1h → 4H aggregation ─────────────────────────────────────────────
 
 async function fetchYahoo1hAndAggregate(symbol: string, from: number, to: number): Promise<CandleDataPoint[] | null> {
     const rangeAttempts = [
+        730 * 24 * 60 * 60, // 730 days
         60 * 24 * 60 * 60,  // 60 days
         30 * 24 * 60 * 60,  // 30 days
         7 * 24 * 60 * 60,   // 7 days
@@ -169,38 +169,11 @@ async function fetchYahoo1hAndAggregate(symbol: string, from: number, to: number
             const json: YahooChartResponse = await res.json();
             const result = json?.chart?.result?.[0];
             const ts: number[] | undefined = result?.timestamp;
-            const quote = result?.indicators?.quote?.[0] || {};
-            const opens: Array<number | null> | undefined = quote.open;
-            const highs: Array<number | null> | undefined = quote.high;
-            const lows: Array<number | null> | undefined = quote.low;
-            const closes: Array<number | null> | undefined = quote.close;
-            const volumes: Array<number | null> | undefined = quote.volume;
+            const quote = result?.indicators?.quote?.[0];
 
-            if (!Array.isArray(ts) || ts.length === 0) continue;
+            if (!Array.isArray(ts) || ts.length === 0 || !quote) continue;
 
-            const hourlyCandles: CandleDataPoint[] = [];
-            for (let i = 0; i < ts.length; i++) {
-                const oRaw = opens?.[i];
-                const hRaw = highs?.[i];
-                const lRaw = lows?.[i];
-                const cRaw = closes?.[i];
-                const vRaw = volumes?.[i];
-
-                const valid = [oRaw, hRaw, lRaw, cRaw].every(
-                    (x) => typeof x === 'number' && Number.isFinite(x) && (x as number) > 0
-                );
-                if (!valid) continue;
-
-                const o = oRaw as number;
-                const h = hRaw as number;
-                const l = lRaw as number;
-                const c = cRaw as number;
-                if (!(l <= h)) continue;
-
-                const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
-                if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
-                hourlyCandles.push(item);
-            }
+            const hourlyCandles = parseCandleResponse(ts, quote, false);
 
             if (hourlyCandles.length === 0) continue;
 
@@ -269,6 +242,7 @@ function splitDailyInto4H(daily: CandleDataPoint): CandleDataPoint[] {
                 low,
                 close: mid,
                 volume: Math.round(totalVol * 0.55),
+                synthetic: true,
             },
             {
                 time: (time + 4 * 3600) as UTCTimestamp,
@@ -277,6 +251,7 @@ function splitDailyInto4H(daily: CandleDataPoint): CandleDataPoint[] {
                 low: Math.min(mid, close),
                 close,
                 volume: totalVol - Math.round(totalVol * 0.55),
+                synthetic: true,
             },
         ];
     } else {
@@ -288,6 +263,7 @@ function splitDailyInto4H(daily: CandleDataPoint): CandleDataPoint[] {
                 low: Math.min(open, mid),
                 close: mid,
                 volume: Math.round(totalVol * 0.55),
+                synthetic: true,
             },
             {
                 time: (time + 4 * 3600) as UTCTimestamp,
@@ -296,13 +272,14 @@ function splitDailyInto4H(daily: CandleDataPoint): CandleDataPoint[] {
                 low,
                 close,
                 volume: totalVol - Math.round(totalVol * 0.55),
+                synthetic: true,
             },
         ];
     }
 }
 
-export async function get4HourCandles(symbol: string, days = 3650): Promise<CandleDataPoint[]> {
-    const to = Math.floor(Date.now() / 1000);
+export async function get4HourCandles(symbol: string, days = 3650, toTimestamp?: number): Promise<CandleDataPoint[]> {
+    const to = toTimestamp ?? Math.floor(Date.now() / 1000);
     const from = to - days * 24 * 60 * 60;
 
     const yahoo4H = await fetchYahoo1hAndAggregate(symbol, from, to);
@@ -319,7 +296,7 @@ export async function get4HourCandles(symbol: string, days = 3650): Promise<Cand
         const olderCandles: CandleDataPoint[] = [];
 
         try {
-            const dailyData = await getDailyCandles(symbol, gapDays + 30);
+            const dailyData = await getDailyCandles(symbol, gapDays + 30, to);
             const filteredDaily = dailyData.filter((c) => c.time < earliestYahooTime);
 
             for (const daily of filteredDaily) {
@@ -338,11 +315,17 @@ export async function get4HourCandles(symbol: string, days = 3650): Promise<Cand
                 const lastSynth = olderCandles[olderCandles.length - 1];
                 const firstYahoo = filteredYahoo[0];
                 const priceGap = Math.abs(lastSynth.close - firstYahoo.close);
-                if (priceGap > 50) {
-                    console.warn(`[4H] ${symbol}: PRICE DISCONTINUITY at merge: synthetic=${lastSynth.close} yahoo=${firstYahoo.close} (gap=${priceGap.toFixed(2)})`);
+                const atr = calculateATR(yahoo4H, 14);
+                const threshold = Math.max(3 * atr, 1.0);
+                if (priceGap > threshold) {
+                    console.warn(`[4H] ${symbol}: PRICE DISCONTINUITY at merge: synthetic=${lastSynth.close} yahoo=${firstYahoo.close} (gap=${priceGap.toFixed(2)}, atr=${atr.toFixed(2)}, threshold=${threshold.toFixed(2)})`);
                 }
             }
-            return [...olderCandles, ...filteredYahoo];
+            const merged = [...olderCandles, ...filteredYahoo];
+            if (merged.length === 0) {
+                throw new Error(`Failed to fetch 4H candles for ${symbol}`);
+            }
+            return merged;
         }
 
         return yahoo4H;
@@ -350,12 +333,16 @@ export async function get4HourCandles(symbol: string, days = 3650): Promise<Cand
 
     const olderCandles: CandleDataPoint[] = [];
     try {
-        const dailyData = await getDailyCandles(symbol, days);
+        const dailyData = await getDailyCandles(symbol, days, to);
         for (const daily of dailyData) {
             olderCandles.push(...splitDailyInto4H(daily));
         }
     } catch (e) {
         console.error('get4HourCandles full daily fallback error', e);
+    }
+
+    if (olderCandles.length === 0) {
+        throw new Error(`Failed to fetch 4H candles for ${symbol}`);
     }
 
     console.log(`[4H] ${symbol}: Yahoo FAILED, using ONLY synthetic data: ${olderCandles.length} bars`);
@@ -375,44 +362,17 @@ export async function getYahooIntradayCandles(symbol: string, days = 2): Promise
         const json: YahooChartResponse = await res.json();
         const result = json?.chart?.result?.[0];
         const ts: number[] | undefined = result?.timestamp;
-        const quote = result?.indicators?.quote?.[0] || {};
-        const opens: Array<number | null> | undefined = quote.open;
-        const highs: Array<number | null> | undefined = quote.high;
-        const lows: Array<number | null> | undefined = quote.low;
-        const closes: Array<number | null> | undefined = quote.close;
-        const volumes: Array<number | null> | undefined = quote.volume;
+        const quote = result?.indicators?.quote?.[0];
 
-        if (Array.isArray(ts) && ts.length) {
-            const out: CandleDataPoint[] = [];
-            for (let i = 0; i < ts.length; i++) {
-                const oRaw = opens?.[i];
-                const hRaw = highs?.[i];
-                const lRaw = lows?.[i];
-                const cRaw = closes?.[i];
-                const vRaw = volumes?.[i];
-
-                const valid = [oRaw, hRaw, lRaw, cRaw].every(
-                    (x) => typeof x === 'number' && Number.isFinite(x) && (x as number) > 0
-                );
-                if (!valid) continue;
-
-                const o = oRaw as number;
-                const h = hRaw as number;
-                const l = lRaw as number;
-                const c = cRaw as number;
-                if (!(l <= h)) continue;
-
-                const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
-                if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
-                out.push(item);
-            }
+        if (Array.isArray(ts) && ts.length && quote) {
+            const out = parseCandleResponse(ts, quote, false);
             if (out.length > 0) return out;
         }
     } catch (e) {
         console.error('getYahooIntradayCandles error', e);
     }
 
-    return [];
+    throw new Error(`Failed to fetch intraday candles for ${symbol}`);
 }
 
 export async function getDailyCandlesForAI(symbol: string, days = 365): Promise<CandleDataPoint[]> {
@@ -427,58 +387,32 @@ export async function getDailyCandlesForAI(symbol: string, days = 365): Promise<
         const json: YahooChartResponse = await res.json();
         const result = json?.chart?.result?.[0];
         const ts: number[] | undefined = result?.timestamp;
-        const quote = result?.indicators?.quote?.[0] || {};
-        const opens: Array<number | null> | undefined = quote.open;
-        const highs: Array<number | null> | undefined = quote.high;
-        const lows: Array<number | null> | undefined = quote.low;
-        const closes: Array<number | null> | undefined = quote.close;
-        const volumes: Array<number | null> | undefined = quote.volume;
-        if (Array.isArray(ts) && ts.length) {
-            const out: CandleDataPoint[] = [];
-            for (let i = 0; i < ts.length; i++) {
-                const oRaw = opens?.[i];
-                const hRaw = highs?.[i];
-                const lRaw = lows?.[i];
-                const cRaw = closes?.[i];
-                const vRaw = volumes?.[i];
-
-                const valid = [oRaw, hRaw, lRaw, cRaw].every(
-                    (x) => typeof x === 'number' && Number.isFinite(x) && (x as number) > 0
-                );
-                if (!valid) continue;
-
-                const o = oRaw as number;
-                const h = hRaw as number;
-                const l = lRaw as number;
-                const c = cRaw as number;
-                if (!(l <= h)) continue;
-
-                const item: CandleDataPoint = { time: ts[i] as UTCTimestamp, open: o, high: h, low: l, close: c };
-                if (typeof vRaw === 'number' && Number.isFinite(vRaw) && vRaw >= 0) item.volume = vRaw as number;
-                out.push(item);
-            }
+        const quote = result?.indicators?.quote?.[0];
+        if (Array.isArray(ts) && ts.length && quote) {
+            const out = parseCandleResponse(ts, quote, false);
             if (out.length > 0) return out;
         }
     } catch (e) {
         console.error('getDailyCandlesForAI error', e);
     }
 
-    return [];
+    throw new Error(`Failed to fetch daily candles for AI for ${symbol}`);
 }
 
 export async function getCandlesForInterval(
     symbol: string,
     interval: string,
-    days: number
+    days: number,
+    toTimestamp?: number
 ): Promise<CandleDataPoint[]> {
     const { assertAllowedTimeframe } = await import('@/lib/ta/timeframe-guard');
     assertAllowedTimeframe(interval, 'finnhub.getCandlesForInterval');
 
     switch (interval) {
         case '4h':
-            return get4HourCandles(symbol, days);
+            return get4HourCandles(symbol, days, toTimestamp);
         case '1d':
         default:
-            return getDailyCandles(symbol, days);
+            return getDailyCandles(symbol, days, toTimestamp);
     }
 }

@@ -115,8 +115,8 @@ export function useTAIndicatorParams() {
     }
 
     if (show.wavetrend) {
-      setParam('wt_avg_len', String(wtAvgLen), '10');
-      setParam('wt_channel_len', String(wtChannelLen), '21');
+      setParam('wt_avg_len', String(wtAvgLen), '21');
+      setParam('wt_channel_len', String(wtChannelLen), '10');
       setParam('wt_ma_len', String(wtMaLen), '4');
     } else {
       ['wt_avg_len', 'wt_channel_len', 'wt_ma_len'].forEach((k) => params.delete(k));

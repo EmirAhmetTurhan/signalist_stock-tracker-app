@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
-import { calculateWinRate, type Candle, type BacktestHistoryItem } from "@/lib/ta/simulation/backtest";
+import { calculateWinRate, type BacktestHistoryItem } from "@/lib/ta/simulation/backtest";
+import type { Candle } from "@/lib/ta/types";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, History, CheckCircle2, XCircle, TrendingUp, TrendingDown, RotateCcw } from "lucide-react";
+import { RefreshCw, History, CheckCircle2, XCircle, TrendingUp, TrendingDown, RotateCcw, Download } from "lucide-react";
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";
 import {
     Dialog,
@@ -44,6 +45,9 @@ export default function BacktestMonitor({
     }>({ winRate: 0, totalSignals: 0, wins: 0, history: [] });
     const [animatedPercent, setAnimatedPercent] = useState(0);
     const [isOptimizing, setIsOptimizing] = useState(false);
+    const [isPending, startTransition] = useTransition();
+
+    const isLoading = isOptimizing || isPending;
 
     useEffect(() => {
         const result = calculateWinRate(indicatorName, candles, data, configWithInterval);
@@ -56,25 +60,75 @@ export default function BacktestMonitor({
         return () => clearTimeout(timer);
     }, [indicatorName, candles, data, config]);
 
-    const handleRegenerate = () => {
+    const handleRegenerate = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault();
         setIsOptimizing(true);
         // Çift requestAnimationFrame: tarayıcının spinner'ı boyaması garanti edilir,
         // ardından ağır brute-force optimizasyon başlar. Ana thread'in kilitlenmesi
         // bu şekilde en aza indirilir.
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                const result = findBestParameter(indicatorName, candles, configWithInterval);
+                console.time(`[BacktestMonitor] Optimize: ${indicatorName}`);
+                // Slice dataset to last 2 years (730 candles) for fast client-side optimization
+                const slicedCandles = candles.slice(-730);
+                const result = findBestParameter(indicatorName, slicedCandles, configWithInterval);
+                console.timeEnd(`[BacktestMonitor] Optimize: ${indicatorName}`);
+
                 if (result && result.bestVal !== -1) {
                     const params = new URLSearchParams(searchParams.toString());
+                    // Remove page-wide optimize parameter to prevent server component loop
+                    params.delete("optimize");
                     const paramName = OPTIMIZABLE_INDICATORS[indicatorName]?.param;
                     if (paramName) {
                         params.set(paramName, result.bestVal.toString());
-                        router.push(`${window.location.pathname}?${params.toString()}`);
+                        startTransition(() => {
+                            router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+                        });
                     }
                 }
                 setIsOptimizing(false);
             });
         });
+    };
+
+    const handleDownloadCSV = () => {
+        const generated = new Date().toLocaleDateString();
+        const urlSymbol = searchParams.get("symbol") || "N/A";
+
+        const metadata = [
+            `Symbol: ${urlSymbol.toUpperCase()}`,
+            `Timeframe: ${currentInterval}`,
+            `Indicator: ${indicatorName.toUpperCase()}`,
+            `Generated: ${generated}`,
+            ""
+        ];
+
+        const headers = ["Date", "Signal", "Price", "Target", "Result"];
+        const rows = stats.history.map(item => {
+            const date = typeof item.time === 'number'
+                ? new Date(item.time * 1000).toLocaleDateString()
+                : item.time;
+            return [
+                date,
+                item.signal,
+                item.price.toFixed(2),
+                item.futurePrice.toFixed(2),
+                item.isWin ? "HIT" : "MISS"
+            ];
+        });
+        const csvContent = [
+            ...metadata,
+            headers.join(","),
+            ...rows.map(e => e.map(val => `"${val}"`).join(","))
+        ].join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `${indicatorName}_diagnostic_history.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     // UI Rendering
@@ -96,23 +150,31 @@ export default function BacktestMonitor({
             {OPTIMIZABLE_INDICATORS[indicatorName] && (
                 <div className="flex flex-col items-center gap-0.5">
                     <button
+                        type="button"
                         onClick={handleRegenerate}
-                        disabled={isOptimizing}
+                        disabled={isLoading}
                         className="p-1.5 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-200 disabled:opacity-50 group"
                         title="Diagnostic Optimization"
                     >
-                        <RefreshCw className={cn("w-3.5 h-3.5", isOptimizing && "animate-spin")} />
+                        <RefreshCw className={cn("w-3.5 h-3.5", isLoading && "animate-spin")} />
                     </button>
                     <button
-                        onClick={() => {
+                        type="button"
+                        onClick={(e) => {
+                            e.preventDefault();
                             const paramName = OPTIMIZABLE_INDICATORS[indicatorName]?.param;
                             if (paramName) {
                                 const params = new URLSearchParams(searchParams.toString());
+                                // Remove optimize parameter on resets
+                                params.delete("optimize");
                                 params.delete(paramName);
-                                router.push(`${window.location.pathname}?${params.toString()}`);
+                                startTransition(() => {
+                                    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+                                });
                             }
                         }}
-                        className="p-1.5 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-200"
+                        disabled={isPending}
+                        className="p-1.5 hover:bg-gray-800 rounded-md transition-colors text-gray-400 hover:text-gray-200 disabled:opacity-50"
                         title="Default Parameters — reset to original values"
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
@@ -150,10 +212,20 @@ export default function BacktestMonitor({
                         </DialogTrigger>
                         <DialogContent className="sm:max-w-[600px] bg-gray-950 border-gray-800 text-gray-100">
                             <DialogHeader>
-                                <DialogTitle className="flex items-center gap-2 text-gray-200">
-                                    <History className="w-5 h-5" />
-                                    {indicatorName} Diagnostic History
-                                </DialogTitle>
+                                 <div className="flex items-center justify-between">
+                                     <DialogTitle className="flex items-center gap-2 text-gray-200">
+                                         <History className="w-5 h-5" />
+                                         {indicatorName} Diagnostic History
+                                     </DialogTitle>
+                                     <button
+                                         onClick={handleDownloadCSV}
+                                         className="flex items-center gap-1 text-[10px] uppercase font-bold text-gray-400 hover:text-gray-200 border border-gray-800 hover:bg-gray-900/20 px-2 py-1 rounded transition-colors mr-6 select-none"
+                                         title="Export to CSV"
+                                     >
+                                         <Download className="w-3.5 h-3.5" />
+                                         <span>Export CSV</span>
+                                     </button>
+                                 </div>
                                 <p className="text-xs text-amber-500/80 mt-1">
                                     ⚠️ <strong>Warning:</strong> This is an isolated diagnostic sensor, not a full trading strategy.
                                     The results shown here are for indicator tuning only and do not factor in transaction costs, market regime filtering, or portfolio sizing.

@@ -1,7 +1,7 @@
 // lib/ta/strategy-optimizer/discover-strategy.ts
 // Ported from monolith strategy-optimizer.ts
 
-import type { Candle } from '../simulation/backtest';
+import type { Candle } from '../types';
 import { geneticOptimize, localRefine, MIN_SIGNAL_THRESHOLD, MAX_INDICATORS } from '../optimization/ga-optimizer';
 import { DISCOVERY_POOL } from '../registry/indicator-registry';
 import { runStrategyBacktest } from './run-backtest';

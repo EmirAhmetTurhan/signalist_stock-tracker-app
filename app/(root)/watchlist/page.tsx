@@ -11,46 +11,63 @@ const WatchlistPage = async () => {
   const items = await getCurrentUserWatchlist();
   const alerts = await getUserAlerts();
 
-  // Enrich alerts with current price and change (best-effort)
+  // Enrich alerts and watchlist items with current price and change (best-effort)
   const alertsWithQuotes: Alert[] = Array.isArray(alerts) ? [...alerts] : [];
   let logosMap: Record<string, string | undefined> = {};
-  if (alertsWithQuotes.length > 0) {
-    const uniqSymbols = Array.from(new Set(alertsWithQuotes.map((a) => a.symbol.toUpperCase())));
+  let quotesMap: Record<string, { c?: number; dp?: number; h?: number; l?: number; o?: number; pc?: number }> = {};
+  
+  if (alertsWithQuotes.length > 0 || items.length > 0) {
+    const allSymbols = Array.from(new Set([
+      ...alertsWithQuotes.map((a) => a.symbol.toUpperCase()),
+      ...items.map((i) => i.symbol.toUpperCase())
+    ]));
+
     const token = process.env.FINNHUB_API_KEY || '';
     if (token) {
-      const quotes: Record<string, { c?: number; dp?: number }> = {};
-      const logos: Record<string, string | undefined> = {};
       await Promise.all(
-        uniqSymbols.map(async (sym) => {
+        allSymbols.map(async (sym) => {
           try {
             const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${token}`;
-            const q = await fetchJSON<{ c?: number; dp?: number }>(url, 120);
-            quotes[sym] = q || {};
+            const q = await fetchJSON<{ c?: number; dp?: number; h?: number; l?: number; o?: number; pc?: number }>(url, 120);
+            quotesMap[sym] = q || {};
           } catch {
-            quotes[sym] = {};
+            quotesMap[sym] = {};
           }
           // Fetch company logo (best-effort)
           try {
             const profileUrl = `https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(sym)}&token=${token}`;
             const p = await fetchJSON<{ logo?: string }>(profileUrl, 3600);
-            logos[sym] = typeof p?.logo === 'string' && p.logo ? p.logo : undefined;
+            logosMap[sym] = typeof p?.logo === 'string' && p.logo ? p.logo : undefined;
           } catch {
-            logos[sym] = undefined;
+            logosMap[sym] = undefined;
           }
         })
       );
       alertsWithQuotes.forEach((a) => {
-        const q = quotes[a.symbol.toUpperCase()] || {};
+        const q = quotesMap[a.symbol.toUpperCase()] || {};
         const price = Number(q.c || 0);
         const dp = typeof q.dp === 'number' ? q.dp : undefined;
         a.currentPrice = price;
         if (typeof dp === 'number') a.changePercent = dp;
       });
-
-      // Expose logos map to render scope
-      logosMap = logos;
     }
   }
+
+  // Create an enriched watchlist array
+  const enrichedWatchlist = items.map((i) => {
+    const sym = i.symbol.toUpperCase();
+    const q = quotesMap[sym] || {};
+    return {
+      ...i,
+      currentPrice: Number(q.c || 0),
+      changePercent: typeof q.dp === 'number' ? q.dp : undefined,
+      highPrice: typeof q.h === 'number' ? q.h : undefined,
+      lowPrice: typeof q.l === 'number' ? q.l : undefined,
+      openPrice: typeof q.o === 'number' ? q.o : undefined,
+      prevClose: typeof q.pc === 'number' ? q.pc : undefined,
+      logoUrl: logosMap[sym],
+    };
+  });
 
   if (!items.length) {
     return (
@@ -68,17 +85,17 @@ const WatchlistPage = async () => {
   }
 
   return (
-    <div className="watchlist-container">
-      <section className="watchlist">
+    <div className="watchlist-container flex flex-col xl:flex-row gap-6 w-full">
+      <section className="watchlist flex-1 overflow-hidden">
         <div className="flex items-center justify-between mb-4">
           <h1 className="watchlist-title">Watchlist</h1>
         </div>
 
-        <WatchlistTable watchlist={items} />
+        <WatchlistTable watchlist={enrichedWatchlist} />
       </section>
 
-      {/* Right column placeholder for Alerts & News to mirror the design; can be extended later */}
-      <aside className="watchlist-alerts hidden lg:flex">
+      {/* Right column placeholder for Alerts & News to mirror the design */}
+      <aside className="watchlist-alerts w-full xl:w-[400px] shrink-0">
         <div className="w-full">
           <div className="flex items-center justify-between mb-4">
             <h2 className="watchlist-title">Alerts</h2>

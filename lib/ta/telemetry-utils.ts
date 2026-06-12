@@ -9,7 +9,7 @@
 //   - computeTelemetryConfidences() — chains: segments → evaluateIndicators → weighted average
 //     Returns Record<string, number> of per-indicator confidence scores for DST fusion.
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { AllData } from '@/lib/ta/strategy-optimizer/types';
 import type { RegimeSegment } from '@/lib/ta/regime-detector';
 import { classifyRegime } from '@/lib/ta/regime-detector';

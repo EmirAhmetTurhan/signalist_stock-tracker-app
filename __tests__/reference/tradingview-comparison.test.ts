@@ -42,7 +42,7 @@ import type { CandleInput, IndicatorParams } from '@/lib/ta/types';
 const DEFAULT_PARAMS: IndicatorParams = {
     macdFast: 12, macdSlow: 26, macdSig: 9,
     stochRsiLen: 14, stochLen: 14, stochK: 1, stochD: 3,
-    wtAvgLen: 10, wtChannelLen: 21, wtMaLen: 4,
+    wtAvgLen: 21, wtChannelLen: 10, wtMaLen: 4,
     dmiDiLen: 14, dmiAdxSmooth: 14,
     mfiPeriod: 14,
     smiLongLen: 14, smiShortLen: 3, smiSigLen: 3,

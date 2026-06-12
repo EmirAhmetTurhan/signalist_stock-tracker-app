@@ -275,8 +275,8 @@ export default function TAIndicatorSettings() {
           {p.show.wavetrend && (
             <SettingsSection title="WaveTrend">
               <div className="grid grid-cols-3 gap-2">
-                <ParamInput label="Avg Len (10)" value={p.wtAvgLen} onChange={(e) => p.setWtAvgLen(Number(e.target.value))} min={1} />
-                <ParamInput label="Channel Len (21)" value={p.wtChannelLen} onChange={(e) => p.setWtChannelLen(Number(e.target.value))} min={1} />
+                <ParamInput label="Channel Len (10)" value={p.wtChannelLen} onChange={(e) => p.setWtChannelLen(Number(e.target.value))} min={1} />
+                <ParamInput label="Avg Len (21)" value={p.wtAvgLen} onChange={(e) => p.setWtAvgLen(Number(e.target.value))} min={1} />
                 <ParamInput label="MA Len (4)" value={p.wtMaLen} onChange={(e) => p.setWtMaLen(Number(e.target.value))} min={1} />
               </div>
             </SettingsSection>

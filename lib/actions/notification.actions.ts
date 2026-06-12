@@ -101,3 +101,17 @@ export async function clearAllNotifications() {
     return { success: false, error: String(error) };
   }
 }
+
+export async function deleteNotification(notificationId: string) {
+  try {
+    const userId = await getUserId();
+    if (!userId) return { success: false, error: 'Unauthorized' };
+
+    await connectToDatabase();
+    await Notification.deleteOne({ _id: notificationId, userId });
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}

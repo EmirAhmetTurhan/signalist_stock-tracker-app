@@ -197,7 +197,7 @@ export default function NotificationBell() {
                         onClick={() => {
                           if (notif.status === 'unread') markAsRead(notif._id);
                         }}
-                        className={`p-3 my-1 rounded-lg transition-colors cursor-pointer border ${notif.status === 'unread' ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-transparent border-transparent hover:bg-white/5'}`}
+                        className={`group relative p-3 my-1 rounded-lg transition-colors cursor-pointer border ${notif.status === 'unread' ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-transparent border-transparent hover:bg-white/5'}`}
                       >
                         <div className="flex items-start gap-3">
                           {notif.type.includes('failed') ? (
@@ -223,6 +223,23 @@ export default function NotificationBell() {
                           {notif.status === 'unread' && (
                             <div className="w-2 h-2 rounded-full bg-blue-500 mt-1 shrink-0" />
                           )}
+                          <button
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              try {
+                                const { deleteNotification } = await import('@/lib/actions/notification.actions');
+                                await deleteNotification(notif._id);
+                                await refresh();
+                              } catch (err) {
+                                toast.error('Failed to delete notification');
+                              }
+                            }}
+                            className="absolute right-2 bottom-2 p-1.5 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity rounded-md hover:bg-red-400/10"
+                            title="Delete notification"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                     ))}

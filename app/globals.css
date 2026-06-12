@@ -553,3 +553,30 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
 }
+
+/* Premium custom scrollbar for dark-glass interactive components */
+.premium-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.premium-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.premium-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.premium-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.2s ease;
+}
+
+.premium-scrollbar:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(139, 92, 246, 0.45); /* Subtle violet accent on hover */
+}

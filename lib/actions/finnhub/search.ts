@@ -232,6 +232,24 @@ export const searchStocks = cache(async (query?: string): Promise<StockWithWatch
             }));
     }
 
+    try {
+        const searchUrl = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(trimmed)}&token=${process.env.FINNHUB_API_KEY ?? ''}`;
+        const res = await fetchJSON<FinnhubSearchResponse>(searchUrl, 3600);
+        if (res && res.result) {
+            return res.result.slice(0, 20).map((r) => ({
+                symbol: r.displaySymbol || r.symbol,
+                name: r.description,
+                exchange: '',
+                type: r.type,
+                company: r.description,
+                logo: '',
+                isInWatchlist: false,
+            }));
+        }
+    } catch {
+        // Fallback if search API fails
+    }
+
     const up = trimmed.toUpperCase();
     const filtered = FINNHUB_STOCKS.filter((s) => s.includes(up) || s.startsWith(up));
     return filtered.slice(0, 10).map((sym) => ({

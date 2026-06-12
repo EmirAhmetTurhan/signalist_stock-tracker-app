@@ -44,3 +44,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# User-specific / Local configs
+.cloud/
+.kiro/
+*.cloud
+*.kiro

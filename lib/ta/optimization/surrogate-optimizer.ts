@@ -4,7 +4,7 @@
 // Latin Hypercube Sampling + Adaptive Refinement strategy.
 // Zero external dependencies.
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { AllData } from '@/lib/ta/strategy-optimizer/types';
 import { runStrategyBacktest } from '@/lib/ta/strategy-optimizer/run-backtest';
 import { OPTIMIZABLE_INDICATORS } from '@/lib/ta/optimizer';

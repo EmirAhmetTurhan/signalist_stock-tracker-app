@@ -79,15 +79,10 @@ export type IndicatorParams = {
   bbColor: string; bbOpacity: number; bbWidth: number;
 };
 
-/** Raw candle data */
-export type CandleInput = {
-  time: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume?: number;
-};
+/** Unified Candle data type */
+export type Candle = CandleDataPoint;
+export type CandleInput = Candle;
+
 
 /** Base point for indicator series */
 export type TimePoint = {
@@ -97,7 +92,7 @@ export type TimePoint = {
 
 /** Bollinger Bands calculation output */
 export type BBResult = {
-  time: string | number;
+  time: number;
   basis?: number;
   upper?: number;
   lower?: number;

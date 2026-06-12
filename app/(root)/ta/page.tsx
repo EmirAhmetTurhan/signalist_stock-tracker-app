@@ -38,11 +38,14 @@ import CandlePatternPanel from "@/components/panels/CandlePatternPanel";
 import HistoricalFractalsPanel from "@/components/panels/HistoricalFractalsPanel";
 import SRPanel from "@/components/panels/SRPanel";
 import MarketTelemetryPanel from "@/components/ta/panels/MarketTelemetryPanel";
+import CandleChartSection from "@/components/ta/panels/CandleChartSection";
 import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 import { searchStocks, getCandlesForInterval } from "@/lib/actions/finnhub.actions";
 import { CANDLE_CHART_WIDGET_CONFIG } from "@/lib/constants";
 import { computeIndicators, parseActiveIndicators, generateAllSignals } from "@/lib/ta";
-import type { ComputedIndicators, Timeframe } from "@/lib/ta/types";
+import type { ComputedIndicators, Timeframe, TimePoint } from "@/lib/ta/types";
+import { runStrategyBacktest } from "@/lib/ta/strategy-optimizer/run-backtest";
+import type { AllData } from "@/lib/ta/strategy-optimizer/types";
 import { extractIndicatorParams } from "@/lib/constants/indicator-params";
 // SPRINT 3: timeframe-limits.ts silindi. Sadece 4h ve 1d destekleniyor
 // (10 yıl = 3650 gün cap). Inline clamp yeterli.
@@ -66,6 +69,7 @@ const TAPage = async (props: TAProps) => {
     const strategyParam = String(search.strategy || "");
     const isRsiCciStrategy = strategyParam === "rsi_cci_wt";
     const yearsParam = search.years ? Number(search.years) : undefined;
+    const toParam = search.to ? Number(search.to) : undefined;
 
     // ── Apply & Optimize: run synchronous optimization and apply results ──────
     const optimizeParam = search.optimize;
@@ -74,7 +78,7 @@ const TAPage = async (props: TAProps) => {
         const indicators = indParam.split(',').filter(Boolean);
 
         // Run synchronous optimization (awaits candle fetch + brute-force loop)
-        const results = await triggerOptimization(symbol, indicators, intervalParam, yearsParam);
+        const results = await triggerOptimization(symbol, indicators, intervalParam, yearsParam, toParam);
 
         // Build URL params with optimized values applied
         optimizedParams = {};
@@ -120,7 +124,7 @@ const TAPage = async (props: TAProps) => {
         ? await (() => {
             // SPRINT 3: inline clamp — 4h/1d max 10 yıl (3650 gün)
             const days = Math.min(requestedDays ?? 3650, 3650);
-            return getCandlesForInterval(symbol, intervalParam, days);
+            return getCandlesForInterval(symbol, intervalParam, days, toParam);
         })()
         : [];
     const scriptBase = "https://s3.tradingview.com/external-embedding/embed-widget-";
@@ -156,6 +160,106 @@ const TAPage = async (props: TAProps) => {
     const computed: ComputedIndicators = computeIndicators(candles, activeIndicators, ip);
 
     const { signals: signalLabels, overall } = generateAllSignals(computed, candles);
+
+    // ── Strategy Trade Markers: backtest geçmişini grafik üzerinde göstermek için ──
+    const tradeMarkers: import("@/lib/ta/signals").TradeMarker[] = [];
+    if (candles.length > 0 && strategyParam) {
+      // ComputedIndicators → AllData (yapısal olarak uyumlu, sadece key isimleri farklı)
+      const allData: AllData = {
+        rsiData: computed.rsi,
+        cciData: computed.cci,
+        waveTrendData: computed.wavetrend,
+        macdData: computed.macd,
+        stochRsiData: computed.stochrsi,
+        dmiData: computed.dmi,
+        smiData: computed.smi,
+        aoData: computed.ao,
+        mfiData: computed.mfi,
+        wprData: computed.wpr,
+        diData: computed.di,
+        cmfData: computed.cmf,
+        adData: computed.ad,
+        nvData: computed.netvol,
+        madrData: computed.madr,
+        almaData: computed.alma,
+        bbData: computed.bb as AllData["bbData"],
+      };
+
+      const strategyName = isRsiCciStrategy ? "RSI_CCI_WT" : "CUSTOM";
+      const backtestOpts = isRsiCciStrategy
+        ? {}
+        : { customIndicators: indParam.split(",").filter(Boolean), mode: (search.mode || "all") as import("@/lib/ta/types").StrategyMode };
+      const evalMode = (search.evalMode || search.evaluationMode || "pathaware") as import("@/lib/ta/types").EvaluationMode;
+      const profileParam = (search.profile || "TrendFollower") as import("@/lib/ta/types").SignalProfile;
+
+      try {
+        const timeToIndex = new Map<number, number>();
+        for (let idx = 0; idx < candles.length; idx++) {
+          const t = typeof candles[idx].time === "number" ? candles[idx].time : new Date(candles[idx].time).getTime() / 1000;
+          timeToIndex.set(t, idx);
+        }
+
+        const btResult = runStrategyBacktest(
+          candles,
+          strategyName,
+          allData,
+          { 
+            lookForward: parseInt(search.lookForward || "14", 10), 
+            evaluationMode: evalMode,
+            signalProfile: profileParam
+          },
+          backtestOpts,
+        );
+
+        for (const h of btResult.history) {
+          const entryTime = typeof h.time === "number" ? h.time : new Date(h.time).getTime() / 1000;
+          const entryIdx = timeToIndex.get(entryTime);
+          if (entryIdx === undefined) continue;
+
+          // 1. Entry marker
+          tradeMarkers.push({
+            time: entryTime,
+            price: h.price,
+            signal: h.signal,
+            indicator: h.signal === "BUY" ? "ENTRY" : "SHORT",
+          });
+
+          // 2. Exit marker
+          const exitIdx = entryIdx + (h.barsHeld ?? 0);
+          if (exitIdx < candles.length) {
+            const exitCandle = candles[exitIdx];
+            const exitTime = typeof exitCandle.time === "number" ? exitCandle.time : new Date(exitCandle.time).getTime() / 1000;
+
+            let reasonLabel = "EXIT";
+            if (h.exitReason === "stop_loss") reasonLabel = "SL";
+            else if (h.exitReason === "take_profit") reasonLabel = "TP";
+            else if (h.exitReason === "trailing_stop") reasonLabel = "TS";
+            else if (h.exitReason === "time_stop") reasonLabel = "TIME";
+            else if (h.exitReason === "opposite_signal") reasonLabel = "OPP";
+
+            const exitSignal = h.signal === "BUY" ? "SELL" : "BUY";
+
+            tradeMarkers.push({
+              time: exitTime,
+              price: h.futurePrice,
+              signal: exitSignal,
+              indicator: reasonLabel,
+            });
+          }
+        }
+      } catch (e) {
+        console.error('[TAPage] Backtest markers error:', e);
+      }
+    }
+
+    // Overlay toggle'lar: aktif olan katmanları göster
+    const overlayToggles: ("bb" | "alma" | "patterns" | "sr" | "markers" | "fractals")[] = [];
+    if (activeIndicators.has("bb")) overlayToggles.push("bb");
+    if (activeIndicators.has("alma")) overlayToggles.push("alma");
+    if (activeIndicators.has("patterns")) overlayToggles.push("patterns");
+    if (activeIndicators.has("sr") && computed.sr) overlayToggles.push("sr");
+    if (activeIndicators.has("fractals") && computed.fractals) overlayToggles.push("fractals");
+    if (tradeMarkers && tradeMarkers.length > 0) overlayToggles.push("markers");
 
     const macdData = computed.macd;
     const rsiData = computed.rsi;
@@ -265,7 +369,7 @@ const TAPage = async (props: TAProps) => {
                             </div>
 
                             {candles && candles.length > 0 ? (
-                                <CHART_REGISTRY.candle
+                                <CandleChartSection
                                     data={candles}
                                     height={560}
                                     almaData={almaData}
@@ -275,6 +379,8 @@ const TAPage = async (props: TAProps) => {
                                     candlePatterns={activeIndicators.has('patterns') ? candlePatternData : undefined}
                                     fractalProjection={activeIndicators.has('fractals') && fractalResult ? fractalResult.projectedLine : undefined}
                                     srLevels={activeIndicators.has('sr') && srResult ? srResult.levels : undefined}
+                                    tradeMarkers={tradeMarkers}
+                                    availableToggles={overlayToggles}
                                 />
                             ) : (
                                 <TradingViewWidget
@@ -369,7 +475,7 @@ const TAPage = async (props: TAProps) => {
 
                             <CustomStrategyPanel
                                 candles={candles}
-                                allData={{ rsiData, cciData, waveTrendData, macdData, stochRsiData, dmiData, smiData, aoData: aoData ? (aoData as { time: string | number; value: number }[]) : undefined, mfiData: mfiData ? { mfi: mfiData.mfi } : undefined, wprData: wprData ? (wprData as { time: string | number; value: number }[]) : undefined, diData: diData ? (diData as { time: string | number; value: number }[]) : undefined, cmfData: cmfData ? (cmfData as { time: string | number; value: number }[]) : undefined, adData: adData ? { ad: adData.ad as { time: string | number; value: number }[], ma: adData.ma as { time: string | number; value: number }[] } : undefined, nvData: nvData ? (nvData as { time: string | number; value: number }[]) : undefined, madrData: madrData ? (madrData as { time: string | number; value: number }[]) : undefined, almaData: almaData ? (almaData as { time: string | number; value: number }[]) : undefined, bbData }}
+                                allData={{ rsiData, cciData, waveTrendData, macdData, stochRsiData, dmiData, smiData, aoData: aoData ? (aoData as TimePoint[]) : undefined, mfiData: mfiData ? { mfi: mfiData.mfi } : undefined, wprData: wprData ? (wprData as TimePoint[]) : undefined, diData: diData ? (diData as TimePoint[]) : undefined, cmfData: cmfData ? (cmfData as TimePoint[]) : undefined, adData: adData ? { ad: adData.ad as TimePoint[], ma: adData.ma as TimePoint[] } : undefined, nvData: nvData ? (nvData as TimePoint[]) : undefined, madrData: madrData ? (madrData as TimePoint[]) : undefined, almaData: almaData ? (almaData as TimePoint[]) : undefined, bbData }}
                                 symbol={symbol || ""}
                                 interval={(intervalParam as "1d" | "4h") || "1d"}
                                 userId={userId || ""}

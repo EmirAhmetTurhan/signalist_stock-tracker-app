@@ -12,7 +12,7 @@ import { Report } from "@/database/models/report.model";
 import AIJob from "@/database/models/ai-job.model";
 import Notification from "@/database/models/notification.model";
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";
-import type { Candle } from "@/lib/ta/simulation/backtest";
+import type { Candle } from "@/lib/ta/types";
 // SPRINT 3: timeframe-limits.ts silindi, inline clamp kullanılıyor.
 import { INDICATOR_KEYS, DEFAULT_PARAMS } from "@/lib/constants/indicators";
 import { mapIndicatorData } from "@/lib/ai/tools";

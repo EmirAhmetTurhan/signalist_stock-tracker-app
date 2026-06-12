@@ -14,6 +14,8 @@ const WatchlistButton = ({
   showTrashIcon = false,
   type = 'button',
   onWatchlistChange,
+  className,
+  strokeWidth,
 }: WatchlistButtonProps) => {
   const [loading, setLoading] = useState(false);
   const watchlist = useAppStore((s) => s.watchlist);
@@ -62,14 +64,14 @@ const WatchlistButton = ({
         onClick={handleToggle}
         disabled={loading}
         aria-pressed={isWatched}
-        className={cn('watchlist-icon-btn', isWatched && 'watchlist-icon-added')}
+        className={cn('watchlist-icon-btn', isWatched && 'watchlist-icon-added', className)}
         title={isWatched ? 'Remove from Watchlist' : 'Add to Watchlist'}
       >
         <span className="watchlist-icon">
           {showTrashIcon && isWatched ? (
-            <Trash2 className="trash-icon" />
+            <Trash2 className="trash-icon" strokeWidth={strokeWidth} />
           ) : (
-            <Star className="star-icon" fill={isWatched ? 'currentColor' : 'none'} />
+            <Star className="star-icon" fill={isWatched ? 'currentColor' : 'none'} strokeWidth={strokeWidth} />
           )}
         </span>
       </button>

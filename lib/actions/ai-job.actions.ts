@@ -96,6 +96,11 @@ export async function deleteJob(id: string) {
     const job = await AIJob.findOne({ _id: id, userId }).lean();
     if (!job) return { success: false, error: 'Job not found' };
 
+    // Prevent deletion of running jobs
+    if (job.status === 'running' || job.status === 'queued') {
+      return { success: false, error: 'Cannot delete a running or queued job' };
+    }
+
     // Cancel the associated Inngest function if it's a deep_discovery job.
     // This prevents Inngest's concurrency limit from blocking new discoveries
     // when the old function is still running but the DB record was deleted.
@@ -114,6 +119,25 @@ export async function deleteJob(id: string) {
     await AIJob.deleteOne({ _id: id, userId });
 
     return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function clearCompletedJobs() {
+  try {
+    const userId = await getUserId();
+    if (!userId) return { success: false, error: 'Unauthorized' };
+
+    await connectToDatabase();
+
+    // Delete all jobs that are not 'running' or 'queued'
+    const result = await AIJob.deleteMany({
+      userId,
+      status: { $nin: ['running', 'queued'] }
+    });
+
+    return { success: true, deletedCount: result.deletedCount };
   } catch (error) {
     return { success: false, error: String(error) };
   }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { surrogateOptimize } from '@/lib/ta/optimization/surrogate-optimizer';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { AllData } from '@/lib/ta/strategy-optimizer';
 import type { SurrogateResult } from '@/lib/ta/discovery-types';
 

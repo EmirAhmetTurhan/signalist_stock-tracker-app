@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { rangeForTimeframe, findBestParameter, OPTIMIZABLE_INDICATORS } from '@/lib/ta/optimizer';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 
 // Deterministic candle generator (no Math.random) for reproducible tests
 function makeCandles(count: number, trend: 'up' | 'down' | 'flat' = 'up'): Candle[] {

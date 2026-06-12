@@ -110,6 +110,8 @@ declare global {
         showTrashIcon?: boolean;
         type?: 'button' | 'icon';
         onWatchlistChange?: (symbol: string, isAdded: boolean) => void;
+        className?: string;
+        strokeWidth?: number;
     };
 
     type QuoteData = {
@@ -143,6 +145,10 @@ declare global {
         addedAt: Date;
         currentPrice?: number;
         changePercent?: number;
+        highPrice?: number;
+        lowPrice?: number;
+        openPrice?: number;
+        prevClose?: number;
         priceFormatted?: string;
         changeFormatted?: string;
         marketCap?: string;
@@ -226,6 +232,7 @@ declare global {
         low: number;
         close: number;
         volume?: number;
+        synthetic?: boolean;
     };
 
     // ---- Paper Trading Types ----

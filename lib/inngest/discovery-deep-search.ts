@@ -15,7 +15,7 @@ import AIJob from '@/database/models/ai-job.model';
 import Notification from '@/database/models/notification.model';
 import { Report } from '@/database/models/report.model';
 import type { DiscoveryStrategyResult } from '@/database/models/report.model';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 // SPRINT 3: 1wk kaldırıldı, timeframe-limits.ts dosyası silindi.
 // 4h ve 1d tek desteklenen timeframe'ler olduğu için clamp mantığı inline yapıldı.
 import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';
@@ -23,6 +23,7 @@ import { computeIndicators } from '@/lib/ta/compute';
 import { DEFAULT_PARAMS } from '@/lib/constants/indicators';
 import { mapComputedToAllData, runStrategyBacktest } from '@/lib/ta/strategy-optimizer';
 import type { AllData, DiscoveredStrategy, StrategyBacktestResult } from '@/lib/ta/strategy-optimizer';
+import { getBroadMarketRegime } from '@/lib/actions/market.actions';
 import type { SignalProfile } from '@/lib/ta/types';
 import { DISCOVERY_POOL } from '@/lib/ta/registry/indicator-registry';
 import {
@@ -729,6 +730,17 @@ export const deepDiscoveryJob = inngest.createFunction(
                     `Full-fidelity backtest: evaluating top ${topCandidates.length} strategies on all ${allCandles.length} candles...`,
                 );
 
+                // Fetch market regime map if applying market filter
+                // Hardcoded to true for now since the UI toggle is in Phase 3, 
+                // but engine parameter check will use this logic
+                const applyMarketFilter = (event.data as any).applyMarketFilter ?? false;
+                let marketRegimeMap: Map<string, boolean> | undefined;
+                if (applyMarketFilter) {
+                    const fromSec = Number(allCandles[0].time) / 1000;
+                    const toSec = Number(allCandles[allCandles.length - 1].time) / 1000;
+                    marketRegimeMap = await getBroadMarketRegime(fromSec, toSec);
+                }
+
                 // Run unmasked backtest on each top candidate using ALL candles
                 const fullResults: Array<{
                     indicators: string[];
@@ -758,6 +770,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                                 interval: safeInterval,
                                 signalProfile: signalProfile ?? 'TrendFollower',
                                 evaluationMode: 'pathaware',
+                                marketRegimeMap,
                             },
                             {
                                 customIndicators: candidate.indicators,
@@ -832,19 +845,25 @@ export const deepDiscoveryJob = inngest.createFunction(
                     return candidate;
                 });
 
+                // ── STRICT DISCARD: Remove any that fell below 1.0 PF in full-fidelity ──
+                const filteredCandidates = updatedCandidates.filter(c => 
+                    c.profitFactor != null && c.profitFactor >= 1.0 &&
+                    c.totalReturn != null && c.totalReturn > 0
+                );
+
                 // Re-rank by full-fidelity score
-                updatedCandidates.sort((a, b) => {
+                filteredCandidates.sort((a, b) => {
                     const scoreA = a.winRate * Math.sqrt(Math.max(a.totalSignals, 1));
                     const scoreB = b.winRate * Math.sqrt(Math.max(b.totalSignals, 1));
                     return scoreB - scoreA;
                 });
-                updatedCandidates.forEach((ds, idx) => {
+                filteredCandidates.forEach((ds, idx) => {
                     ds.rank = idx + 1;
                 });
 
                 await updateJobProgress(
                     jobId, 4, topCandidates.length, topCandidates.length,
-                    `Full backtest complete: top result ${updatedCandidates[0]?.winRate.toFixed(1)}% (${updatedCandidates[0]?.totalSignals} signals)`,
+                    `Full backtest complete: top result ${filteredCandidates[0]?.winRate?.toFixed(1) || 'N/A'}% (${filteredCandidates[0]?.totalSignals || 0} signals)`,
                 );
 
                 // ── Checkpoint: Save full-fidelity results to MongoDB ──
@@ -866,7 +885,7 @@ export const deepDiscoveryJob = inngest.createFunction(
                 );
 
                 return {
-                    allCandidates: updatedCandidates,
+                    allCandidates: filteredCandidates,
                     fullResults,
                 };
             });
@@ -899,6 +918,13 @@ export const deepDiscoveryJob = inngest.createFunction(
                         totalSignals: ds.totalSignals,
                         rank: idx + 1,
                         badge: `${ds.indicators.length}-IND` as any,
+                        profitFactor: ds.profitFactor,
+                        sharpeRatio: ds.sharpeRatio,
+                        avgWin: ds.avgWin,
+                        avgLoss: ds.avgLoss,
+                        maxDrawdown: ds.maxDrawdown,
+                        totalReturn: ds.totalReturn,
+                        regimeBreakdown: ds.regimeBreakdown,
                     }),
                 );
 

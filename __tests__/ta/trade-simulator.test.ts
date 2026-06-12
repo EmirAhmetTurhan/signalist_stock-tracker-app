@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { simulateTrade, type TradeRiskConfig } from '@/lib/ta/simulation/trade-simulator';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

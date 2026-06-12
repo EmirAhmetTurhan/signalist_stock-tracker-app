@@ -8,10 +8,7 @@ import {
   COMPANY_FINANCIALS_WIDGET_CONFIG,
 } from "@/lib/constants";
 import WatchlistButton from "@/components/watchlist/WatchlistButton";
-import PaperTradeButton from "@/components/portfolio/PaperTradeButton";
 import { getCurrentUserWatchlist } from "@/lib/actions/watchlist.actions";
-import { headers } from 'next/headers';
-import { auth } from '@/lib/better-auth/auth';
 
 const StockDetails = async ({ params }: StockDetailsPageProps) => {
   const { symbol } = await params;
@@ -20,20 +17,28 @@ const StockDetails = async ({ params }: StockDetailsPageProps) => {
   const upper = symbol?.toUpperCase?.() || symbol;
   const watchlist = await getCurrentUserWatchlist();
   const isInWatchlist = Array.isArray(watchlist) && watchlist.some((i) => i.symbol === upper);
-  const session = await auth.api.getSession({ headers: await headers() });
-  const userId = session?.user?.id || '';
 
   return (
-    <div className="flex min-h-screen w-full">
-      <section className="grid w-full gap-8 grid-cols-1 xl:grid-cols-2">
-        {/* Left Column */}
-        <div className="flex flex-col gap-8">
+    <div className="flex flex-col min-h-screen w-full gap-6">
+      {/* Page Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-6 border-b border-white/5">
+        <h1 className="text-3xl font-bold text-white tracking-tight">{upper}</h1>
+        <div className="flex flex-wrap items-center gap-3 mt-4 md:mt-0">
+          <WatchlistButton symbol={upper} company={upper} isInWatchlist={isInWatchlist} className="w-fit" />
+        </div>
+      </div>
+
+      <section className="grid w-full gap-8 grid-cols-1 xl:grid-cols-3">
+        {/* Full width Symbol Info */}
+        <div className="col-span-1 xl:col-span-3">
           <TradingViewWidget
-            title="Symbol Info"
             scriptUrl={`${scriptUrl}symbol-info.js`}
             config={SYMBOL_INFO_WIDGET_CONFIG(upper)}
           />
+        </div>
 
+        {/* Left Column (Charts) */}
+        <div className="flex flex-col gap-8 col-span-1 xl:col-span-2">
           <TradingViewWidget
             title="Candle Chart"
             scriptUrl={`${scriptUrl}advanced-chart.js`}
@@ -49,19 +54,8 @@ const StockDetails = async ({ params }: StockDetailsPageProps) => {
           />
         </div>
 
-        {/* Right Column */}
-        <div className="flex flex-col gap-8">
-          <div className="flex items-center gap-3">
-            <WatchlistButton symbol={upper} company={upper} isInWatchlist={isInWatchlist} />
-            {userId && <PaperTradeButton symbol={upper} userId={userId} />}
-          </div>
-
-          <TradingViewWidget
-            title="Technical Analysis"
-            scriptUrl={`${scriptUrl}technical-analysis.js`}
-            config={TECHNICAL_ANALYSIS_WIDGET_CONFIG(upper)}
-          />
-
+        {/* Right Column (Company Info & Financials) */}
+        <div className="flex flex-col gap-8 col-span-1 xl:col-span-1">
           <TradingViewWidget
             title="Company Profile"
             scriptUrl={`${scriptUrl}symbol-profile.js`}

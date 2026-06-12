@@ -5,7 +5,7 @@
 //
 // This module is PURE — no money/capital logic. That lives in portfolio-simulator.ts.
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -122,7 +122,7 @@ export function simulateTrade(
     // ── Helper to build result ──
     function buildResult(exitIdx: number, reason: ExitReason): SimulatedTrade {
         const exitPrice = candles[exitIdx].close;
-        const rawReturn = (exitPrice - entryPrice) / entryPrice;
+        const rawReturn = (exitPrice - entryPrice) / Math.abs(entryPrice);
         const realizedReturnPct = isBuy ? rawReturn * 100 : -rawReturn * 100;
 
         return {
@@ -140,7 +140,7 @@ export function simulateTrade(
     }
 
     // ── Walk forward bar-by-bar ──
-    const maxBar = Math.min(entryIndex + riskConfig.timeStopBars, candles.length - 1);
+    const maxBar = candles.length - 1;
 
     for (let i = entryIndex + 1; i <= maxBar; i++) {
         const currentPrice = candles[i].close;
@@ -219,8 +219,16 @@ export function simulateTrade(
         if (hasOppositeSignal && hasOppositeSignal(i)) {
             return buildResult(i, 'opposite_signal');
         }
+
+        // Time stop check (acts like lookForward/forced exit)
+        if (i >= entryIndex + riskConfig.timeStopBars) {
+            const isTrailingStopActiveAndInProfit = riskConfig.useTrailingStop && pnlPct > 0;
+            if (!isTrailingStopActiveAndInProfit) {
+                return buildResult(i, 'time_stop');
+            }
+        }
     }
 
-    // ── Time stop — max bars reached ──
+    // ── Time stop — max bars reached (or end of candles) ──
     return buildResult(maxBar, 'time_stop');
 }

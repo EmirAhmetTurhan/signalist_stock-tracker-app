@@ -27,7 +27,7 @@
 //   TOTAL: 64 bytes per node × 2000 = 128KB
 
 import { runStrategyBacktest } from '@/lib/ta/strategy-optimizer/run-backtest';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type {
     AllData,
     StrategyBacktestConfig,
@@ -302,6 +302,9 @@ export function computeCompositeScore(
     profitFactor: number,
     totalSignals: number,
 ): number {
+    // ── STRICT DISCARD: If strategy loses money, do not explore this branch ──
+    if (profitFactor < 1.0) return 0;
+
     const wr = Math.max(winRate, 0) / 100;          // Normalize 0..1
     const sh = Math.max(sharpeRatio, -1) + 1;        // Shift: -1→0, 0→1, 2→3
     const pf = Math.sqrt(Math.max(profitFactor, 0)); // Diminishing returns

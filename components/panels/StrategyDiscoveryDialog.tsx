@@ -73,6 +73,7 @@ export default function StrategyDiscoveryDialog({
 
     // User-selected years range (default to max)
     const [selectedYears, setSelectedYears] = useState(maxYears);
+    const [applyMarketFilter, setApplyMarketFilter] = useState(false);
 
     // Sync selectedYears when maxYears changes (e.g. interval switch)
     useEffect(() => {
@@ -105,7 +106,7 @@ export default function StrategyDiscoveryDialog({
             const res = await fetch("/api/discovery/deep-search", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ symbol, interval, years: selectedYears }),
+                body: JSON.stringify({ symbol, interval, years: selectedYears, applyMarketFilter }),
             });
 
             const data = await res.json();
@@ -249,6 +250,36 @@ export default function StrategyDiscoveryDialog({
                                     </select>
                                     <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
                                 </div>
+                            </div>
+
+                            {/* Broad Market Filter Toggle */}
+                            <div className="flex flex-col items-center justify-center pt-2 pb-1">
+                                <div className="flex items-center gap-3">
+                                    <label className="text-xs font-semibold text-gray-300 cursor-pointer select-none" onClick={() => setApplyMarketFilter(!applyMarketFilter)}>
+                                        Broad Market Filter
+                                    </label>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={applyMarketFilter}
+                                        onClick={() => setApplyMarketFilter(!applyMarketFilter)}
+                                        className={cn(
+                                            "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500",
+                                            applyMarketFilter ? "bg-amber-500" : "bg-gray-700"
+                                        )}
+                                    >
+                                        <span
+                                            aria-hidden="true"
+                                            className={cn(
+                                                "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+                                                applyMarketFilter ? "translate-x-4" : "translate-x-0"
+                                            )}
+                                        />
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-gray-400/80 mt-1.5 max-w-[260px] leading-tight">
+                                    Only discover strategies that survive Bear Market filters.
+                                </p>
                             </div>
 
                             <div className="pt-4">

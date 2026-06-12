@@ -2,7 +2,7 @@ import { INDICATOR_DETAILS } from "@/lib/constants/indicator-categories";
 import { getCandlesForInterval } from "@/lib/actions/finnhub.actions";
 import { findBestParameter, OPTIMIZABLE_INDICATORS } from "@/lib/ta/optimizer";
 // SPRINT 3: timeframe-limits.ts silindi, inline yıl->gün dönüşümü kullanılıyor.
-import type { Candle } from "@/lib/ta/simulation/backtest";
+import type { Candle } from "@/lib/ta/types";
 
 export interface OptimizationResult {
     key: string;
@@ -20,9 +20,13 @@ export async function triggerOptimization(
     symbol: string,
     indicators: string[],
     interval: string,
-    years?: number
+    years?: number,
+    toTimestamp?: number
 ): Promise<OptimizationResult[]> {
+    console.log(`[Server Action] triggerOptimization called for ${symbol} - indicators: ${indicators.join(", ")}`);
+    console.time(`[Server Action] triggerOptimization: ${symbol}`);
     if (!symbol || indicators.length === 0) {
+        console.timeEnd(`[Server Action] triggerOptimization: ${symbol}`);
         return [];
     }
 
@@ -41,7 +45,7 @@ export async function triggerOptimization(
     // causing optimized params found on 1yr to perform poorly on the full 10yr dataset.
     // Cap at 3650 to stay within Finnhub API limits.
     const days = Math.min((years ?? 10) * 365, 3650);
-    const rawCandles = await getCandlesForInterval(symbol, interval, days);
+    const rawCandles = await getCandlesForInterval(symbol, interval, days, toTimestamp);
 
     if (!rawCandles || rawCandles.length === 0) {
         console.error(`[optimize] No candle data for ${symbol} (${interval}, ${days} days)`);
@@ -76,5 +80,6 @@ export async function triggerOptimization(
         }
     }
 
+    console.timeEnd(`[Server Action] triggerOptimization: ${symbol}`);
     return results;
 }

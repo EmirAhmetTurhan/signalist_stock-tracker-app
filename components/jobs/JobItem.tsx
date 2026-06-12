@@ -131,8 +131,8 @@ function JobItemInner({ job, onDelete }: JobItemProps) {
 
         {/* Delete button */}
         <button
-          onClick={(e) => { e.preventDefault(); onDelete(job._id); }}
-          className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(job._id); }}
+          className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors shrink-0 self-center"
           title="Görevi Sil"
         >
           <Trash2 className="w-4 h-4" />

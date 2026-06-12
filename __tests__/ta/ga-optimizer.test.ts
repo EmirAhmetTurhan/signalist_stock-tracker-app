@@ -4,7 +4,7 @@ import {
     DEFAULT_GA_CONFIG, type GAIndividual,
 } from '@/lib/ta/optimization/ga-optimizer';
 import { DISCOVERY_POOL } from '@/lib/ta/strategy-optimizer';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { AllData } from '@/lib/ta/strategy-optimizer';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ describe('decodeMask / encodeMask', () => {
 describe('geneticOptimize', () => {
     it('returns population sorted by fitness descending', async () => {
         const candles = makeCandles(200, 'up');
-        const data = makeOscAllData(candles, ['rsi', 'macd', 'cci', 'mfi'], 80, 20, 15);
+        const data = makeOscAllData(candles, ['rsi', 'macd', 'cci', 'mfi'], 80, 20, 3);
         const topScreen = [
             { indicators: ['rsi', 'macd'], winRate: 50, totalSignals: 10, bestLookForward: 14 },
             { indicators: ['rsi', 'cci'], winRate: 45, totalSignals: 8, bestLookForward: 14 },
@@ -151,7 +151,7 @@ describe('geneticOptimize', () => {
 
     it('all individuals have at least 2 indicators', async () => {
         const candles = makeCandles(200, 'up');
-        const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 15);
+        const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 3);
         const topScreen = [
             { indicators: ['rsi', 'macd'], winRate: 50, totalSignals: 10, bestLookForward: 14 },
         ];
@@ -170,7 +170,7 @@ describe('geneticOptimize', () => {
 
     it('fitness improves over generations (best not zero)', async () => {
         const candles = makeCandles(200, 'up');
-        const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 15);
+        const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 3);
         const topScreen = [
             { indicators: ['rsi', 'macd'], winRate: 50, totalSignals: 10, bestLookForward: 14 },
         ];
@@ -202,7 +202,7 @@ describe('geneticOptimize', () => {
 
     it('respects parameter ranges for all individuals', async () => {
         const candles = makeCandles(200, 'up');
-        const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 15);
+        const data = makeOscAllData(candles, ['rsi', 'macd'], 80, 20, 3);
         const topScreen = [
             { indicators: ['rsi', 'macd'], winRate: 50, totalSignals: 10, bestLookForward: 14 },
         ];
@@ -230,7 +230,7 @@ describe('geneticOptimize', () => {
 describe('localRefine', () => {
     it('returns refined strategies sorted by winRate', () => {
         const candles = makeCandles(250, 'up');
-        const data = makeOscAllData(candles, ['rsi', 'macd', 'cci'], 80, 20, 15);
+        const data = makeOscAllData(candles, ['rsi', 'macd', 'cci'], 80, 20, 3);
 
         // Create GA individuals manually for testing
         const gaIndividuals: GAIndividual[] = [

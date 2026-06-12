@@ -5,14 +5,14 @@ import type { BacktestHistoryItem } from '../simulation/backtest';
 import type { BacktestLogEntry } from '../simulation/backtest-log';
 import type { PortfolioSimResult, PortfolioSimConfig } from '../simulation/portfolio-simulator';
 import type { TradeRiskConfig } from '../simulation/trade-simulator';
-import type { MarketRegime, RegimeStats, SignalProfile, StrategyMode, EvaluationMode } from '../types';
+import type { MarketRegime, RegimeStats, SignalProfile, StrategyMode, EvaluationMode, TimePoint } from '../types';
 
-type Series = { time: string | number; value?: number }[];
+type Series = TimePoint[];
 
 export interface AllData {
     rsiData?: { rsi: Series; ma: Series; confidence?: number[] };
     cciData?: { cci: Series; ma: Series };
-    waveTrendData?: { wt1: Series; wt2: Series; crosses?: { time: string | number; cross: 1 | -1 }[]; wt1Confidence?: number[]; wt2Confidence?: number[] };
+    waveTrendData?: { wt1: Series; wt2: Series; crosses?: { time: number; cross: 1 | -1 }[]; wt1Confidence?: number[]; wt2Confidence?: number[] };
     macdData?: { macd: Series; signal: Series; histogram: (Series[number] & { color?: string })[] };
     stochRsiData?: { k: Series; d: Series };
     dmiData?: { plusDI: Series; minusDI: Series; adx: Series };
@@ -26,9 +26,10 @@ export interface AllData {
     nvData?: Series;
     madrData?: Series;
     almaData?: Series;
-    bbData?: { time: string | number; basis?: number; upper?: number; lower?: number }[];
+    bbData?: { time: number; basis?: number; upper?: number; lower?: number }[];
     regimeData?: { regime: MarketRegime }[];
 }
+
 
 export interface StrategyBacktestConfig {
     lookForward: number;
@@ -42,6 +43,8 @@ export interface StrategyBacktestConfig {
     evaluationMode?: EvaluationMode;
     riskConfig?: TradeRiskConfig;
     portfolioConfig?: PortfolioSimConfig;
+    longOnly?: boolean;
+    marketRegimeMap?: Map<string, boolean>;
 }
 
 export interface StrategyBacktestResult {
@@ -81,6 +84,7 @@ export interface StrategyOptimizationConfig {
     interval?: string;
     mode?: StrategyMode;
     strategyName?: string;
+    initialParams?: Record<string, number>;
 }
 
 export interface RoundResult { param: string; value: number; winRate: number }

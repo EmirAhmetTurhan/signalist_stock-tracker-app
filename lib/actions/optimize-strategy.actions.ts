@@ -2,7 +2,7 @@
 
 import { optimizeStrategyParams, mapComputedToAllData } from '@/lib/ta/strategy-optimizer';
 import type { StrategyOptimizationConfig, StrategyOptimizationResult } from '@/lib/ta/strategy-optimizer';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';
 import { computeIndicators } from '@/lib/ta/compute';
 import { DEFAULT_PARAMS } from '@/lib/constants/indicators';
@@ -23,6 +23,7 @@ export async function optimizeStrategyAction(
         interval?: string;
         mode?: 'all' | 'majority';
         strategyName?: string;
+        currentParams?: Record<string, number>;
     }
 ): Promise<StrategyOptimizationResult> {
     // ─── Better Auth Security Gate ──────────────────────────────────────────
@@ -75,7 +76,8 @@ export async function optimizeStrategyAction(
             close: c.close,
             volume: c.volume ?? 0
         }));
-        const computed = computeIndicators(candleInputs, activeIndicators, DEFAULT_PARAMS);
+        const mergedBaselineParams = { ...DEFAULT_PARAMS, ...options?.currentParams };
+        const computed = computeIndicators(candleInputs, activeIndicators, mergedBaselineParams as IndicatorParams);
         const allData = mapComputedToAllData(computed);
 
         const config: StrategyOptimizationConfig = {
@@ -85,6 +87,7 @@ export async function optimizeStrategyAction(
             interval,
             mode: options?.mode ?? 'all',
             strategyName: options?.strategyName,
+            initialParams: options?.currentParams,
         };
 
         const result = optimizeStrategyParams(candles, allData, config);

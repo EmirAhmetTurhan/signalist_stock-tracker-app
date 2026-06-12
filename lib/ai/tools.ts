@@ -26,7 +26,7 @@ import { optimizeStrategyParams, discoverStrategy, mapComputedToAllData, DISCOVE
 import { randomUUID } from 'crypto';
 import { inngest } from '@/lib/inngest/client';
 import { stockSymbolSchema } from '@/lib/validations/schemas';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 
 import { INDICATOR_KEYS, DEFAULT_PARAMS } from '@/lib/constants/indicators';
 import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';

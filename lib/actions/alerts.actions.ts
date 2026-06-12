@@ -79,6 +79,7 @@ async function createAlertFromFormData(formData: FormData): Promise<void> {
 
     redirect('/watchlist');
   } catch (e) {
+    if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e;
     logError('Alerts', `createAlert formData error: ${e}`);
     redirect('/watchlist');
   }
@@ -139,6 +140,7 @@ async function deleteAlertFromFormData(formData: FormData): Promise<void> {
     revalidatePath('/watchlist');
     redirect('/watchlist');
   } catch (e) {
+    if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e;
     logError('Alerts', `deleteAlert formData error: ${e}`);
     redirect('/watchlist');
   }
@@ -208,6 +210,7 @@ export async function updateAlertThresholdAction(formData: FormData) {
     revalidatePath('/watchlist');
     redirect('/watchlist');
   } catch (e) {
+    if (e instanceof Error && e.message.includes('NEXT_REDIRECT')) throw e;
     logError('Alerts', `updateAlertThresholdAction error: ${e}`);
     redirect('/watchlist');
   }

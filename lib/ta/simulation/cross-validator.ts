@@ -3,7 +3,7 @@
 // Validates Top 10 strategies against out-of-sample data to detect overfitting.
 // Assigns risk badges: 🟢 Low, 🟡 Medium, 🔴 High.
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { AllData } from '@/lib/ta/strategy-optimizer/types';
 import { runStrategyBacktest } from '@/lib/ta/strategy-optimizer/run-backtest';
 import { recomputeAllIndicators, encodeMask } from '@/lib/ta/optimization/ga-optimizer';

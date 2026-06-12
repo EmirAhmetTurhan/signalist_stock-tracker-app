@@ -29,8 +29,8 @@ export const INDICATOR_PARAMS: readonly IndicatorParamDef[] = [
     { key: 'stoch_d', indicator: 'stochrsi', defaultStr: '3', defaultNum: 3, label: 'StochRSI %D' },
 
     // --- WaveTrend ---
-    { key: 'wt_avg_len', indicator: 'wavetrend', defaultStr: '10', defaultNum: 10, label: 'WT Avg Len' },
-    { key: 'wt_channel_len', indicator: 'wavetrend', defaultStr: '21', defaultNum: 21, label: 'WT Channel Len' },
+    { key: 'wt_avg_len', indicator: 'wavetrend', defaultStr: '21', defaultNum: 21, label: 'WT Avg Len' },
+    { key: 'wt_channel_len', indicator: 'wavetrend', defaultStr: '10', defaultNum: 10, label: 'WT Channel Len' },
     { key: 'wt_ma_len', indicator: 'wavetrend', defaultStr: '4', defaultNum: 4, label: 'WT MA Len' },
 
     // --- DMI ---

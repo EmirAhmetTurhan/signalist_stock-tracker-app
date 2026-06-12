@@ -23,12 +23,23 @@ export async function searchStocks(query?: string): Promise<StockWithWatchlistSt
     return _searchStocks(query);
 }
 
-export async function getDailyCandles(symbol: string, days?: number): Promise<CandleDataPoint[]> {
-    return _getDailyCandles(symbol, days);
+export async function getQuote(symbol: string): Promise<QuoteData | null> {
+    const token = process.env.FINNHUB_API_KEY || '';
+    if (!token) return null;
+    const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${token}`;
+    try {
+        return await fetchJSON<QuoteData>(url, 60);
+    } catch {
+        return null;
+    }
 }
 
-export async function get4HourCandles(symbol: string, days?: number): Promise<CandleDataPoint[]> {
-    return _get4HourCandles(symbol, days);
+export async function getDailyCandles(symbol: string, days?: number, toTimestamp?: number): Promise<CandleDataPoint[]> {
+    return _getDailyCandles(symbol, days, toTimestamp);
+}
+
+export async function get4HourCandles(symbol: string, days?: number, toTimestamp?: number): Promise<CandleDataPoint[]> {
+    return _get4HourCandles(symbol, days, toTimestamp);
 }
 
 export async function getYahooIntradayCandles(symbol: string, days?: number): Promise<CandleDataPoint[]> {
@@ -39,6 +50,6 @@ export async function getDailyCandlesForAI(symbol: string, days?: number): Promi
     return _getDailyCandlesForAI(symbol, days);
 }
 
-export async function getCandlesForInterval(symbol: string, interval: string, days: number): Promise<CandleDataPoint[]> {
-    return _getCandlesForInterval(symbol, interval, days);
+export async function getCandlesForInterval(symbol: string, interval: string, days: number, toTimestamp?: number): Promise<CandleDataPoint[]> {
+    return _getCandlesForInterval(symbol, interval, days, toTimestamp);
 }

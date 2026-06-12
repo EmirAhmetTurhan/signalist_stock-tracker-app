@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateWinRate } from '@/lib/ta/simulation/backtest';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 
 // Synthetic data: known win/loss pattern
 function makeCandles(count: number, trend: 'up' | 'down' | 'flat' = 'up'): Candle[] {
@@ -24,11 +24,11 @@ function makeCandles(count: number, trend: 'up' | 'down' | 'flat' = 'up'): Candl
   return candles;
 }
 
-// Perfect RSI-like data: all values at 100 (overbought → SELL signal everywhere)
+// Perfect RSI-like data: alternating values to trigger crossovers (alternating BUY and SELL)
 function makePerfectBuyData(candles: Candle[], value: number) {
   return {
-    rsi: candles.map((c) => ({ time: c.time, value })),
-    ma: candles.map((c) => ({ time: c.time, value: value - 10 })),
+    rsi: candles.map((c, idx) => ({ time: c.time, value: idx % 2 === 0 ? value + 10 : value - 10 })),
+    ma: candles.map((c) => ({ time: c.time, value })),
   };
 }
 
@@ -67,10 +67,10 @@ describe('calculateWinRate', () => {
 
   it('winRate is 100 when trend is strictly up and signals are all BUY', () => {
     const candles = makeCandles(200, 'up');
-    // RSI backtest: rsi.value > ma.value → BUY
+    // RSI backtest: rsi alternates between 55 and 65, ma is 50 -> ONLY BUY signals under level-based logic
     const data = {
-      rsi: candles.map((c) => ({ time: c.time, value: 60 })),
-      ma: candles.map((c) => ({ time: c.time, value: 40 })),
+      rsi: candles.map((c, idx) => ({ time: c.time, value: idx % 2 === 0 ? 55 : 65 })),
+      ma: candles.map((c) => ({ time: c.time, value: 50 })),
     };
     const result = calculateWinRate('RSI', candles, data, { lookForward: 5 });
     // All BUY signals win in an uptrend → 100% win rate
@@ -79,10 +79,10 @@ describe('calculateWinRate', () => {
 
   it('winRate is 0 when trend is strictly down and signals are all BUY', () => {
     const candles = makeCandles(200, 'down');
-    // RSI backtest: rsi.value > ma.value → BUY
+    // RSI backtest: rsi alternates between 55 and 65, ma is 50 -> ONLY BUY signals under level-based logic
     const data = {
-      rsi: candles.map((c) => ({ time: c.time, value: 60 })),
-      ma: candles.map((c) => ({ time: c.time, value: 40 })),
+      rsi: candles.map((c, idx) => ({ time: c.time, value: idx % 2 === 0 ? 55 : 65 })),
+      ma: candles.map((c) => ({ time: c.time, value: 50 })),
     };
     const result = calculateWinRate('RSI', candles, data, { lookForward: 5 });
     // All BUY signals lose in a downtrend → 0% win rate

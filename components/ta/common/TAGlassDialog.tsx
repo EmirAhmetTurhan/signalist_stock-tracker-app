@@ -14,6 +14,7 @@ interface TAGlassDialogProps {
     footer?: React.ReactNode;
     className?: string;
     width?: string;
+    disableBodyScroll?: boolean;
 }
 
 // ─── Bileşen ───────────────────────────────────────────────────────────────────
@@ -26,6 +27,7 @@ export default function TAGlassDialog({
     footer,
     className,
     width = "max-w-2xl",
+    disableBodyScroll,
 }: TAGlassDialogProps) {
     // ESC tuşu ile kapatma
     React.useEffect(() => {
@@ -85,8 +87,11 @@ export default function TAGlassDialog({
                 </div>
 
                 {/* Body */}
-                <div className="px-5 py-4 max-h-[65vh] overflow-y-auto
-                    scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                <div className={cn(
+                    "px-5 py-4",
+                    !disableBodyScroll && "max-h-[65vh] overflow-y-auto premium-scrollbar",
+                    disableBodyScroll && "max-h-[75vh] md:max-h-[80vh] overflow-y-auto premium-scrollbar"
+                )}>
                     {children}
                 </div>
 

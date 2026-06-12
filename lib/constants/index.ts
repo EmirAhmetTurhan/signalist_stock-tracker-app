@@ -37,8 +37,8 @@ export const ALERT_TYPE_OPTIONS = [
 ];
 
 export const CONDITION_OPTIONS = [
-    { value: 'greater', label: 'Greater than (>)' },
-    { value: 'less', label: 'Less than (<)' },
+    { value: 'greater', label: 'Greater than or equal (>=)' },
+    { value: 'less', label: 'Less than or equal (<=)' },
 ];
 
 export {

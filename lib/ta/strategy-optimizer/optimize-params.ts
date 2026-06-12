@@ -1,11 +1,22 @@
 // lib/ta/strategy-optimizer/optimize-params.ts
 // Ported from monolith strategy-optimizer.ts
 
-import type { Candle } from '../simulation/backtest';
+import type { Candle } from '../types';
 import { OPTIMIZABLE_INDICATORS, rangeForTimeframe } from '../optimizer';
 import { bayesianOptimize } from '../optimization/bayesian-optimizer';
 import { INDICATOR_TO_ALLDATA_FIELD } from '../registry/indicator-all-data-map';
 import { runStrategyBacktest, evaluateGeneralizationScore } from './run-backtest';
+import { PARAM_DEFAULTS_NUM } from '../../constants/indicator-params';
+
+export function sanitizeParams(params: Record<string, number>): Record<string, number> {
+    const sanitized: Record<string, number> = {};
+    for (const [key, val] of Object.entries(params)) {
+        if (key === 'lookForward' || key.toLowerCase() in PARAM_DEFAULTS_NUM) {
+            sanitized[key] = val;
+        }
+    }
+    return sanitized;
+}
 
 import type {
     AllData,
@@ -33,6 +44,22 @@ export function optimizeStrategyParams(
     const mode = config.mode ?? 'all';
     const convergenceRounds = config.convergenceRounds ?? 1;
     const strategyType = config.strategyName === 'RSI_CCI_WT' ? 'RSI_CCI_WT' : (indicators.length > 0 ? 'CUSTOM' : 'RSI_CCI_WT');
+
+    // ── Baseline Evaluation ───────────────────────────────────────────
+    const initialLookForward = config.initialParams?.lookForward ?? 14;
+    const initialConfig: StrategyBacktestConfig = {
+        lookForward: initialLookForward,
+        interval,
+        mode,
+    };
+    const initialIndicatorCfg = {
+        customIndicators: indicators.length > 0 ? indicators : undefined,
+        mode,
+        interval,
+    };
+    const initialResult = runStrategyBacktest(candles, strategyType, allData, initialConfig, initialIndicatorCfg);
+    const initialWinRate = initialResult.winRate;
+    const initialProfitFactor = initialResult.profitFactor;
 
     // ── Train/Test Split (70/30) ──────────────────────────────────────
     const splitIdx = Math.floor(candles.length * 0.7);
@@ -198,7 +225,33 @@ export function optimizeStrategyParams(
         interval,
     };
     const finalResult = runStrategyBacktest(candles, strategyType, carryForwardAllData, finalConfig, finalIndicatorCfg);
-    bestWinRate = finalResult.winRate;
+    const finalWinRate = finalResult.winRate;
+    const finalProfitFactor = finalResult.profitFactor;
 
-    return { bestParams, bestWinRate, iterations, roundResults };
+    // Apply optimization constraints: Win Rate or Profit Factor must not degrade below baseline.
+    if (finalWinRate < initialWinRate || finalProfitFactor < initialProfitFactor) {
+        const fallbackParams: Record<string, number> = {
+            lookForward: initialLookForward,
+            ...config.initialParams
+        };
+        for (const ind of indicators) {
+            const entry = paramMap[ind];
+            if (entry && fallbackParams[entry.param] === undefined) {
+                const defaultVal = PARAM_DEFAULTS_NUM[entry.param] ?? entry.range[0];
+                fallbackParams[entry.param] = defaultVal;
+            }
+        }
+        return {
+            bestParams: sanitizeParams(fallbackParams),
+            bestWinRate: initialWinRate,
+            iterations,
+            roundResults: [
+                ...roundResults,
+                { param: 'revert_to_initial', value: 1, winRate: initialWinRate }
+            ]
+        };
+    }
+
+    bestWinRate = finalResult.winRate;
+    return { bestParams: sanitizeParams(bestParams), bestWinRate, iterations, roundResults };
 }

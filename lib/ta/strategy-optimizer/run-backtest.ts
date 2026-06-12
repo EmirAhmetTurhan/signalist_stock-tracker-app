@@ -1,7 +1,8 @@
 // lib/ta/strategy-optimizer/run-backtest.ts
 // Ported from monolith strategy-optimizer.ts
 
-import type { Candle, BacktestHistoryItem } from '../simulation/backtest';
+import type { Candle } from '../types';
+import type { BacktestHistoryItem } from '../simulation/backtest';
 import {
     rsiSignal, cciSignal, waveTrendSignal, macdSignal,
     stochRsiSignal, dmiSignal, smiSignal, aoSignal,
@@ -468,12 +469,12 @@ export function computeATR(candles: Candle[], period: number = 14): number[] {
 
 export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
     TrendFollower: {
-        tradeThreshold: 0.25,
+        tradeThreshold: 0.35,
         baseCooldown: 5,
         gamma: 0.7,
         cooldownMin: 2,
         cooldownMax: 10,
-        requireCrossover: false,
+        requireCrossover: true,
         volatilityLookback: 30,
         stopLossAtrMult: 3.0,
         takeProfitR: 4.0,
@@ -487,7 +488,7 @@ export const PROFILE_CONFIGS: Record<SignalProfile, ProfileConfig> = {
         gamma: 0.8,
         cooldownMin: 1,
         cooldownMax: 6,
-        requireCrossover: false,
+        requireCrossover: true,
         volatilityLookback: 30,
         stopLossAtrMult: 2.0,
         takeProfitR: 2.5,
@@ -714,6 +715,10 @@ export function runStrategyBacktest(
         (allData as any).regimeData = [];
     }
     const regimeData = allData.regimeData!;
+    // Pre-calculate all regimes so evaluateRawSignal can access them at any index
+    for (let j = 0; j < candles.length; j++) {
+        regimeData[j] = { regime: classifyRegime(candles, j, atrValues) };
+    }
 
     const baseWarmup = 55;
     const startIndex = Math.min(baseWarmup, Math.floor(candles.length * 0.15));
@@ -729,32 +734,30 @@ export function runStrategyBacktest(
     // Resolve ga-optimizer constants to avoid direct cyclic dependency at runtime where possible
     const minSignalThreshold = 20; // Hardcoded fallback or imported value
 
-    for (let i = startIndex; i < endIndex; i++) {
-        const currentPrice = candles[i].close;
-        const futurePrice = candles[i + lookForward].close;
-        let signal: "BUY" | "SELL" | null = null;
+    let activePosition: {
+        type: 'BUY' | 'SELL';
+        entryIndex: number;
+        exitIndex: number;
+    } | null = null;
 
-        const regime = classifyRegime(candles, i, atrValues);
-        regimeData[i] = { regime };
-
-        const cd = getDynamicCooldown(atrValues, i, interval, config);
-        const cooldownOk = (i - lastSignalBar) >= cd;
-        let sellBypass = false;
+    const evaluateRawSignal = (barIdx: number): 'BUY' | 'SELL' | null => {
+        let signal: 'BUY' | 'SELL' | null = null;
+        const regime = regimeData[barIdx]?.regime ?? 'neutral';
 
         if (strategyName === 'RSI_CCI_WT') {
-            const rsiConf = allData.rsiData?.confidence?.[i];
-            const w1Conf = allData.waveTrendData?.wt1Confidence?.[i];
-            const w2Conf = allData.waveTrendData?.wt2Confidence?.[i];
+            const rsiConf = allData.rsiData?.confidence?.[barIdx];
+            const w1Conf = allData.waveTrendData?.wt1Confidence?.[barIdx];
+            const w2Conf = allData.waveTrendData?.wt2Confidence?.[barIdx];
 
-            const rsiVal = allData.rsiData?.rsi[i]?.value;
-            const rsiMa = allData.rsiData?.ma[i]?.value;
-            const cciVal = allData.cciData?.cci[i]?.value;
-            const cciMa = allData.cciData?.ma[i]?.value;
+            const rsiVal = allData.rsiData?.rsi[barIdx]?.value;
+            const rsiMa = allData.rsiData?.ma[barIdx]?.value;
+            const cciVal = allData.cciData?.cci[barIdx]?.value;
+            const cciMa = allData.cciData?.ma[barIdx]?.value;
 
             const rsiOk = rsiConf !== 0 && rsiVal !== undefined && rsiMa !== undefined;
             const cciOk = cciVal !== undefined && cciMa !== undefined;
-            const wt1 = allData.waveTrendData?.wt1[i]?.value;
-            const wt2 = allData.waveTrendData?.wt2[i]?.value;
+            const wt1 = allData.waveTrendData?.wt1[barIdx]?.value;
+            const wt2 = allData.waveTrendData?.wt2[barIdx]?.value;
             const wtOk = w1Conf !== 0 && w2Conf !== 0 && wt1 !== undefined && wt2 !== undefined;
 
             if (rsiOk && cciOk) {
@@ -772,9 +775,9 @@ export function runStrategyBacktest(
                 const allAgree = buyVotes === totalVoters || sellVotes === totalVoters;
 
                 const anyFreshCross = requireCrossover
-                    ? hasFreshCrossover('rsi', i, allData) ||
-                    hasFreshCrossover('cci', i, allData) ||
-                    (wtOk && hasFreshCrossover('wavetrend', i, allData))
+                    ? hasFreshCrossover('rsi', barIdx, allData) ||
+                    hasFreshCrossover('cci', barIdx, allData) ||
+                    (wtOk && hasFreshCrossover('wavetrend', barIdx, allData))
                     : true;
 
                 if (allAgree && anyFreshCross) {
@@ -787,17 +790,17 @@ export function runStrategyBacktest(
             const bbas: BBA[] = [];
             let anyFreshCross = false;
 
-            const kaufmanER = efficiencyRatio(candles, i, 10);
+            const kaufmanER = efficiencyRatio(candles, barIdx, 10);
 
             for (const key of inds) {
-                const sig = getIndicatorSignal(key, i, allData, candles);
+                const sig = getIndicatorSignal(key, barIdx, allData, candles);
                 if (sig === null) continue;
 
                 const baseConfidence = options.indicatorConfidences?.[key] ?? 0.6;
                 const confidence = baseConfidence * (0.3 + 0.7 * kaufmanER);
                 bbas.push(signalToBBA(sig, confidence, regime));
 
-                if (requireCrossover && !anyFreshCross && hasFreshCrossover(key, i, allData, candles)) {
+                if (requireCrossover && !anyFreshCross && hasFreshCrossover(key, barIdx, allData, candles)) {
                     anyFreshCross = true;
                 }
             }
@@ -812,6 +815,49 @@ export function runStrategyBacktest(
                 } else if (fused.sell > TRADE_THRESHOLD && fused.sell > fused.buy) {
                     signal = 'SELL';
                 }
+            }
+        }
+        return signal;
+    };
+
+    for (let i = startIndex; i < endIndex; i++) {
+        const currentPrice = candles[i].close;
+        const futurePrice = candles[i + lookForward].close;
+
+        // Clear active position if current index has moved past the exit index
+        if (activePosition && i > activePosition.exitIndex) {
+            activePosition = null;
+        }
+
+        const regime = regimeData[i].regime;
+
+        const cd = getDynamicCooldown(atrValues, i, interval, config);
+        const cooldownOk = (i - lastSignalBar) >= cd;
+        let sellBypass = false;
+
+        const rawSignal = evaluateRawSignal(i);
+        let signal: "BUY" | "SELL" | null = rawSignal;
+
+        const isSameDirectionAsActive = activePosition !== null && signal === activePosition.type;
+        const isOppositeDirectionOnExitBar = activePosition !== null && i <= activePosition.exitIndex && signal !== activePosition.type;
+
+        // Block same direction (pyramiding prevention) and opposite direction entry on exit bar (flat-only rule)
+        if (isSameDirectionAsActive || isOppositeDirectionOnExitBar) {
+            signal = null;
+        }
+
+        // ── BROAD MARKET FILTER (SPY 200-SMA) ──
+        let blockedByMarketFilter = false;
+        if (signal === 'BUY' && config.marketRegimeMap) {
+            let timeVal = candles[i].time;
+            if (typeof timeVal === 'number' && timeVal < 1e12) {
+                timeVal = timeVal * 1000; // convert unix seconds to ms if necessary
+            }
+            const dateStr = new Date(timeVal).toISOString().split('T')[0];
+            const isBullish = config.marketRegimeMap.get(dateStr);
+            if (isBullish === false) {
+                signal = null;
+                blockedByMarketFilter = true;
             }
         }
 
@@ -876,12 +922,20 @@ export function runStrategyBacktest(
             let rejectionReason: string | undefined;
             if (!signal) {
                 const parts: string[] = [];
-                if (requireCrossover) {
-                    const anyFreshCross = indicatorSignals.some(s => s.freshCrossover);
-                    if (!anyFreshCross) parts.push('No fresh crossover');
+                if (isSameDirectionAsActive) {
+                    parts.push('Blocked same-direction signal (pyramiding prevention)');
+                } else if (isOppositeDirectionOnExitBar) {
+                    parts.push('Blocked entry on opposite exit bar (flat-only rule)');
+                } else if (blockedByMarketFilter) {
+                    parts.push('Blocked BUY due to Bear Market (SPY 200-SMA filter)');
+                } else {
+                    if (requireCrossover) {
+                        const anyFreshCross = indicatorSignals.some(s => s.freshCrossover);
+                        if (!anyFreshCross) parts.push('No fresh crossover');
+                    }
+                    if (!cooldownOk) parts.push(`Cooldown active (${i - lastSignalBar}/${cd})`);
+                    if (indicatorSignals.length < 2) parts.push(`Only ${indicatorSignals.length} indicator(s) active`);
                 }
-                if (!cooldownOk) parts.push(`Cooldown active (${i - lastSignalBar}/${cd})`);
-                if (indicatorSignals.length < 2) parts.push(`Only ${indicatorSignals.length} indicator(s) active`);
                 rejectionReason = parts.length > 0 ? parts.join('; ') : 'Signal threshold not met';
             }
 
@@ -902,8 +956,8 @@ export function runStrategyBacktest(
                 ...(signal ? {
                     tradeOutcome: {
                         futurePrice,
-                        rawReturn: (futurePrice - currentPrice) / currentPrice,
-                        isWin: (signal === 'BUY' ? 1 : -1) * (futurePrice - currentPrice) / currentPrice > 0,
+                        rawReturn: (futurePrice - currentPrice) / Math.abs(currentPrice),
+                        isWin: (signal === 'BUY' ? 1 : -1) * (futurePrice - currentPrice) / Math.abs(currentPrice) > 0,
                     },
                 } : {}),
             });
@@ -941,7 +995,10 @@ export function runStrategyBacktest(
                     trailAtrMult: profileCfg.trailAtrMult,
                     timeStopBars: 30,
                 };
-                const simResult = simulateTrade(candles, i, signal, atrValues, tradeRiskCfg);
+                const simResult = simulateTrade(candles, i, signal, atrValues, tradeRiskCfg, (barIdx) => {
+                    const sig = evaluateRawSignal(barIdx);
+                    return sig === (signal === 'BUY' ? 'SELL' : 'BUY');
+                });
                 tradeReturn = simResult.realizedReturnPct / 100 - tcPct;
                 isWin = tradeReturn > 0;
                 tradeMfe = simResult.mfe;
@@ -950,10 +1007,22 @@ export function runStrategyBacktest(
                 tradeExitReason = simResult.exitReason;
                 tradeBarsHeld = simResult.barsHeld;
                 effectiveFuturePrice = simResult.exitPrice;
+
+                activePosition = {
+                    type: signal,
+                    entryIndex: i,
+                    exitIndex: simResult.exitIndex,
+                };
             } else {
-                const rawReturn = (futurePrice - currentPrice) / currentPrice;
+                const rawReturn = (futurePrice - currentPrice) / Math.abs(currentPrice);
                 tradeReturn = (signal === 'BUY' ? rawReturn : -rawReturn) - tcPct;
                 isWin = tradeReturn > 0;
+
+                activePosition = {
+                    type: signal,
+                    entryIndex: i,
+                    exitIndex: i + lookForward,
+                };
             }
 
             if (isWin) wins++;
@@ -1123,6 +1192,7 @@ export function runStrategyBacktest(
         averageReturnPerBar = sumReturnPerBar / totalSignals;
         opportunityEfficiency = oeCount > 0 ? sumOE / oeCount : undefined;
     }
+
 
     return {
         winRate,

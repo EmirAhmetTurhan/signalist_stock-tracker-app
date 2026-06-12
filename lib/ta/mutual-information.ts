@@ -9,7 +9,7 @@
 //   - Bias-corrected entropy estimation (Miller-Madow correction for finite samples)
 //   - Pure typed array operations — zero GC allocation in hot-path
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { AllData } from '@/lib/ta/strategy-optimizer';
 
 /** Series type matching lib/ta/strategy-optimizer.ts line 28, defined locally since it's not exported. */

@@ -3,10 +3,10 @@
 // Phase 4: Local Refinement (hill-climbing on top GA results)
 // No React state — usable from server actions, Inngest jobs, and UI components.
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { AllData, DiscoveredStrategy } from '@/lib/ta/strategy-optimizer/types';
 import { runStrategyBacktest } from '@/lib/ta/strategy-optimizer/run-backtest';
-import { optimizeStrategyParams } from '@/lib/ta/strategy-optimizer/optimize-params';
+import { optimizeStrategyParams, sanitizeParams } from '@/lib/ta/strategy-optimizer/optimize-params';
 import { DISCOVERY_POOL } from '@/lib/ta/registry/indicator-registry';
 import { OPTIMIZABLE_INDICATORS } from '@/lib/ta/optimizer';
 import { INDICATOR_TO_ALLDATA_FIELD } from '@/lib/ta/registry/indicator-all-data-map';
@@ -838,7 +838,7 @@ export function localRefine(
 
         refined.push({
             indicators,
-            params: bestParams,
+            params: sanitizeParams(bestParams),
             winRate: finalResult.winRate,
             totalSignals: finalResult.totalSignals,
             rank: 0,

@@ -131,10 +131,22 @@ export default function ReportDetailPage() {
         params.set('interval', interv);
         // CRITICAL: Pass years so TA page loads the same data range as the discovery
         params.set('years', years.toString());
+        
+        // CRITICAL: Pass report generation timestamp as 'to' so TA page has the same data sliding window
+        const reportTime = Math.floor(new Date(report.createdAt).getTime() / 1000);
+        params.set('to', reportTime.toString());
+
         // Pass discovered params via 'p' for the TA page to apply optimized values
         if (ds.bestParams && Object.keys(ds.bestParams).length > 0) {
             params.set('p', JSON.stringify(ds.bestParams));
         }
+        
+        // Pass strategy mode, evaluation mode, and signal profile to align backtest configs
+        params.set('mode', 'majority');
+        params.set('evalMode', 'pathaware');
+        const sigProfile = (report.discoveryConfig as any)?.signalProfile || 'TrendFollower';
+        params.set('profile', sigProfile);
+
         router.push(`/ta?${params.toString()}`);
     }, [report, router]);
 

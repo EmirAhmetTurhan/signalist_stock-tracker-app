@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Search, X, BarChart2, Sparkles, RefreshCw } from 'lucide-react';
+import { Search, X, BarChart2, Sparkles, RefreshCw, Trash2 } from 'lucide-react';
 import ReportCard from '@/components/notebook/ReportCard';
 import Link from 'next/link';
+import { deleteReport, clearReportsByType } from '@/lib/actions/report.actions';
 
 interface DiscoveryConfig {
   symbol: string;
@@ -32,12 +33,15 @@ export default function NotebookSection() {
   const [search, setSearch] = useState('');
   const [filterSymbol, setFilterSymbol] = useState('');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const strategies = reports.filter(r => r.type === 'discovery' && r.status === 'completed');
   const analysisReports = reports.filter(r => r.type !== 'discovery');
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    
     try {
       const { getAllReports } = await import('@/lib/actions/report.actions');
       const res = await getAllReports();
@@ -63,7 +67,9 @@ export default function NotebookSection() {
         setReports(filtered);
       }
     } catch { /* ignore */ }
-    setLoading(false);
+    
+    if (isRefresh) setRefreshing(false);
+    else setLoading(false);
   }, [search, filterSymbol]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -71,13 +77,39 @@ export default function NotebookSection() {
   useEffect(() => {
     const handleExternalRefresh = () => {
       // Reload reports data when notified of job updates
-      loadData();
+      loadData(true);
     };
     window.addEventListener('signalist-archive-refresh', handleExternalRefresh);
     return () => {
       window.removeEventListener('signalist-archive-refresh', handleExternalRefresh);
     };
   }, [loadData]);
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await deleteReport(id);
+      if (res.success) {
+        setReports(current => current.filter(r => r._id !== id));
+      }
+    } catch (error) {
+      console.error('Failed to delete report:', error);
+    }
+  };
+
+  const handleClearAll = async () => {
+    const type = activeTab === 'strategies' ? 'discovery' : 'analysis';
+    try {
+      const res = await clearReportsByType(type);
+      if (res.success) {
+        setReports(current => current.filter(r => {
+          if (type === 'discovery') return r.type !== 'discovery';
+          return r.type === 'discovery';
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to clear reports:', error);
+    }
+  };
 
   const uniqueSymbols = activeTab === 'strategies'
     ? [...new Set(strategies.map((r) => r.symbol).filter(Boolean))].sort()
@@ -104,6 +136,7 @@ export default function NotebookSection() {
               <th className="text-center py-3 px-4 font-medium">Win Rate</th>
               <th className="text-center py-3 px-4 font-medium">Data Range</th>
               <th className="text-center py-3 px-4 font-medium">Date</th>
+              <th className="text-center py-3 px-4 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -130,6 +163,16 @@ export default function NotebookSection() {
                   </td>
                   <td className="py-3.5 px-4 text-center text-gray-400 text-xs whitespace-nowrap tabular-nums">
                     {new Date(s.createdAt).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                  <td className="py-3.5 px-4 text-center">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleDelete(s._id); }}
+                      className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors inline-flex"
+                      title="Delete Strategy"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </td>
                 </tr>
               );
@@ -176,14 +219,28 @@ export default function NotebookSection() {
           </div>
         </div>
 
-        <button
-          onClick={() => loadData()}
-          disabled={loading}
-          className="flex items-center gap-2 px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-blue-400' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {(activeTab === 'strategies' ? strategies.length > 0 : analysisReports.length > 0) && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              disabled={loading || refreshing}
+              className="flex items-center justify-center px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-lg text-gray-400 hover:text-red-400 transition-colors"
+              title={activeTab === 'strategies' ? "Clear All Strategies" : "Clear All AI Reports"}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => loadData(true)}
+            disabled={loading || refreshing}
+            className="flex items-center gap-2 px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading || refreshing ? 'animate-spin text-blue-400' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Search + Filter */}
@@ -213,8 +270,8 @@ export default function NotebookSection() {
       </div>
 
       {/* Content area */}
-      <div className="flex-1 overflow-y-auto px-6 pb-6 w-full min-h-[300px] max-h-[65vh]">
-        {loading ? (
+      <div className="flex-1 overflow-y-auto px-6 pb-6 w-full min-h-[300px] max-h-[65vh] scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+        {loading && !refreshing ? (
           <div className="text-center py-12 text-gray-500">Loading...</div>
         ) : activeTab === 'strategies' ? (
           renderStrategiesTable()
@@ -228,7 +285,7 @@ export default function NotebookSection() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
               {analysisReports.map((report) => (
-                <ReportCard key={report._id} report={report} />
+                <ReportCard key={report._id} report={report} onDelete={handleDelete} />
               ))}
             </div>
           )

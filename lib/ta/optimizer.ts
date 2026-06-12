@@ -12,7 +12,8 @@ import { computeCMF } from "@/lib/indicators/cmf";
 import { computeMADR } from "@/lib/indicators/madr";
 import { computeALMA } from "@/lib/indicators/alma";
 import { computeBollingerBands } from "@/lib/indicators/bollinger";
-import { calculateWinRate, type Candle } from "@/lib/ta/simulation/backtest";
+import { calculateWinRate } from "@/lib/ta/simulation/backtest";
+import type { Candle } from "@/lib/ta/types";
 import type { RSIInput, RSIOutput } from "@/lib/indicators/rsi";
 import type { MACDInput, MACDOutput } from "@/lib/indicators/macd";
 import type { MFIInput, MFIPoint } from "@/lib/indicators/mfi";
@@ -94,7 +95,7 @@ export const OPTIMIZABLE_INDICATORS: Record<string, OptimizerEntry> = {
         range: [5, 40],
         compute: (candles: Candle[], val: number) => {
             const input = candles.map(toHLCInput) as unknown as WTInput[];
-            return computeWaveTrend(input, 21, val, 4);
+            return computeWaveTrend(input, 10, val, 4);
         },
         formatData: (res: unknown[]) => {
             const typed = res as WTPoint[];
@@ -268,14 +269,15 @@ export function findBestParameter(
     candles: Candle[],
     config: { lookForward: number; interval?: string } = { lookForward: 5 }
 ): { bestVal: number; bestWinRate: number } | null {
-    const optimizer = OPTIMIZABLE_INDICATORS[indicatorName];
+    const nameUpper = indicatorName.toUpperCase();
+    const optimizer = OPTIMIZABLE_INDICATORS[nameUpper];
     if (!optimizer) return null;
 
     let bestVal = -1;
     let bestWinRate = -1;
     let bestSignals = 0;
 
-    const [start, end] = rangeForTimeframe(indicatorName, config.interval);
+    const [start, end] = rangeForTimeframe(nameUpper, config.interval);
     for (let val = start; val <= end; val++) {
         const rawData = optimizer.compute(candles, val);
         const formattedData = optimizer.formatData(rawData);

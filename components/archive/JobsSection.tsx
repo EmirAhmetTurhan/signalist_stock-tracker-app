@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Activity, RefreshCw, Sparkles } from 'lucide-react';
+import { Activity, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import JobItem from '@/components/jobs/JobItem';
-import { getAllJobs, deleteJob } from '@/lib/actions/ai-job.actions';
+import { getAllJobs, deleteJob, clearCompletedJobs } from '@/lib/actions/ai-job.actions';
 
 export default function JobsSection() {
   const [jobs, setJobs] = useState<any[]>([]);
@@ -59,6 +59,18 @@ export default function JobsSection() {
     }
   };
 
+  const handleClearCompleted = async () => {
+    try {
+      const res = await clearCompletedJobs();
+      if (res.success) {
+        setJobs(jobs.filter(j => j.status === 'running' || j.status === 'queued'));
+        window.dispatchEvent(new CustomEvent('signalist-archive-refresh'));
+      }
+    } catch (error) {
+      console.error('Failed to clear completed jobs:', error);
+    }
+  };
+
   // Separate jobs into categories
   const discoveryJobs = jobs.filter(j => j.type === 'deep_discovery');
   const aiJobs = jobs.filter(j => j.type !== 'deep_discovery');
@@ -99,7 +111,7 @@ export default function JobsSection() {
   return (
     <div className="flex flex-col bg-gray-900/10 border border-gray-800/40 rounded-2xl p-6">
       {/* Header */}
-      <div className="flex justify-between items-end mb-6 border-b border-gray-800/50 pb-4">
+      <div className="flex justify-between items-center mb-6 border-b border-gray-800/50 pb-4">
         <div>
           <h2 className="text-xl font-bold text-gray-200 flex items-center gap-2">
             <Activity className="w-5 h-5 text-blue-400" />
@@ -110,14 +122,28 @@ export default function JobsSection() {
           </p>
         </div>
 
-        <button
-          onClick={() => fetchJobs(true)}
-          disabled={loading || refreshing}
-          className="flex items-center gap-2 px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-400' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {jobs.some(j => j.status !== 'running' && j.status !== 'queued') && (
+            <button
+              type="button"
+              onClick={handleClearCompleted}
+              disabled={loading || refreshing}
+              className="flex items-center justify-center px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-lg text-gray-400 hover:text-red-400 transition-colors"
+              title="Clear Completed Processes"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => fetchJobs(true)}
+            disabled={loading || refreshing}
+            className="flex items-center gap-2 px-3 py-1.5 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-lg text-xs text-gray-300 transition-colors"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin text-blue-400' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Content */}

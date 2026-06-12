@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { ChevronRight, TrendingUp, Calendar, AlertCircle, Sparkles, Layers, Timer, Search } from 'lucide-react';
+import { ChevronRight, TrendingUp, Calendar, AlertCircle, Sparkles, Layers, Timer, Search, Trash2 } from 'lucide-react';
 
 interface DiscoveryResultItem {
   combo: string[];
@@ -25,9 +25,10 @@ interface ReportCardProps {
     totalCombinationsScreened?: number;
     discoveryDuration?: number;
   };
+  onDelete?: (id: string) => void;
 }
 
-export default function ReportCard({ report }: ReportCardProps) {
+export default function ReportCard({ report, onDelete }: ReportCardProps) {
   const isError = report.status === 'failed';
   const isProcessing = report.status === 'processing';
   const isSuccess = report.status === 'completed';
@@ -66,22 +67,34 @@ export default function ReportCard({ report }: ReportCardProps) {
               </p>
             </div>
 
-            {isSuccess && report.winRate && (
-              <div className="flex flex-col items-end">
-                <div className="text-2xl font-bold text-amber-400 flex items-center gap-1">
-                  %{report.winRate}
-                  <TrendingUp className="w-4 h-4" />
+            <div className="flex items-start gap-3">
+              {isSuccess && report.winRate && (
+                <div className="flex flex-col items-end">
+                  <div className="text-2xl font-bold text-amber-400 flex items-center gap-1">
+                    %{report.winRate}
+                    <TrendingUp className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] text-gray-500 uppercase tracking-wider">Best Win Rate</span>
                 </div>
-                <span className="text-[10px] text-gray-500 uppercase tracking-wider">Best Win Rate</span>
-              </div>
-            )}
+              )}
 
-            {isError && (
-              <div className="flex flex-col items-end">
-                <AlertCircle className="w-6 h-6 text-red-500 mb-1" />
-                <span className="text-xs text-red-400">Failed</span>
-              </div>
-            )}
+              {isError && (
+                <div className="flex flex-col items-end">
+                  <AlertCircle className="w-6 h-6 text-red-500 mb-1" />
+                  <span className="text-xs text-red-400">Failed</span>
+                </div>
+              )}
+
+              {onDelete && (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(report._id); }}
+                  className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                  title="Delete Report"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Discovery-specific content */}
@@ -149,22 +162,34 @@ export default function ReportCard({ report }: ReportCardProps) {
             </p>
           </div>
 
-          {isSuccess && report.winRate && (
-            <div className="flex flex-col items-end">
-              <div className="text-2xl font-bold text-green-400 flex items-center gap-1">
-                %{report.winRate}
-                <TrendingUp className="w-4 h-4" />
+          <div className="flex items-start gap-3">
+            {isSuccess && report.winRate && (
+              <div className="flex flex-col items-end">
+                <div className="text-2xl font-bold text-green-400 flex items-center gap-1">
+                  %{report.winRate}
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <span className="text-[10px] text-gray-500 uppercase tracking-wider">Win Rate</span>
               </div>
-              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Win Rate</span>
-            </div>
-          )}
+            )}
 
-          {isError && (
-            <div className="flex flex-col items-end">
-              <AlertCircle className="w-6 h-6 text-red-500 mb-1" />
-              <span className="text-xs text-red-400">Failed</span>
-            </div>
-          )}
+            {isError && (
+              <div className="flex flex-col items-end">
+                <AlertCircle className="w-6 h-6 text-red-500 mb-1" />
+                <span className="text-xs text-red-400">Failed</span>
+              </div>
+            )}
+
+            {onDelete && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(report._id); }}
+                className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                title="Delete Report"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Bottom Section */}

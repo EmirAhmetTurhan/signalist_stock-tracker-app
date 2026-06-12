@@ -14,7 +14,7 @@
 // This ensures telemetry hit rates are measured with the SAME rules
 // the strategy engine uses. Never add custom signal logic here.
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { MarketRegime } from '@/lib/ta/types';
 import type { RegimeSegment } from '@/lib/ta/regime-detector';
 import type { AllData } from '@/lib/ta/strategy-optimizer/types';
@@ -96,15 +96,19 @@ function getIndicatorDirection(
             if (allData.rsiData.confidence && allData.rsiData.confidence[i] === 0) return null;
             const rsi = allData.rsiData.rsi[i]?.value;
             const rsiMa = allData.rsiData.ma[i]?.value;
+            const prevRsi = allData.rsiData.rsi[i - 1]?.value;
+            const prevRsiMa = allData.rsiData.ma[i - 1]?.value;
             if (rsi === undefined || rsiMa === undefined) return null;
-            return rsiSignal(rsi, rsiMa);
+            return rsiSignal(rsi, rsiMa, prevRsi, prevRsiMa);
         }
         case 'cci': {
             if (!allData.cciData) return null;
             const cci = allData.cciData.cci[i]?.value;
             const ma = allData.cciData.ma[i]?.value;
+            const prevCci = allData.cciData.cci[i - 1]?.value;
+            const prevMa = allData.cciData.ma[i - 1]?.value;
             if (cci === undefined || ma === undefined) return null;
-            return cciSignal(cci, ma);
+            return cciSignal(cci, ma, prevCci, prevMa);
         }
         case 'wavetrend': {
             if (!allData.waveTrendData) return null;
@@ -113,36 +117,46 @@ function getIndicatorDirection(
             if (w1Conf === 0 || w2Conf === 0) return null;
             const wt1 = allData.waveTrendData.wt1[i]?.value;
             const wt2 = allData.waveTrendData.wt2[i]?.value;
+            const prevWt1 = allData.waveTrendData.wt1[i - 1]?.value;
+            const prevWt2 = allData.waveTrendData.wt2[i - 1]?.value;
             if (wt1 === undefined || wt2 === undefined) return null;
-            return waveTrendSignal(wt1, wt2);
+            return waveTrendSignal(wt1, wt2, prevWt1, prevWt2);
         }
         case 'macd': {
             if (!allData.macdData) return null;
             const macd = allData.macdData.macd[i]?.value;
             const signal = allData.macdData.signal[i]?.value;
+            const prevMacd = allData.macdData.macd[i - 1]?.value;
+            const prevSignal = allData.macdData.signal[i - 1]?.value;
             if (macd === undefined || signal === undefined) return null;
-            return macdSignal(macd, signal);
+            return macdSignal(macd, signal, prevMacd, prevSignal);
         }
         case 'stochrsi': {
             if (!allData.stochRsiData) return null;
             const k = allData.stochRsiData.k[i]?.value;
             const d = allData.stochRsiData.d[i]?.value;
+            const prevK = allData.stochRsiData.k[i - 1]?.value;
+            const prevD = allData.stochRsiData.d[i - 1]?.value;
             if (k === undefined || d === undefined) return null;
-            return stochRsiSignal(k, d);
+            return stochRsiSignal(k, d, prevK, prevD);
         }
         case 'dmi': {
             if (!allData.dmiData) return null;
             const plus = allData.dmiData.plusDI[i]?.value;
             const minus = allData.dmiData.minusDI[i]?.value;
+            const prevPlus = allData.dmiData.plusDI[i - 1]?.value;
+            const prevMinus = allData.dmiData.minusDI[i - 1]?.value;
             if (plus === undefined || minus === undefined) return null;
-            return dmiSignal(plus, minus);
+            return dmiSignal(plus, minus, prevPlus, prevMinus);
         }
         case 'smi': {
             if (!allData.smiData) return null;
             const smi = allData.smiData.smi[i]?.value;
             const signal = allData.smiData.signal[i]?.value;
+            const prevSmi = allData.smiData.smi[i - 1]?.value;
+            const prevSig = allData.smiData.signal[i - 1]?.value;
             if (smi === undefined || signal === undefined) return null;
-            return smiSignal(smi, signal);
+            return smiSignal(smi, signal, prevSmi, prevSig);
         }
         case 'ao': {
             const arr = allData.aoData ?? [];
@@ -168,34 +182,40 @@ function getIndicatorDirection(
         case 'di': {
             const arr = allData.diData ?? [];
             const cur = arr[i]?.value;
+            const prev = arr[i - 1]?.value;
             if (cur === undefined) return null;
-            return diSignal(cur);
+            return diSignal(cur, prev);
         }
         case 'cmf': {
             const arr = allData.cmfData ?? [];
             const cur = arr[i]?.value;
+            const prev = arr[i - 1]?.value;
             if (cur === undefined) return null;
-            return cmfSignal(cur);
+            return cmfSignal(cur, prev);
         }
         case 'ad': {
             const adObj = allData.adData;
             if (!adObj) return null;
             const cur = adObj.ad[i]?.value;
             const curSma = adObj.ma[i]?.value;
+            const prev = adObj.ad[i - 1]?.value;
+            const prevSma = adObj.ma[i - 1]?.value;
             if (cur === undefined || curSma === undefined) return null;
-            return adSignal(cur, curSma);
+            return adSignal(cur, curSma, prev, prevSma);
         }
         case 'netvol': {
             const arr = allData.nvData ?? [];
             const cur = arr[i]?.value;
+            const prev = arr[i - 1]?.value;
             if (cur === undefined) return null;
-            return netvolSignal(cur);
+            return netvolSignal(cur, prev);
         }
         case 'madr': {
             const arr = allData.madrData ?? [];
             const cur = arr[i]?.value;
+            const prev = arr[i - 1]?.value;
             if (cur === undefined) return null;
-            return madrSignal(cur);
+            return madrSignal(cur, prev);
         }
         case 'alma': {
             const arr = allData.almaData ?? [];

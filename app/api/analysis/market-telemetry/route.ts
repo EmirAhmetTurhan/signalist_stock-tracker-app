@@ -13,7 +13,7 @@ import type { RegimeSegment } from '@/lib/ta/regime-detector';
 import { evaluateIndicators } from '@/lib/ta/indicator-evaluator';
 import { buildRegimeStrategies } from '@/lib/ta/regime-strategy-builder';
 import { buildCausalSegments } from '@/lib/ta/telemetry-utils';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { Timeframe, IndicatorParams } from '@/lib/ta/types';
 import { PARAM_DEFAULTS_NUM } from '@/lib/constants/indicator-params';
 
@@ -95,8 +95,8 @@ export async function POST(request: NextRequest) {
             stochLen: PARAM_DEFAULTS_NUM.stoch_len ?? 14,
             stochK: PARAM_DEFAULTS_NUM.stoch_k ?? 3,
             stochD: PARAM_DEFAULTS_NUM.stoch_d ?? 3,
-            wtAvgLen: PARAM_DEFAULTS_NUM.wt_avg_len ?? 10,
-            wtChannelLen: PARAM_DEFAULTS_NUM.wt_channel_len ?? 21,
+            wtAvgLen: PARAM_DEFAULTS_NUM.wt_avg_len ?? 21,
+            wtChannelLen: PARAM_DEFAULTS_NUM.wt_channel_len ?? 10,
             wtMaLen: PARAM_DEFAULTS_NUM.wt_ma_len ?? 4,
             dmiDiLen: PARAM_DEFAULTS_NUM.dmi_di_len ?? 14,
             dmiAdxSmooth: PARAM_DEFAULTS_NUM.dmi_adx_smooth ?? 14,

@@ -6,7 +6,11 @@ import {
   CommandInput,
   CommandList,
   CommandEmpty,
+  Command,
+  CommandItem,
+  CommandGroup,
 } from "@/components/ui/command";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { TrendingUp, Loader2, Search } from "lucide-react";
@@ -65,44 +69,62 @@ const TASearch = ({ initialStocks }: { initialStocks: StockWithWatchlistStatus[]
         <Search className="w-3.5 h-3.5 opacity-60" />
         Search
       </Button>
-      <CommandDialog open={open} onOpenChange={setOpen} className="search-dialog">
-        <div className="search-field">
-          <CommandInput
-            placeholder={loading ? "Searching..." : "Search brands (e.g. AAPL)"}
-            value={searchTerm}
-            onValueChange={setSearchTerm}
-            className="search-input"
-          />
-          {loading && <Loader2 className="search-loader" />}
-        </div>
-        <CommandList className="search-list">
-          {loading ? (
-            <CommandEmpty className="search-list-empty">Loading...</CommandEmpty>
-          ) : displayStocks?.length === 0 ? (
-            <div className="search-list-indicator">No results</div>
-          ) : (
-            <ul>
-              <div className="search-count">
-                {isSearchMode ? "Search results" : "Popular stocks"}
-                {` `}({displayStocks?.length || 0})
-              </div>
-              {displayStocks?.map((s) => (
-                <li key={s.symbol} className="search-item flex items-center justify-between">
-                  <Link href={`/ta?symbol=${encodeURIComponent(s.symbol)}`} onClick={handleSelect} className="search-item-link">
-                    <TrendingUp className="h-4 w-4 text-gray-500" />
-                    <div className="flex-1">
-                      <div className="search-item-name">{s.name}</div>
-                      <div className="text-sm text-gray-500">
-                        {s.symbol} | {s.exchange} | {s.type}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="overflow-hidden p-0 search-dialog-content">
+          <Command
+            className="search-dialog"
+            filter={(value, search) => value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0}
+          >
+            <div className="search-field">
+              <CommandInput
+                placeholder={loading ? "Searching..." : "Search brands (e.g. AAPL)"}
+                value={searchTerm}
+                onValueChange={setSearchTerm}
+                className="search-input"
+              />
+              {loading && <Loader2 className="search-loader" />}
+            </div>
+            <CommandList className="search-list">
+              {loading ? (
+                <CommandEmpty className="search-list-empty">Loading...</CommandEmpty>
+              ) : displayStocks?.length === 0 ? (
+                <CommandEmpty className="search-list-empty">No results</CommandEmpty>
+              ) : (
+                <CommandGroup heading={isSearchMode ? `Search results (${displayStocks?.length || 0})` : `Popular stocks (${displayStocks?.length || 0})`}>
+                  {displayStocks?.map((s) => (
+                    <CommandItem
+                      key={s.symbol}
+                      value={`${s.symbol} ${s.name}`}
+                      onSelect={() => {
+                        window.location.href = `/ta?symbol=${encodeURIComponent(s.symbol)}`;
+                        handleSelect();
+                      }}
+                      className="search-item cursor-pointer w-full px-3 py-2 rounded-md hover:bg-white/5 transition-colors group"
+                    >
+                      <div className="flex w-full items-center gap-3">
+                        {/* Left: Symbol */}
+                        <span className="text-sm font-bold text-gray-100 w-14 shrink-0">{s.symbol}</span>
+                        
+                        {/* Center: Divider and Company Name */}
+                        <div className="flex flex-1 items-center gap-2 border-l border-white/10 pl-3 min-w-0">
+                          <span className="text-sm text-gray-400 truncate">{s.name || 'Unknown Company'}</span>
+                        </div>
+                        
+                        {/* Right: Exchange Badge */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-[10px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded font-mono uppercase group-hover:bg-white/10 transition-colors">
+                            {s.exchange}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CommandList>
-      </CommandDialog>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
     </>
   );
 };

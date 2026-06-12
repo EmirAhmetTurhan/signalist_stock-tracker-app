@@ -1,4 +1,4 @@
-export type Candle = { time: string | number; close: number; high: number; low: number; open?: number; volume?: number };
+import type { Candle } from '@/lib/ta/types';
 
 export type BacktestHistoryItem = {
     time: string | number;
@@ -69,23 +69,28 @@ export function calculateWinRate(
     const signalResolvers: Record<string, ResolverFn> = {
         MACD: (d, i) => {
             const macd = d.macd[i]?.value, sig = d.signal[i]?.value;
-            return macd !== undefined && sig !== undefined ? macdSignal(macd, sig) : null;
+            const prevMacd = d.macd[i - 1]?.value, prevSig = d.signal[i - 1]?.value;
+            return macd !== undefined && sig !== undefined ? macdSignal(macd, sig, prevMacd, prevSig) : null;
         },
         RSI: (d, i) => {
             const rsi = d.rsi[i]?.value, ma = d.ma[i]?.value;
-            return rsi !== undefined && ma !== undefined ? rsiSignal(rsi, ma) : null;
+            const prevRsi = d.rsi[i - 1]?.value, prevMa = d.ma[i - 1]?.value;
+            return rsi !== undefined && ma !== undefined ? rsiSignal(rsi, ma, prevRsi, prevMa) : null;
         },
         STOCHRSI: (d, i) => {
             const k = d.k[i]?.value, dd = d.d[i]?.value;
-            return k !== undefined && dd !== undefined ? stochRsiSignal(k, dd) : null;
+            const prevK = d.k[i - 1]?.value, prevD = d.d[i - 1]?.value;
+            return k !== undefined && dd !== undefined ? stochRsiSignal(k, dd, prevK, prevD) : null;
         },
         WAVETREND: (d, i) => {
             const wt1 = d.wt1[i]?.value, wt2 = d.wt2[i]?.value;
-            return wt1 !== undefined && wt2 !== undefined ? waveTrendSignal(wt1, wt2) : null;
+            const prevWt1 = d.wt1[i - 1]?.value, prevWt2 = d.wt2[i - 1]?.value;
+            return wt1 !== undefined && wt2 !== undefined ? waveTrendSignal(wt1, wt2, prevWt1, prevWt2) : null;
         },
         DMI: (d, i) => {
             const plus = d.plusDI[i]?.value, minus = d.minusDI[i]?.value;
-            return plus !== undefined && minus !== undefined ? dmiSignal(plus, minus) : null;
+            const prevPlus = d.plusDI[i - 1]?.value, prevMinus = d.minusDI[i - 1]?.value;
+            return plus !== undefined && minus !== undefined ? dmiSignal(plus, minus, prevPlus, prevMinus) : null;
         },
         MFI: (d, i) => {
             const cur = d.mfi[i]?.value, prev = d.mfi[i - 1]?.value;
@@ -93,7 +98,8 @@ export function calculateWinRate(
         },
         SMI: (d, i) => {
             const smi = d.smi[i]?.value, sig = d.signal[i]?.value;
-            return smi !== undefined && sig !== undefined ? smiSignal(smi, sig) : null;
+            const prevSmi = d.smi[i - 1]?.value, prevSig = d.signal[i - 1]?.value;
+            return smi !== undefined && sig !== undefined ? smiSignal(smi, sig, prevSmi, prevSig) : null;
         },
         AO: (d, i) => {
             const cur = d[i]?.value, prev = d[i - 1]?.value;
@@ -101,32 +107,33 @@ export function calculateWinRate(
         },
         CCI: (d, i) => {
             const cci = d.cci[i]?.value, ma = d.ma[i]?.value;
-            return cci !== undefined && ma !== undefined ? cciSignal(cci, ma) : null;
+            const prevCci = d.cci[i - 1]?.value, prevMa = d.ma[i - 1]?.value;
+            return cci !== undefined && ma !== undefined ? cciSignal(cci, ma, prevCci, prevMa) : null;
         },
         WPR: (d, i) => {
             const cur = d[i]?.value, prev = d[i - 1]?.value;
             return cur !== undefined && prev !== undefined ? wprSignal(cur, prev) : null;
         },
         DI: (d, i) => {
-            const cur = d[i]?.value;
-            return cur !== undefined ? diSignal(cur) : null;
+            const cur = d[i]?.value, prev = d[i - 1]?.value;
+            return cur !== undefined ? diSignal(cur, prev) : null;
         },
         CMF: (d, i) => {
-            const val = d[i]?.value;
-            return val !== undefined ? cmfSignal(val) : null;
+            const val = d[i]?.value, prev = d[i - 1]?.value;
+            return val !== undefined ? cmfSignal(val, prev) : null;
         },
         AD: (d, i) => {
-            const cur = d.ad[i]?.value;
-            const ma = d.ma[i]?.value;
-            return cur !== undefined && ma !== undefined ? adSignal(cur, ma) : null;
+            const cur = d.ad[i]?.value, prev = d.ad[i - 1]?.value;
+            const ma = d.ma[i]?.value, prevMa = d.ma[i - 1]?.value;
+            return cur !== undefined && ma !== undefined ? adSignal(cur, ma, prev, prevMa) : null;
         },
         NETVOL: (d, i) => {
-            const cur = d[i]?.value;
-            return cur !== undefined ? netvolSignal(cur) : null;
+            const cur = d[i]?.value, prev = d[i - 1]?.value;
+            return cur !== undefined ? netvolSignal(cur, prev) : null;
         },
         MADR: (d, i) => {
-            const cur = d[i]?.value;
-            return cur !== undefined ? madrSignal(cur) : null;
+            const cur = d[i]?.value, prev = d[i - 1]?.value;
+            return cur !== undefined ? madrSignal(cur, prev) : null;
         },
         ALMA: (d, i, c) => {
             const curA = d[i]?.value, prevA = d[i - 1]?.value;
@@ -135,7 +142,7 @@ export function calculateWinRate(
         },
         BOLLINGER: (d, i, c) => {
             const curBB = d[i], prevBB = d[i - 1];
-            if (!curBB || !prevBB || curBB.lower === undefined || curBB.upper === undefined) return null;
+            if (!curBB || !prevBB || curBB.lower === undefined || curBB.upper === undefined || prevBB.lower === undefined || prevBB.upper === undefined) return null;
             return bbSignal(curBB, prevBB, c[i].close, c[i - 1].close);
         },
     };

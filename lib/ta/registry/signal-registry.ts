@@ -59,17 +59,14 @@ export function hasCrossed(cur: number, prev: number, threshold = 0): boolean {
 }
 
 // ─── 1. MACD ───────────────────────────────────────────────────────────────────
-
-export function macdSignal(macd: number, signal: number): SignalDir {
-    if (macd > signal) return "BUY";
-    if (macd < signal) return "SELL";
-    return null;
+ 
+export function macdSignal(macd: number, signal: number, prevMacd?: number, prevSignal?: number): SignalDir {
+    return macd > signal ? "BUY" : "SELL";
 }
 
-export function macdStrength(macd: number, signal: number, hist: number, prevHist: number): SignalStrength {
+export function macdStrength(macd: number, signal: number, hist: number, prevHist: number, prevMacd?: number, prevSignal?: number): SignalStrength {
     if (macd > signal) return hist > prevHist ? "STRONG_BUY" : "WEAK_BUY";
-    if (macd < signal) return hist < prevHist ? "STRONG_SELL" : "WEAK_SELL";
-    return "NEUTRAL";
+    return hist < prevHist ? "STRONG_SELL" : "WEAK_SELL";
 }
 
 export function macdCross(macd: number, signal: number, pm: number, ps: number): boolean {
@@ -78,11 +75,11 @@ export function macdCross(macd: number, signal: number, pm: number, ps: number):
 
 // ─── 2. RSI ────────────────────────────────────────────────────────────────────
 
-export function rsiSignal(rsi: number, rsiMa: number): SignalDir {
+export function rsiSignal(rsi: number, rsiMa: number, prevRsi?: number, prevRsiMa?: number): SignalDir {
     return rsi > rsiMa ? "BUY" : "SELL";
 }
 
-export function rsiStrength(rsi: number, rsiMa: number): SignalStrength {
+export function rsiStrength(rsi: number, rsiMa: number, prevRsi?: number, prevRsiMa?: number): SignalStrength {
     if (rsi > rsiMa) return rsi < 30 ? "STRONG_BUY" : "WEAK_BUY";
     return rsi > 70 ? "STRONG_SELL" : "WEAK_SELL";
 }
@@ -93,16 +90,13 @@ export function rsiCross(rsi: number, rsiMa: number, p1: number, p1Ma: number): 
 
 // ─── 3. StochRSI ───────────────────────────────────────────────────────────────
 
-export function stochRsiSignal(k: number, d: number): SignalDir {
-    if (k > d) return "BUY";
-    if (k < d) return "SELL";
-    return null;
+export function stochRsiSignal(k: number, d: number, prevK?: number, prevD?: number): SignalDir {
+    return k > d ? "BUY" : "SELL";
 }
 
-export function stochRsiStrength(k: number, d: number): SignalStrength {
+export function stochRsiStrength(k: number, d: number, prevK?: number, prevD?: number): SignalStrength {
     if (k > d) return k < 20 ? "STRONG_BUY" : "WEAK_BUY";
-    if (k < d) return k > 80 ? "STRONG_SELL" : "WEAK_SELL";
-    return "NEUTRAL";
+    return k > 80 ? "STRONG_SELL" : "WEAK_SELL";
 }
 
 export function stochRsiCross(k: number, d: number, pk: number, pd: number): boolean {
@@ -111,16 +105,13 @@ export function stochRsiCross(k: number, d: number, pk: number, pd: number): boo
 
 // ─── 4. WaveTrend ──────────────────────────────────────────────────────────────
 
-export function waveTrendSignal(wt1: number, wt2: number): SignalDir {
-    if (wt1 > wt2) return "BUY";
-    if (wt1 < wt2) return "SELL";
-    return null;
+export function waveTrendSignal(wt1: number, wt2: number, prevWt1?: number, prevWt2?: number): SignalDir {
+    return wt1 > wt2 ? "BUY" : "SELL";
 }
 
-export function waveTrendStrength(wt1: number, wt2: number): SignalStrength {
+export function waveTrendStrength(wt1: number, wt2: number, prevWt1?: number, prevWt2?: number): SignalStrength {
     if (wt1 > wt2) return wt1 < -60 ? "STRONG_BUY" : "WEAK_BUY";
-    if (wt1 < wt2) return wt1 > 60 ? "STRONG_SELL" : "WEAK_SELL";
-    return "NEUTRAL";
+    return wt1 > 60 ? "STRONG_SELL" : "WEAK_SELL";
 }
 
 export function waveTrendCross(wt1: number, wt2: number, pw1: number, pw2: number): boolean {
@@ -129,16 +120,13 @@ export function waveTrendCross(wt1: number, wt2: number, pw1: number, pw2: numbe
 
 // ─── 5. DMI ────────────────────────────────────────────────────────────────────
 
-export function dmiSignal(plus: number, minus: number): SignalDir {
-    if (plus > minus) return "BUY";
-    if (minus > plus) return "SELL";
-    return null;
+export function dmiSignal(plus: number, minus: number, prevPlus?: number, prevMinus?: number): SignalDir {
+    return plus > minus ? "BUY" : "SELL";
 }
 
-export function dmiStrength(plus: number, minus: number, adx: number): SignalStrength {
+export function dmiStrength(plus: number, minus: number, adx: number, prevPlus?: number, prevMinus?: number): SignalStrength {
     if (plus > minus) return adx > 20 ? "STRONG_BUY" : "WEAK_BUY";
-    if (minus > plus) return adx > 20 ? "STRONG_SELL" : "WEAK_SELL";
-    return "NEUTRAL";
+    return adx > 20 ? "STRONG_SELL" : "WEAK_SELL";
 }
 
 export function dmiCross(plus: number, minus: number, pPlus: number, pMinus: number): boolean {
@@ -147,16 +135,13 @@ export function dmiCross(plus: number, minus: number, pPlus: number, pMinus: num
 
 // ─── 6. MFI ────────────────────────────────────────────────────────────────────
 
-export function mfiSignal(cur: number, prev: number): SignalDir {
-    return cur > prev ? "BUY" : cur < prev ? "SELL" : null;
+export function mfiSignal(cur: number, prev?: number): SignalDir {
+    return cur > 50 ? "BUY" : "SELL";
 }
 
-export function mfiStrength(cur: number, prev: number): SignalStrength {
-    if (cur < 20) return "STRONG_BUY";
-    if (cur > 80) return "STRONG_SELL";
-    if (cur > prev) return "WEAK_BUY";
-    if (cur < prev) return "WEAK_SELL";
-    return "NEUTRAL";
+export function mfiStrength(cur: number, prev?: number): SignalStrength {
+    if (cur > 50) return cur < 20 ? "STRONG_BUY" : "WEAK_BUY";
+    return cur > 80 ? "STRONG_SELL" : "WEAK_SELL";
 }
 
 export function mfiCross(cur: number, prev: number): boolean {
@@ -165,16 +150,13 @@ export function mfiCross(cur: number, prev: number): boolean {
 
 // ─── 7. SMI ────────────────────────────────────────────────────────────────────
 
-export function smiSignal(smi: number, signal: number): SignalDir {
-    if (smi > signal) return "BUY";
-    if (smi < signal) return "SELL";
-    return null;
+export function smiSignal(smi: number, signal: number, prevSmi?: number, prevSig?: number): SignalDir {
+    return smi > signal ? "BUY" : "SELL";
 }
 
-export function smiStrength(smi: number, signal: number, hist: number, prevHist: number): SignalStrength {
+export function smiStrength(smi: number, signal: number, hist: number, prevHist: number, prevSmi?: number, prevSig?: number): SignalStrength {
     if (smi > signal) return hist > prevHist ? "STRONG_BUY" : "WEAK_BUY";
-    if (smi < signal) return hist < prevHist ? "STRONG_SELL" : "WEAK_SELL";
-    return "NEUTRAL";
+    return hist < prevHist ? "STRONG_SELL" : "WEAK_SELL";
 }
 
 export function smiCross(smi: number, signal: number, ps: number, pss: number): boolean {
@@ -183,25 +165,12 @@ export function smiCross(smi: number, signal: number, ps: number, pss: number): 
 
 // ─── 8. AO (Awesome Oscillator) ────────────────────────────────────────────────
 
-export function aoSignal(cur: number, prev: number): SignalDir {
-    const rising = cur > prev;
-    // Zero-line crossover — strongest signal
-    if (cur > 0 && prev <= 0) return "BUY";
-    if (cur < 0 && prev >= 0) return "SELL";
-    // Above zero: rising → BUY, falling → SELL
-    if (cur > 0) return rising ? "BUY" : "SELL";
-    // BUGFIX: Below zero → rising is bullish reversal (momentum improving),
-    // falling is bearish continuation. Previously had this reversed, causing
-    // aoSignal to return SELL while aoStrength returned WEAK_BUY for the same
-    // condition — backtest and display showed opposite signals.
-    if (cur < 0) return rising ? "BUY" : "SELL";
-    return null;
+export function aoSignal(cur: number, prev?: number): SignalDir {
+    return cur > 0 ? "BUY" : "SELL";
 }
 
-export function aoStrength(cur: number, prev: number): SignalStrength {
-    const rising = cur > prev;
-    if (cur > 0) return rising ? "STRONG_BUY" : "WEAK_SELL";
-    return rising ? "WEAK_BUY" : "STRONG_SELL";
+export function aoStrength(cur: number, prev?: number): SignalStrength {
+    return cur > 0 ? "STRONG_BUY" : "STRONG_SELL";
 }
 
 export function aoCross(cur: number, prev: number): boolean {
@@ -210,13 +179,11 @@ export function aoCross(cur: number, prev: number): boolean {
 
 // ─── 9. CCI ────────────────────────────────────────────────────────────────────
 
-export function cciSignal(cci: number, ma: number): SignalDir {
+export function cciSignal(cci: number, ma: number, prevCci?: number, prevMa?: number): SignalDir {
     return cci > ma ? "BUY" : "SELL";
 }
 
-export function cciStrength(cci: number, ma: number): SignalStrength {
-    // CCI MA'nın üstünde (BUY yönü): +100 üstü = güçlü momentum → STRONG_BUY
-    // CCI MA'nın altında (SELL yönü): -100 altı = güçlü negatif momentum → STRONG_SELL
+export function cciStrength(cci: number, ma: number, prevCci?: number, prevMa?: number): SignalStrength {
     if (cci > ma) return cci > 100 ? "STRONG_BUY" : "WEAK_BUY";
     return cci < -100 ? "STRONG_SELL" : "WEAK_SELL";
 }
@@ -227,14 +194,13 @@ export function cciCross(cci: number, p1: number): boolean {
 
 // ─── 10. WPR (Williams %R) ─────────────────────────────────────────────────────
 
-export function wprSignal(cur: number, prev: number): SignalDir {
-    return cur > prev ? "BUY" : cur < prev ? "SELL" : null;
+export function wprSignal(cur: number, prev?: number): SignalDir {
+    return cur > -50 ? "BUY" : "SELL";
 }
 
-export function wprStrength(cur: number, prev: number): SignalStrength {
-    if (cur < -80) return "STRONG_BUY";
-    if (cur > -20) return "STRONG_SELL";
-    return cur > prev ? "WEAK_BUY" : "WEAK_SELL";
+export function wprStrength(cur: number, prev?: number): SignalStrength {
+    if (cur > -50) return cur < -80 ? "STRONG_BUY" : "WEAK_BUY";
+    return cur > -20 ? "STRONG_SELL" : "WEAK_SELL";
 }
 
 export function wprCross(cur: number, prev: number): boolean {
@@ -243,34 +209,27 @@ export function wprCross(cur: number, prev: number): boolean {
 
 // ─── 11. DI (Demand Index) ─────────────────────────────────────────────────────
 
-export function diSignal(cur: number): SignalDir {
-    if (cur > 1.0) return "BUY";
-    if (cur < 1.0) return "SELL";
-    return null;
+export function diSignal(cur: number, prev?: number): SignalDir {
+    return cur > 1.0 ? "BUY" : "SELL";
 }
 
-export function diStrength(cur: number, prev: number): SignalStrength {
-    // DI ratio her zaman ≥ 0 (demand/supply). Eşik 1.0: dengede, >1 bullish, <1 bearish.
-    // Eski eşik (cur > 0) her zaman true → her zaman BUY üretiyordu.
-    if (cur > 1.0) return cur > prev ? "STRONG_BUY" : "WEAK_BUY";
-    if (cur < 1.0) return cur < prev ? "STRONG_SELL" : "WEAK_SELL";
-    return "NEUTRAL";
+export function diStrength(cur: number, prev?: number): SignalStrength {
+    return cur > 1.0 ? "STRONG_BUY" : "STRONG_SELL";
 }
 
 export function diCross(cur: number, prev: number): boolean {
-    return hasCrossed(cur, prev, 0);
+    return hasCrossed(cur, prev, 1.0);
 }
 
 // ─── 12. CMF (Chaikin Money Flow) ──────────────────────────────────────────────
 
-export function cmfSignal(val: number): SignalDir {
+export function cmfSignal(val: number, prevVal?: number): SignalDir {
     return val > 0 ? "BUY" : "SELL";
 }
 
-export function cmfStrength(val: number): SignalStrength {
-    if (val > 0.05) return "STRONG_BUY";
-    if (val < -0.05) return "STRONG_SELL";
-    return val > 0 ? "WEAK_BUY" : "WEAK_SELL";
+export function cmfStrength(val: number, prevVal?: number): SignalStrength {
+    if (val > 0) return val > 0.05 ? "STRONG_BUY" : "WEAK_BUY";
+    return val < -0.05 ? "STRONG_SELL" : "WEAK_SELL";
 }
 
 export function cmfCross(cur: number, prev: number): boolean {
@@ -279,14 +238,12 @@ export function cmfCross(cur: number, prev: number): boolean {
 
 // ─── 13. AD (Accumulation/Distribution) ────────────────────────────────────────
 
-export function adSignal(cur: number, curSma: number): SignalDir {
+export function adSignal(cur: number, curSma: number, prev?: number, prevSma?: number): SignalDir {
     return cur > curSma ? "BUY" : "SELL";
 }
 
 export function adStrength(cur: number, prev: number, curSma: number, prevSma: number): SignalStrength {
-    if (prev <= prevSma && cur > curSma) return "STRONG_BUY";
-    if (prev >= prevSma && cur < curSma) return "STRONG_SELL";
-    return cur > curSma ? "WEAK_BUY" : "WEAK_SELL";
+    return cur > curSma ? "STRONG_BUY" : "STRONG_SELL";
 }
 
 export function adCross(cur: number, prev: number, curSma: number, prevSma: number): boolean {
@@ -295,16 +252,12 @@ export function adCross(cur: number, prev: number, curSma: number, prevSma: numb
 
 // ─── 14. Net Volume ────────────────────────────────────────────────────────────
 
-export function netvolSignal(cur: number): SignalDir {
-    if (cur > 0) return "BUY";
-    if (cur < 0) return "SELL";
-    return null;
+export function netvolSignal(cur: number, prev?: number): SignalDir {
+    return cur > 0 ? "BUY" : "SELL";
 }
 
-export function netvolStrength(cur: number, prev: number): SignalStrength {
-    if (cur > 0) return cur > prev ? "STRONG_BUY" : "WEAK_BUY";
-    if (cur < 0) return cur < prev ? "STRONG_SELL" : "WEAK_SELL";
-    return "NEUTRAL";
+export function netvolStrength(cur: number, prev?: number): SignalStrength {
+    return cur > 0 ? "STRONG_BUY" : "STRONG_SELL";
 }
 
 export function netvolCross(cur: number, prev: number): boolean {
@@ -313,14 +266,12 @@ export function netvolCross(cur: number, prev: number): boolean {
 
 // ─── 15. MADR ──────────────────────────────────────────────────────────────────
 
-export function madrSignal(cur: number): SignalDir {
+export function madrSignal(cur: number, prev?: number): SignalDir {
     return cur > 0 ? "BUY" : "SELL";
 }
 
-export function madrStrength(cur: number, prev: number): SignalStrength {
-    if (prev < 0 && cur > 0) return "STRONG_BUY";
-    if (prev > 0 && cur < 0) return "STRONG_SELL";
-    return cur > 0 ? "WEAK_BUY" : "WEAK_SELL";
+export function madrStrength(cur: number, prev?: number): SignalStrength {
+    return cur > 0 ? "STRONG_BUY" : "STRONG_SELL";
 }
 
 export function madrCross(cur: number, prev: number): boolean {
@@ -330,15 +281,11 @@ export function madrCross(cur: number, prev: number): boolean {
 // ─── 16. ALMA (Arnaud Legoux Moving Average) ────────────────────────────────────
 
 export function almaSignal(curA: number, prevA: number, curC: number, prevC: number): SignalDir {
-    if (prevC < prevA && curC > curA) return "BUY";
-    if (prevC > prevA && curC < curA) return "SELL";
     return curC > curA ? "BUY" : "SELL";
 }
 
 export function almaStrength(curA: number, prevA: number, curC: number, prevC: number): SignalStrength {
-    if (prevC < prevA && curC > curA) return "STRONG_BUY";
-    if (prevC > prevA && curC < curA) return "STRONG_SELL";
-    return curC > curA ? "WEAK_BUY" : "WEAK_SELL";
+    return curC > curA ? "STRONG_BUY" : "STRONG_SELL";
 }
 
 export function almaCross(curA: number, prevA: number, curC: number, prevC: number): boolean {
@@ -354,19 +301,17 @@ export interface BBPoint {
 }
 
 export function bbSignal(curBB: BBPoint, prevBB: BBPoint, curC: number, prevC: number): SignalDir {
-    if (prevC < prevBB.lower && curC > curBB.lower) return "BUY";
-    if (prevC > prevBB.upper && curC < curBB.upper) return "SELL";
-    if (curC < curBB.lower) return "BUY";
-    if (curC > curBB.upper) return "SELL";
-    return null;
+    const basis = curBB.basis ?? ((curBB.upper + curBB.lower) / 2);
+    return curC > basis ? "BUY" : "SELL";
 }
 
 export function bbStrength(curBB: BBPoint, prevBB: BBPoint, curC: number, prevC: number): SignalStrength {
-    if (prevC < prevBB.lower && curC > curBB.lower) return "STRONG_BUY";
-    if (prevC > prevBB.upper && curC < curBB.upper) return "STRONG_SELL";
-    if (curC < curBB.lower) return "WEAK_BUY";
-    if (curC > curBB.upper) return "WEAK_SELL";
-    return "NEUTRAL";
+    const basis = curBB.basis ?? ((curBB.upper + curBB.lower) / 2);
+    if (curC > basis) {
+        return curC > curBB.upper ? "STRONG_BUY" : "WEAK_BUY";
+    } else {
+        return curC < curBB.lower ? "STRONG_SELL" : "WEAK_SELL";
+    }
 }
 
 export function bbCross(curBB: BBPoint, prevBB: BBPoint, curC: number, prevC: number): boolean {

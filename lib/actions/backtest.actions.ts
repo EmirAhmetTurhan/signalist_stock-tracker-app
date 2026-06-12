@@ -2,12 +2,13 @@
 
 import { runStrategyBacktest, mapComputedToAllData } from '@/lib/ta/strategy-optimizer';
 import type { StrategyBacktestResult } from '@/lib/ta/strategy-optimizer';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import { computeIndicators } from '@/lib/ta/compute';
 import { PARAM_DEFAULTS_NUM } from '@/lib/constants/indicator-params';
 import { auth } from '@/lib/better-auth/auth';
 import { headers } from 'next/headers';
 import { getCandlesForInterval } from '@/lib/actions/finnhub.actions';
+import { getBroadMarketRegime } from '@/lib/actions/market.actions';
 import type { Timeframe, CandleInput } from '@/lib/ta/types';
 
 /**
@@ -32,6 +33,7 @@ export async function runBacktestAction(
             allowCompounding: boolean;
         };
         parameterOverrides?: Record<string, number>;
+        applyMarketFilter?: boolean;
     }
 ): Promise<StrategyBacktestResult> {
     // ─── Better Auth Security Gate ──────────────────────────────────────────
@@ -136,6 +138,13 @@ export async function runBacktestAction(
         const computed = computeIndicators(candleInputs, activeIndicators, ip);
         const effectiveAllData = mapComputedToAllData(computed);
 
+        let marketRegimeMap: Map<string, boolean> | undefined;
+        if (config?.applyMarketFilter) {
+            const fromSec = Number(candles[0].time) / 1000;
+            const toSec = Number(candles[candles.length - 1].time) / 1000;
+            marketRegimeMap = await getBroadMarketRegime(fromSec, toSec);
+        }
+
         const result = runStrategyBacktest(
             candles,
             strategyName,
@@ -150,6 +159,7 @@ export async function runBacktestAction(
                     commissionBps: config.portfolioConfig.commissionBps ?? 0,
                     slippageBps: config.portfolioConfig.slippageBps ?? 0,
                 } : undefined,
+                marketRegimeMap,
             },
             {
                 customIndicators: config?.customIndicators,

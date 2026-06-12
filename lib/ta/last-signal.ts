@@ -65,46 +65,74 @@ export function getLastSignal(
 ): 'BUY' | 'SELL' | '—' {
   switch (key) {
     case 'rsi': {
-      const rsi = last(data.rsiData?.rsi ?? [])?.value;
-      const ma = last(data.rsiData?.ma ?? [])?.value;
+      const rsiArr = data.rsiData?.rsi ?? [];
+      const maArr = data.rsiData?.ma ?? [];
+      const rsi = last(rsiArr)?.value;
+      const ma = last(maArr)?.value;
+      const prevRsi = rsiArr[rsiArr.length - 2]?.value;
+      const prevMa = maArr[maArr.length - 2]?.value;
       if (rsi === undefined || ma === undefined) return '—';
-      return toDisplay(rsiSignal(rsi, ma));
+      return toDisplay(rsiSignal(rsi, ma, prevRsi, prevMa));
     }
     case 'cci': {
-      const cur = last(data.cciData?.cci ?? [])?.value;
-      const ma = last(data.cciData?.ma ?? [])?.value;
+      const cciArr = data.cciData?.cci ?? [];
+      const maArr = data.cciData?.ma ?? [];
+      const cur = last(cciArr)?.value;
+      const ma = last(maArr)?.value;
+      const prevCci = cciArr[cciArr.length - 2]?.value;
+      const prevMa = maArr[maArr.length - 2]?.value;
       if (cur === undefined || ma === undefined) return '—';
-      return toDisplay(cciSignal(cur, ma));
+      return toDisplay(cciSignal(cur, ma, prevCci, prevMa));
     }
     case 'wavetrend': {
-      const wt1 = last(data.waveTrendData?.wt1 ?? [])?.value;
-      const wt2 = last(data.waveTrendData?.wt2 ?? [])?.value;
+      const wt1Arr = data.waveTrendData?.wt1 ?? [];
+      const wt2Arr = data.waveTrendData?.wt2 ?? [];
+      const wt1 = last(wt1Arr)?.value;
+      const wt2 = last(wt2Arr)?.value;
+      const prevWt1 = wt1Arr[wt1Arr.length - 2]?.value;
+      const prevWt2 = wt2Arr[wt2Arr.length - 2]?.value;
       if (wt1 === undefined || wt2 === undefined) return '—';
-      return toDisplay(waveTrendSignal(wt1, wt2));
+      return toDisplay(waveTrendSignal(wt1, wt2, prevWt1, prevWt2));
     }
     case 'macd': {
-      const m = last(data.macdData?.macd ?? [])?.value;
-      const s = last(data.macdData?.signal ?? [])?.value;
+      const macdArr = data.macdData?.macd ?? [];
+      const sigArr = data.macdData?.signal ?? [];
+      const m = last(macdArr)?.value;
+      const s = last(sigArr)?.value;
+      const prevM = macdArr[macdArr.length - 2]?.value;
+      const prevS = sigArr[sigArr.length - 2]?.value;
       if (m === undefined || s === undefined) return '—';
-      return toDisplay(macdSignal(m, s));
+      return toDisplay(macdSignal(m, s, prevM, prevS));
     }
     case 'stochrsi': {
-      const k = last(data.stochRsiData?.k ?? [])?.value;
-      const d = last(data.stochRsiData?.d ?? [])?.value;
+      const kArr = data.stochRsiData?.k ?? [];
+      const dArr = data.stochRsiData?.d ?? [];
+      const k = last(kArr)?.value;
+      const d = last(dArr)?.value;
+      const prevK = kArr[kArr.length - 2]?.value;
+      const prevD = dArr[dArr.length - 2]?.value;
       if (k === undefined || d === undefined) return '—';
-      return toDisplay(stochRsiSignal(k, d));
+      return toDisplay(stochRsiSignal(k, d, prevK, prevD));
     }
     case 'dmi': {
-      const plus = last(data.dmiData?.plusDI ?? [])?.value;
-      const minus = last(data.dmiData?.minusDI ?? [])?.value;
+      const plusArr = data.dmiData?.plusDI ?? [];
+      const minusArr = data.dmiData?.minusDI ?? [];
+      const plus = last(plusArr)?.value;
+      const minus = last(minusArr)?.value;
+      const prevPlus = plusArr[plusArr.length - 2]?.value;
+      const prevMinus = minusArr[minusArr.length - 2]?.value;
       if (plus === undefined || minus === undefined) return '—';
-      return toDisplay(dmiSignal(plus, minus));
+      return toDisplay(dmiSignal(plus, minus, prevPlus, prevMinus));
     }
     case 'smi': {
-      const s = last(data.smiData?.smi ?? [])?.value;
-      const g = last(data.smiData?.signal ?? [])?.value;
+      const smiArr = data.smiData?.smi ?? [];
+      const sigArr = data.smiData?.signal ?? [];
+      const s = last(smiArr)?.value;
+      const g = last(sigArr)?.value;
+      const prevS = smiArr[smiArr.length - 2]?.value;
+      const prevG = sigArr[sigArr.length - 2]?.value;
       if (s === undefined || g === undefined) return '—';
-      return toDisplay(smiSignal(s, g));
+      return toDisplay(smiSignal(s, g, prevS, prevG));
     }
     case 'ao': {
       const arr = data.aoData ?? [];
@@ -130,31 +158,40 @@ export function getLastSignal(
     case 'di': {
       const arr = data.diData ?? [];
       const cur = arr[arr.length - 1]?.value;
+      const prev = arr[arr.length - 2]?.value;
       if (cur === undefined) return '—';
-      return toDisplay(diSignal(cur));
+      return toDisplay(diSignal(cur, prev));
     }
     case 'cmf': {
-      const cur = last(data.cmfData ?? [])?.value;
+      const arr = data.cmfData ?? [];
+      const cur = arr[arr.length - 1]?.value;
+      const prev = arr[arr.length - 2]?.value;
       if (cur === undefined) return '—';
-      return toDisplay(cmfSignal(cur));
+      return toDisplay(cmfSignal(cur, prev));
     }
     case 'ad': {
       const adObj = data.adData;
       if (!adObj || !adObj.ad || !adObj.ma) return '—';
       const cur = last(adObj.ad)?.value;
       const sma = last(adObj.ma)?.value;
+      const prev = adObj.ad[adObj.ad.length - 2]?.value;
+      const prevSma = adObj.ma[adObj.ma.length - 2]?.value;
       if (cur === undefined || sma === undefined) return '—';
-      return toDisplay(adSignal(cur, sma));
+      return toDisplay(adSignal(cur, sma, prev, prevSma));
     }
     case 'netvol': {
-      const cur = last(data.nvData ?? [])?.value;
+      const arr = data.nvData ?? [];
+      const cur = arr[arr.length - 1]?.value;
+      const prev = arr[arr.length - 2]?.value;
       if (cur === undefined) return '—';
-      return toDisplay(netvolSignal(cur));
+      return toDisplay(netvolSignal(cur, prev));
     }
     case 'madr': {
-      const cur = last(data.madrData ?? [])?.value;
+      const arr = data.madrData ?? [];
+      const cur = arr[arr.length - 1]?.value;
+      const prev = arr[arr.length - 2]?.value;
       if (cur === undefined) return '—';
-      return toDisplay(madrSignal(cur));
+      return toDisplay(madrSignal(cur, prev));
     }
     case 'alma': {
       const arr = data.almaData ?? [];

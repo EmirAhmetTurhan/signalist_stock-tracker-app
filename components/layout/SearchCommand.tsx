@@ -113,37 +113,45 @@ export default function SearchCommand({ renderAs = 'button', label = 'Add stock'
                     {` `}({displayStocks?.length || 0})
                 </div>
                 {displayStocks?.map((stock) => (
-                    <li key={stock.symbol} className="search-item flex items-center justify-between">
+                    <li key={stock.symbol} className="search-item">
                         <Link
                             href={`/stocks/${stock.symbol}`}
                             onClick={handleSelectStock}
-                            className="search-item-link"
+                            className="search-item-link flex items-center gap-3 w-full px-3 py-2 rounded-md hover:bg-white/5 transition-colors group"
                         >
-                            <TrendingUp className="h-4 w-4 text-gray-500" />
-                            <div className="flex-1">
-                                <div className="search-item-name">{stock.name}</div>
-                                <div className="text-sm text-gray-500">
-                                    {stock.symbol} | {stock.exchange} | {stock.type}
-                                </div>
+                            {/* Left: Symbol */}
+                            <span className="text-sm font-bold text-gray-100 w-14 shrink-0">{stock.symbol}</span>
+                            
+                            {/* Center: Divider and Company Name */}
+                            <div className="flex flex-1 items-center gap-2 border-l border-white/10 pl-3 min-w-0">
+                                <span className="text-sm text-gray-400 truncate">
+                                    {stock.name || 'Unknown Company'}
+                                </span>
                             </div>
-                            <div
-                                onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                                className="ml-auto"
-                            >
-                                <WatchlistButton
-                                    type="icon"
-                                    symbol={stock.symbol}
-                                    company={stock.name}
-                                    isInWatchlist={!!stock.isInWatchlist}
-                                    onWatchlistChange={(symbol, isAdded) => {
-                                        setWatchlistSet((prev) => {
-                                            const next = new Set(prev);
-                                            if (isAdded) next.add(symbol.toUpperCase()); else next.delete(symbol.toUpperCase());
-                                            return next;
-                                        });
-                                        setStocks((prev) => prev.map((s) => s.symbol === symbol ? { ...s, isInWatchlist: isAdded } : s));
-                                    }}
-                                />
+                            
+                            {/* Right: Exchange Badge & Watchlist Button */}
+                            <div className="flex items-center gap-3 shrink-0">
+                                <span className="text-[10px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded font-mono uppercase group-hover:bg-white/10 transition-colors">
+                                    {stock.exchange}
+                                </span>
+                                <div
+                                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                                >
+                                    <WatchlistButton
+                                        type="icon"
+                                        symbol={stock.symbol}
+                                        company={stock.name}
+                                        isInWatchlist={!!stock.isInWatchlist}
+                                        onWatchlistChange={(symbol, isAdded) => {
+                                            setWatchlistSet((prev) => {
+                                                const next = new Set(prev);
+                                                if (isAdded) next.add(symbol.toUpperCase()); else next.delete(symbol.toUpperCase());
+                                                return next;
+                                            });
+                                            setStocks((prev) => prev.map((s) => s.symbol === symbol ? { ...s, isInWatchlist: isAdded } : s));
+                                        }}
+                                    />
+                                </div>
                             </div>
                         </Link>
                     </li>

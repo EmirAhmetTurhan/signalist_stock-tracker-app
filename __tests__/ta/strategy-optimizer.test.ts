@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { runStrategyBacktest, optimizeStrategyParams, discoverStrategy, DISCOVERY_POOL } from '@/lib/ta/strategy-optimizer';
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { AllData } from '@/lib/ta/strategy-optimizer';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

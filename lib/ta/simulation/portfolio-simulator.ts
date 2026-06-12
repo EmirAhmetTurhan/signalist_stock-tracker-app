@@ -7,7 +7,7 @@
 //
 // Uses plain `number` arithmetic (not Decimal128) — this is a simulation, not a live ledger.
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type { SimulatedTrade } from '@/lib/ta/simulation/trade-simulator';
 
 // ─── Types ───────────────────────────────────────────────────────────────────

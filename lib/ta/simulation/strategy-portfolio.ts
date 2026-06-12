@@ -2,7 +2,7 @@
 // Builds a portfolio of 3-5 low-correlation strategies, profiles them by market regime,
 // and generates aggregate signals with EMA smoothing + RegimeSwitchGuard.
 
-import type { Candle } from '@/lib/ta/simulation/backtest';
+import type { Candle } from '@/lib/ta/types';
 import type {
     MarketRegime,
     RegimeStats,

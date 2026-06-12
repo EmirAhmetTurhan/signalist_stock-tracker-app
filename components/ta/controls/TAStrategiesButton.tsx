@@ -203,110 +203,114 @@ const TAStrategiesButton = ({ userId, candles, allData, interval, symbol }: TASt
                 title="Strategies"
                 icon={<Target className="w-4 h-4 text-yellow-400" />}
                 width="max-w-2xl"
+                disableBodyScroll={true}
                 footer={
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-400 truncate mr-2">
-                            {getSelectionLabel(selectedStrategy)}
-                        </span>
-                        <div className="flex items-center gap-2 shrink-0">
-                            {isActive && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="text-xs text-red-400 border-red-500/30 hover:bg-red-500/10 transition-all"
-                                    onClick={clearStrategyFromURL}
-                                >
-                                    Clear Active Strategy
-                                </Button>
-                            )}
-                            {selectedStrategy && (
-                                <>
+                    <div className="flex flex-col gap-3.5 w-full">
+                        <StrategyActionButtons
+                            candles={candles}
+                            allData={allData}
+                            onDiscoverClick={() => {
+                                setDialogOpen(false);
+                                setTimeout(() => setDiscoveryOpen(true), 200);
+                            }}
+                            onCreateClick={() => {
+                                setDialogOpen(false);
+                                setTimeout(() => setModalOpen(true), 200);
+                            }}
+                        />
+                        <div className="flex items-center justify-between border-t border-white/10 pt-3">
+                            <span className="text-xs text-gray-400 truncate mr-2">
+                                {getSelectionLabel(selectedStrategy)}
+                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                                {isActive && (
                                     <Button
-                                        variant="ghost"
+                                        variant="outline"
                                         size="sm"
-                                        className="text-xs text-gray-400 hover:text-gray-200"
-                                        onClick={() => setSelectedStrategy("")}
+                                        className="text-xs text-red-400 border-red-500/30 hover:bg-red-500/10 transition-all"
+                                        onClick={clearStrategyFromURL}
                                     >
-                                        Clear
+                                        Clear Active Strategy
                                     </Button>
-                                    <Button
-                                        variant="secondary"
-                                        size="sm"
-                                        className="text-xs font-medium
-                                            bg-yellow-100 border border-yellow-400/30 text-yellow-700
-                                            hover:bg-yellow-200 transition-all"
-                                        onClick={() => applyStrategy(selectedStrategy)}
-                                    >
-                                        <Check className="w-3.5 h-3.5 mr-1" />
-                                        Apply
-                                    </Button>
-                                </>
-                            )}
+                                )}
+                                {selectedStrategy && (
+                                    <>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-xs text-gray-400 hover:text-gray-200"
+                                            onClick={() => setSelectedStrategy("")}
+                                        >
+                                            Clear
+                                        </Button>
+                                        <Button
+                                            variant="secondary"
+                                            size="sm"
+                                            className="text-xs font-medium
+                                                bg-yellow-100 border border-yellow-400/30 text-yellow-700
+                                                hover:bg-yellow-200 transition-all"
+                                            onClick={() => applyStrategy(selectedStrategy)}
+                                        >
+                                            <Check className="w-3.5 h-3.5 mr-1" />
+                                            Apply
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
                         </div>
                     </div>
                 }
             >
-                <BuiltInStrategiesSection
-                    selectedStrategy={selectedStrategy}
-                    onToggleStrategy={toggleStrategy}
-                />
+                <div className="space-y-4">
+                    <BuiltInStrategiesSection
+                        selectedStrategy={selectedStrategy}
+                        onToggleStrategy={toggleStrategy}
+                    />
 
-                <MyStrategiesSection
-                    myStrategies={myStrategies}
-                    loadingSaved={loadingSaved}
-                    selectedStrategy={selectedStrategy}
-                    onToggleStrategy={toggleStrategy}
-                    onToggleSort={toggleSort}
-                    currentSort={mySort}
-                    togglingPin={togglingPin}
-                    deletingStrategy={deletingStrategy}
-                    renameTarget={renameTarget}
-                    renameValue={renameValue}
-                    setRenameValue={setRenameValue}
-                    confirmRename={confirmRename}
-                    cancelRename={cancelRename}
-                    renamingStrategy={renamingStrategy}
-                    handleTogglePin={handleTogglePin}
-                    startRename={startRename}
-                    handleDelete={handleDelete}
-                    onCreateClick={() => {
-                        setDialogOpen(false);
-                        setTimeout(() => setModalOpen(true), 200);
-                    }}
-                />
+                    <MyStrategiesSection
+                        myStrategies={myStrategies}
+                        loadingSaved={loadingSaved}
+                        selectedStrategy={selectedStrategy}
+                        onToggleStrategy={toggleStrategy}
+                        onToggleSort={toggleSort}
+                        currentSort={mySort}
+                        togglingPin={togglingPin}
+                        deletingStrategy={deletingStrategy}
+                        renameTarget={renameTarget}
+                        renameValue={renameValue}
+                        setRenameValue={setRenameValue}
+                        confirmRename={confirmRename}
+                        cancelRename={cancelRename}
+                        renamingStrategy={renamingStrategy}
+                        handleTogglePin={handleTogglePin}
+                        startRename={startRename}
+                        handleDelete={handleDelete}
+                        onCreateClick={() => {
+                            setDialogOpen(false);
+                            setTimeout(() => setModalOpen(true), 200);
+                        }}
+                    />
 
-                <DiscoveredStrategiesSection
-                    discoveredStrategies={discoveredStrategies}
-                    loadingSaved={loadingSaved}
-                    selectedStrategy={selectedStrategy}
-                    onToggleStrategy={toggleStrategy}
-                    onToggleSort={toggleSort}
-                    currentSort={discoveredSort}
-                    togglingPin={togglingPin}
-                    deletingStrategy={deletingStrategy}
-                    renameTarget={renameTarget}
-                    renameValue={renameValue}
-                    setRenameValue={setRenameValue}
-                    confirmRename={confirmRename}
-                    cancelRename={cancelRename}
-                    renamingStrategy={renamingStrategy}
-                    handleTogglePin={handleTogglePin}
-                    startRename={startRename}
-                    handleDelete={handleDelete}
-                />
-
-                <StrategyActionButtons
-                    candles={candles}
-                    allData={allData}
-                    onDiscoverClick={() => {
-                        setDialogOpen(false);
-                        setTimeout(() => setDiscoveryOpen(true), 200);
-                    }}
-                    onCreateClick={() => {
-                        setDialogOpen(false);
-                        setTimeout(() => setModalOpen(true), 200);
-                    }}
-                />
+                    <DiscoveredStrategiesSection
+                        discoveredStrategies={discoveredStrategies}
+                        loadingSaved={loadingSaved}
+                        selectedStrategy={selectedStrategy}
+                        onToggleStrategy={toggleStrategy}
+                        onToggleSort={toggleSort}
+                        currentSort={discoveredSort}
+                        togglingPin={togglingPin}
+                        deletingStrategy={deletingStrategy}
+                        renameTarget={renameTarget}
+                        renameValue={renameValue}
+                        setRenameValue={setRenameValue}
+                        confirmRename={confirmRename}
+                        cancelRename={cancelRename}
+                        renamingStrategy={renamingStrategy}
+                        handleTogglePin={handleTogglePin}
+                        startRename={startRename}
+                        handleDelete={handleDelete}
+                    />
+                </div>
             </TAGlassDialog>
 
             {/* Strategy Discovery Dialog */}

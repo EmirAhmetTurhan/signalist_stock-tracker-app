@@ -6,12 +6,11 @@ import StrategyBacktestMonitor, { AllIndicatorData } from "@/components/panels/S
 import { loadCustomStrategies, AVAILABLE_INDICATORS } from "@/components/strategies/constants";
 import type { CustomStrategy } from "@/components/strategies/types";
 import { getSavedStrategyById, getSavedStrategies } from "@/lib/actions/saved-strategy.actions";
-import type { Timeframe, StrategyMode } from "@/lib/ta/types";
+import type { Timeframe, StrategyMode, Candle } from "@/lib/ta/types";
 import ForwardTestCreator from "@/components/portfolio/ForwardTestCreator";
 import { getLastSignal } from '@/lib/ta/last-signal';
 import type { AllIndicatorData as SharedAllData } from '@/lib/ta/last-signal';
 
-type Candle = { time: string | number; close: number; high: number; low: number };
 
 interface CustomStrategyPanelProps {
     candles: Candle[];
@@ -200,6 +199,7 @@ export default function CustomStrategyPanel({ candles, allData, symbol, interval
                         initialOptimizedParams={strategy.params}
                         discoveryWinRate={strategy.discoveryWinRate}
                         discoverySignalCount={strategy.discoverySignalCount}
+                        isDiscovered={strategy.isDiscovered}
                         signalProfile="TrendFollower"
                         onOptimized={handleOptimized}
                         onReset={handleReset}

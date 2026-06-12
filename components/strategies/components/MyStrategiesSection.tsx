@@ -114,8 +114,7 @@ export function MyStrategiesSection({
                     </button>
                 </div>
             ) : (
-                <div className="max-h-[240px] overflow-y-auto space-y-0.5
-                    scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent pr-1">
+                <div className="max-h-[240px] overflow-y-auto space-y-0.5 premium-scrollbar pr-1">
                     {myStrategies.map((item) => {
                         const key = getStrategyKey(item.id);
                         const isSelected = selectedStrategy === key;

@@ -264,3 +264,42 @@ export async function deleteReport(reportId: string) {
     return { success: false, error: String(error) };
   }
 }
+
+export async function clearReportsByType(type: 'discovery' | 'analysis') {
+  try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    const userId = session?.user?.id;
+    if (!userId) return { success: false, error: 'Unauthorized' };
+
+    await connectToDatabase();
+
+    const query = type === 'discovery' ? { type: 'discovery' } : { type: { $ne: 'discovery' } };
+    
+    // Find reports to get their IDs for cascade deletion
+    const reports = await Report.find({ userId, ...query }).lean();
+    if (reports.length === 0) return { success: true, deletedCount: 0 };
+    
+    const reportIds = reports.map(r => r._id);
+    const jobIds = reports.map(r => r.jobId).filter(Boolean);
+
+    // Delete reports
+    const reportResult = await Report.deleteMany({ userId, _id: { $in: reportIds } });
+
+    // Cascade delete notifications
+    await Notification.deleteMany({ userId, reportId: { $in: reportIds } });
+
+    // Clean up linked AIJob records
+    if (jobIds.length > 0) {
+      await AIJob.deleteMany({ userId, jobId: { $in: jobIds } });
+    }
+
+    // Cascade delete saved strategies if discovery
+    if (type === 'discovery') {
+      await SavedStrategy.deleteMany({ userId, sourceReportId: { $in: reportIds } });
+    }
+
+    return { success: true, deletedCount: reportResult.deletedCount ?? 0 };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
