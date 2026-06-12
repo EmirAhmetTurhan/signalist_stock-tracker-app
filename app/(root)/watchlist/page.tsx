@@ -96,17 +96,15 @@ const WatchlistPage = async () => {
         <div className="w-full">
           <div className="flex items-center justify-between mb-4">
             <h2 className="watchlist-title">Alerts</h2>
-            {items.length > 0 && (
-              <Link
-                href={`/stocks/${encodeURIComponent(items[0].symbol)}/alert?company=${encodeURIComponent(items[0].company)}`}
-                className="px-3 py-2 rounded-md bg-gradient-to-r from-yellow-300 to-yellow-500 text-black text-sm font-medium"
-              >
-                Create Alert
-              </Link>
-            )}
+            <Link
+              href={items.length > 0 ? `/stocks/${encodeURIComponent(items[0].symbol)}/alert?company=${encodeURIComponent(items[0].company)}` : `/alerts/create`}
+              className="px-3 py-2 rounded-md bg-gradient-to-r from-yellow-300 to-yellow-500 text-black text-sm font-medium"
+            >
+              Add Alert
+            </Link>
           </div>
           {alertsWithQuotes.length === 0 ? (
-            <div className="text-gray-500 text-sm border border-dashed border-gray-600 rounded p-6">No alerts yet.</div>
+            <div className="text-gray-500 text-sm py-4">No active alerts.</div>
           ) : (
             <div className="space-y-4">
               {alertsWithQuotes.map((a) => {
