@@ -498,3 +498,14 @@ Sistemimizin temel backtest mekaniklerini, DST fusion limitlerini ve arayüz hat
 * **Stratejik Amaç:** Kural bazlı katı motor yapımızı esneterek; farklı indikatör kombinasyonlarının bir arada bulunduğunda (örneğin 4 Mart 2020 gibi kompleks çöküş senaryolarında) tarihsel olarak nasıl sonuçlandığını çok boyutlu analizle tahmin edip risk yönetimini devralması.
 
 *(Not: Bu Ar-Ge maddelerine, projenin genelindeki UI glitchleri ve buton durum hataları tamamen temizlendikten sonra geçilecektir.)*
+
+## 13. UI/UX CİLALAMA FAZI VE PREMIUM DURUM RAPORU
+
+Aşağıdaki görsel ve mantıksal onarımlar kod sistemine başarıyla uygulanmış ve projenin "Premium Dark Terminal" kimliği oturmuştur:
+
+### Çözülen UI/UX Problemleri
+1. **Watchlist & Alerts Bağımsızlığı (Decoupling):** Watchlist boşaldığında sayfanın Empty State'e girip Alerts panelini yok etmesi hatası düzeltildi. Alerts modülü artık Watchlist'ten tamamen bağımsızdır ve "Add Alert" butonu her daim kullanılabilir durumdadır.
+2. **Global Silme ve Soft Refresh:** Arşiv (`/archive`) sayfasında tamamlanmış işlemleri toplu ve tekil silme esnasında sayfanın zıplamasına neden olan unmount sorunu `setReports` lokal filtreleme ve `refreshing` state ile çözüldü.
+3. **AlertForm Tasarım Senkronizasyonu:** `/alerts/create` sayfasında unutulan eski HTML form silindi ve anlık fiyat çeken, fetch validasyonu yapan Premium `AlertForm.tsx` entegre edilerek tüm sistemde tek ve şık bir form yapısı sağlandı.
+4. **Dashboard Breakpoint Optimizasyonu:** `lg:` breakpoint'lerinin çift monitör ve split-screen kullanımlarda sayfayı çok daralttığı tespit edilerek `xl:` (1280px) değerine yükseltildi, Tailwind `order` sınıflarıyla ekran daralmasında widget'ların kontrollü dizilimi güvence altına alındı.
+5. **Search Arayüzü İyileştirmeleri:** Hisse aramalarında karmaşık ve uzun isimlerin UI'yi bozmaması adına `truncate` eklendi ve hissenin hangi borsadan (NASDAQ, TO, MX vb.) geldiğini belirten ufak şık rozetler tasarlandı.

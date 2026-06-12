@@ -1929,3 +1929,30 @@ Sistemin "Trend Following" karakteristiğini korumak ve "Ayı Piyasalarında (Be
 > `CONCEPT_ROADMAP.md`, `TECHNICAL_REPORT.md`, `indicator_audit_report.md`,  
 > `PROGRESS_REPORT.md`, `system-architecture-reference.md`, `about_project.md`,  
 > `INDICATOR_STRATEGY_DESIGN_PHILOSOPHY.md`
+
+## 6. PHASE 5: PREMIUM DARK TERMINAL UI/UX REFACTORING
+
+Bu fazda, sistemin UI/UX yapısı tamamen "Premium Dark Terminal" vizyonuna göre elden geçirilmiş, görsel hiyerarşi ve mantıksal ayırmalar (decoupling) uygulanmıştır.
+
+### 6.1 Dashboard & Responsive Mimari
+- **Başlık Simetrileri:** Ana sayfadaki (Dashboard) tüm widget başlıkları (Market Overview, Stock Heatmap, Top Stories, Sector Performance) `text-2xl font-bold` standart tipografisiyle ve eşit alt boşluklarla hizalandı. Top Stories widget'ının kendi başlığı olduğu için HTML tarafındaki çift başlık hatası temizlendi.
+- **Esnek Ekran (Split-screen) Desteği:** `lg:` breakpoint'leri `xl:` seviyesine çekilerek ekran yarıya bölündüğünde widget'ların ezilmesi önlendi. Ekran daraldığında bileşenlerin alt alta kontrollü inmesi için flex/grid kapsayıcılarına `order-` sınıfları atandı.
+
+### 6.2 Search Mimarisi (DRY Prensibi)
+- Navbar içerisindeki `TASearch` ve Alert sistemindeki `AlertStockSelector` bileşenleri aynı mantıkta birleştirildi (DRY). 
+- Arama sonuçlarına **"SEMBOL || Şirket Adı"** şeklinde inline flex yapı getirildi. Arama sonuçlarındaki farklı borsa hisselerini ayırt edebilmek için sağ köşeye zarif bir Borsa Rozeti (`<span className="text-[10px] bg-white/5...">NASDAQ</span>`) eklendi.
+
+### 6.3 Watchlist & Alerts Decoupling
+- Watchlist sayfası tamamen boşaltıldığında sayfanın tümünü kaplayan Empty State mantığı düzeltildi.
+- "Your Watchlist is empty" uyarısı sadece sol taraftaki kendi div'ine hapsedilirken, sağ taraftaki Alerts paneli tamamen Watchlist'ten bağımsız çalışacak şekilde (decoupled) korundu.
+- Boş listede kaybolan **"Add Alert"** butonu geri getirildi ve Watchlist boş olsa bile kullanıcının `/alerts/create` üzerinden alarm kurmasına olanak tanındı.
+
+### 6.4 Archive Mimarisi ve Güvenli Silme (setReports)
+- Arşiv sayfasında **Global Çöp Kutusu (Clear All)** eklendi. Çöp kutusu, Refresh butonuyla milimetrik aynı UI sınıflarına (`px-3 py-1.5`, hover efektleri vb.) sahip.
+- Silme Server Action'ları (`deleteJob`, `clearReportsByType`) sisteme eklendi ve güvenliği sağlamak için `running` veya `queued` olan işlemler kilitlenerek sadece tamamlanmış/hatalı işlemlerin silinmesi sağlandı.
+- **Scroll Zıplaması Önlemi:** Çöp kutusuna basıldığında sayfanın aniden unmount olup (Loading...) state'ine girerek scroll'u yukarı zıplatmasını engellemek için `refreshing` (soft refresh) state'i ve lokal `setReports` filtreleme stratejisi kullanıldı.
+- Siyah Premium scrollbar'lar (`scrollbar-thin`) tüm taşan arşiv tablolarına uygulandı.
+
+### 6.5 Premium AlertForm Optimizasyonu
+- Alarm kurma formu (`AlertForm.tsx`), güncel hisse fiyatını arka planda çekerek (`Fetching...`) validasyon yapan, kullanıcının belirlediği limitleri anlık fiyata göre denetleyen gelişmiş bir mimariyle optimize edildi.
+- Bağımsız alarm sayfası (`/alerts/create`) ve hisse bazlı alarm sayfası (`/stocks/[symbol]/alert`) aynı Premium `<AlertForm />` bileşenini kullanacak şekilde refaktör edilerek UI/UX çakışmaları tamamen ortadan kaldırıldı.
