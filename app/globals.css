@@ -280,7 +280,7 @@
     }
 
     .search-dialog {
-        @apply !bg-gray-900 lg:min-w-[800px] border-gray-700 fixed top-10 left-1/2 -translate-x-1/2 translate-y-10;
+        @apply !bg-gray-900 lg:min-w-[800px] border-gray-700;
     }
 
     .search-field {

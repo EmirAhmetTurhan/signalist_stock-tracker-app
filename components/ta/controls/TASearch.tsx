@@ -70,7 +70,7 @@ const TASearch = ({ initialStocks }: { initialStocks: StockWithWatchlistStatus[]
         Search
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="overflow-hidden p-0 search-dialog-content">
+        <DialogContent className="overflow-hidden p-0 sm:max-w-[800px] search-dialog-content" showCloseButton={false}>
           <Command
             className="search-dialog"
             filter={(value, search) => value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0}
